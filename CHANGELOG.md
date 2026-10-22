@@ -3,6 +3,24 @@
 All notable changes to TSMIS Reports Exporter, newest first. Each GitHub
 release shows only its own section (see `build/gen_release_notes.py`).
 
+## v0.49.1 — 2026-10-22
+
+The day matrices now let you pick which TSMIS site's exports to compare. In
+v0.49.0 they showed only the site Settings pointed at, so exports made on the dev
+site — the Clean Road files, which only the dev site has — could not be picked
+once the app was switched back to the main site.
+
+- **Every source on both sites.** The source list on the vs TSN, vs Baseline, PDF
+  vs Excel and Reports vs ArcGIS matrices now offers each data source and
+  environment twice — `SSOR / Prod · main site` and `SSOR / Prod · dev site` —
+  whichever site the app points at. Each day column reads that site's export, or
+  an export from before the site was recorded; never the other site's. Your
+  current choice carries over as the site the app points at now.
+- **Today's export follows Settings.** The vs TSN matrix can only export today's
+  column from the site Settings points at, because the export opens that address.
+  With the other site's source picked, it compares those exports but shows no
+  export buttons, and **Export today** says why.
+
 ## v0.49.0 — 2026-10-06
 
 Every export now records which TSMIS site it came from. Reports wait on the dev

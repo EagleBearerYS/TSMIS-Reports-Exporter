@@ -12,9 +12,10 @@ touching.
 
 ## Current status and work
 
-**Current release: v0.49.0 (2026-10-06)** — every export run folder records which
+**Current release: v0.49.1 (2026-10-22)** — every export run folder records which
 TSMIS site it came from (`… ssor-prod dev-site` / `main-site`), so dev-site and
-main-site exports never mix; since v0.48.0 every edition of every report
+main-site exports never mix, and each day matrix picks which site's exports it
+compares; since v0.48.0 every edition of every report
 consolidates and compares (22 rows). The comparison-audit ledger records 246
 closed findings. Confirm release state in `version.py` and `CHANGELOG.md`;
 the roadmap tracks remaining acceptance, follow-ups, and feature work.
