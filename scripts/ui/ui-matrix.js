@@ -33,6 +33,9 @@ function mxDayOptionText(d, snap) {
 // day could be from either site, so it says so). Shown under every day column and
 // in the add-day pickers, so a dev-site day never passes for a main-site one.
 const MX_SITE_LABELS = { main: "main site", dev: "dev site", other: "other site" };
+// Whether the vs-TSN matrix's source is on the site the app exports from (the
+// footer Export-today button reads it on every state paint) and why not.
+let _dayExportable = true, _dayExportBlocked = "";
 function mxDaySite(d, snap) {
   const hosts = snap && snap.day_hosts;
   if (!hosts || !Object.prototype.hasOwnProperty.call(hosts, d)) return "";   // an older bridge
@@ -1106,7 +1109,12 @@ async function renderDayMatrix() {
   if (!snap) return;
   const days = snap.days || [], locked = !!(S.st && S.st.task);
   const today = snap.today;          // the one EXPORTABLE column (past = locked)
-  grid.dataset.srcEnv = snap.source || "";   // env-access flags key on the source env
+  grid.dataset.srcEnv = snap.source_env || snap.source || "";   // env-access flags key on the source env
+  // v0.49.1: the source names a TSMIS site; today exports only from the site the
+  // app points at, so a matrix showing the other site's exports offers no export.
+  const exportable = snap.exportable !== false;
+  _dayExportable = exportable;
+  _dayExportBlocked = exportable ? "" : `Today exports only from the site Settings points at, and this matrix shows ${snap.source_label || "the other site"}. Pick that site's source here, or switch the site in Settings.`;
 
   const srcSel = $("dayMatrixSource");
   if (srcSel) {
@@ -1202,7 +1210,7 @@ async function renderDayMatrix() {
     const btns = document.createElement("span"); btns.className = "mxch-btns";
     // Export is offered ONLY for today's column — past days are the immutable
     // record you pulled (re-exporting them would overwrite with today's data).
-    if (d === today) {
+    if (d === today && exportable) {
       btns.appendChild(mxHeadBtn("i-refresh",
         `Export every report for ${d} (today) from TSMIS, then compare vs TSN`,
         "mxch-reexport", async () => {
@@ -1239,7 +1247,7 @@ async function renderDayMatrix() {
     const evb = supported ? evidenceRowBadge(rk) : null;
     if (evb) lbl.appendChild(evb);
     top.appendChild(lbl);
-    if (supported) {
+    if (supported && exportable) {
       top.appendChild(mxHeadBtn("i-refresh", `Export ${rlabel} for today + compare vs TSN`,
         "mxch-reexport", async () => {
           const r = await api.export_day_row(rk);
@@ -1278,7 +1286,7 @@ async function renderDayMatrix() {
         const acts = document.createElement("div"); acts.className = "mx-actions";
         // Export action only on TODAY's cell (the primary action when it's not yet
         // pulled); past cells stay export-locked and offer compare/open only.
-        if (d === today) {
+        if (d === today && exportable) {
           acts.appendChild(mxActBtn("i-refresh", "Export this report for today + compare vs TSN",
             false, async () => {
               const r = await api.export_day_cell(rk, d);
@@ -1424,7 +1432,11 @@ function updateDayMatrixProgress() {
   // actions that stay live and the by-day Build/Rebuild-all footer buttons — so it
   // must NOT be lock-disabled while busy, or one queue-capable action would
   // uniquely refuse work its equivalents accept.
-  if (exportBtn) exportBtn.disabled = false;
+  if (exportBtn) {
+    if (exportBtn.dataset.title === undefined) exportBtn.dataset.title = exportBtn.title;
+    exportBtn.disabled = !_dayExportable;
+    exportBtn.title = _dayExportBlocked || exportBtn.dataset.title;
+  }
   const cancel = $("btnDayCancel");
   if (cancel) {
     const running = !!(S.st && S.st.task === "matrix");

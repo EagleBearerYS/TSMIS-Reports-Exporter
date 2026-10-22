@@ -48,8 +48,10 @@ _RESULTS_FILE = "_results.json"
 # rows + sources
 # --------------------------------------------------------------------------- #
 def sources():
-    """The data-source options (the matrix columns are days WITHIN one source)."""
-    return matrix.env_keys()
+    """The source options — each data source / environment on the main site and
+    on the dev site ("ssor-prod dev-site"; the matrix columns are days WITHIN one
+    source), so either site's exports compare whatever the app points at."""
+    return matrix.day_source_keys()
 
 
 def _day_rows():
@@ -283,7 +285,7 @@ def day_matrix_snapshot(source, days, hidden=None, tsn_files=None, dest=None,
     golden check can pin it.)"""
     now = now if now is not None else time.time()
     today = today if today is not None else today_str()
-    source = source if source in sources() else SOURCE_DEFAULT
+    source = matrix.normalize_day_source(source, SOURCE_DEFAULT)
     days = [d for d in (days or []) if isinstance(d, str)]
     hidden = set(hidden or [])
     import tsn_library                              # lazy: canonical explicit choices
@@ -414,7 +416,12 @@ def day_matrix_snapshot(source, days, hidden=None, tsn_files=None, dest=None,
 
     return {
         "source": source,
-        "sources": matrix.day_source_options(sources()),
+        "sources": matrix.day_source_options(),
+        "source_env": matrix.day_source_env(source),
+        "source_label": matrix.day_source_label(source),
+        # Today's column exports only from the site the app points at; a matrix
+        # showing the other site's exports compares them but cannot add to them.
+        "exportable": matrix.day_source_exportable(source),
         "day_hosts": matrix.day_hosts(source, days),
         "days": days,
         "today": today,                  # the only EXPORTABLE column (past = locked)

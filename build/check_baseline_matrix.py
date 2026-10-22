@@ -403,7 +403,7 @@ def main():
             check("...and its run_fn targets run_baseline_evidence_only with "
                   "the cell's own source/day/row/baseline (not the env lane)",
                   reached.get("args", ())[:4]
-                  == ("ssor-prod", "2026-06-18", "highway_detail_pdf",
+                  == ("ssor-prod main-site", "2026-06-18", "highway_detail_pdf",
                       "day:2026-06-11"))
         finally:
             gui_matrix.MatrixEvidenceWorker = _saved_ev_worker

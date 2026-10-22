@@ -171,14 +171,53 @@ def _source_host(source):
     return host_kind_for(src, env)
 
 
+# A day matrix's SOURCE (v0.49.1) names the TSMIS site as well as the data
+# source / environment — 'ssor-prod dev-site', the same suffix its run folders
+# carry — so a matrix reads either site's exports whichever site the app points
+# at. A bare 'ssor-prod' (a v0.49.0 or older saved choice) still parses and
+# means the site that pair points at now.
+_DAY_SOURCE_RE = re.compile(r"(\w+-\w+)(?: (" + "|".join(HOST_KINDS) + r")"
+                            + _HOST_SUFFIX + r")?")
+
+
+def split_day_source(source):
+    """('ssor-prod', 'dev') for 'ssor-prod dev-site', ('ssor-prod', None) for a
+    bare env key, None for anything else."""
+    m = _DAY_SOURCE_RE.fullmatch(source if isinstance(source, str) else "")
+    return (m.group(1), m.group(2)) if m else None
+
+
+def day_source_key(env_key, host):
+    """'ssor-prod' + 'dev' -> 'ssor-prod dev-site'."""
+    return f"{env_key} {host}{_HOST_SUFFIX}"
+
+
+def qualify_day_source(source, default=_LEGACY_DEFAULT_SOURCE):
+    """The explicit '<src>-<env> <host>-site' form of a matrix source: a bare env
+    key gets the site it points at now; anything unparseable falls back to
+    `default` the same way."""
+    parts = split_day_source(source) or split_day_source(default)
+    env_key, host = parts
+    return day_source_key(env_key, host or _source_host(env_key))
+
+
+def _day_source_parts(source, host):
+    """(env key, host) a matrix source reads: an explicit `host` wins, then the
+    source's own site, then the site the pair points at now."""
+    parts = split_day_source(source)
+    env_key, own = parts if parts else (str(source), None)
+    return env_key, host or own or _source_host(env_key)
+
+
 def day_source_dir(date_token, source, host=None):
     """The ACTUAL on-disk export run folder for (date, source) as seen from `host`
-    (None = the host `source` points at right now — the one its next export
-    writes into), resolving the older layouts instead of blindly reconstructing a
-    name. Precedence, deterministic when several exist:
+    (None = the site the source names, or for a bare 'src-env' key the one it
+    points at right now — the one its next export writes into), resolving the
+    older layouts instead of blindly reconstructing a name. Precedence,
+    deterministic when several exist:
 
-      1. '<date> <source> <host>-site' — that host's own export (v0.49.0+);
-      2. '<date> <source>' — a v0.10–v0.48 export, whose host was never recorded;
+      1. '<date> <src-env> <host>-site' — that host's own export (v0.49.0+);
+      2. '<date> <src-env>' — a v0.10–v0.48 export, whose host was never recorded;
       3. '<date>' — a pre-v0.10 bare-date export, which meant the ssor-prod
          defaults (CMP-AUD-092: reconstructing '<date> ssor-prod' pointed at a
          folder that never existed, so the day read 0/N present).
@@ -186,21 +225,18 @@ def day_source_dir(date_token, source, host=None):
     A folder tagged with ANOTHER host is never returned: a dev-site export is not
     the main site's and must never be read as it. Absent everywhere -> (1), the
     canonical target (reads as missing until an export creates it)."""
-    host = host or _source_host(source)
-    tagged = OUTPUT_ROOT / f"{date_token} {source} {host}{_HOST_SUFFIX}"
+    env_key, host = _day_source_parts(source, host)
+    tagged = OUTPUT_ROOT / f"{date_token} {env_key} {host}{_HOST_SUFFIX}"
     if tagged.is_dir():
         return tagged
-    untagged = OUTPUT_ROOT / f"{date_token} {source}"
+    untagged = OUTPUT_ROOT / f"{date_token} {env_key}"
     if untagged.is_dir():
         return untagged
-    if source == _LEGACY_DEFAULT_SOURCE and valid_calendar_date(date_token):
+    if env_key == _LEGACY_DEFAULT_SOURCE and valid_calendar_date(date_token):
         bare = OUTPUT_ROOT / date_token
         if bare.is_dir():
             return bare
     return tagged
-
-
-_SOURCE_RE = re.compile(r"\w+-\w+")
 
 
 def day_run_label(date_token, source, host=None):
@@ -208,35 +244,35 @@ def day_run_label(date_token, source, host=None):
     comparison folder, workbook names and cache records carry: the name of the
     folder `day_source_dir` resolves, so a dev-site day and a main-site day never
     share a comparison file. A pre-v0.10 bare-date folder keeps the
-    '<date> <source>' label it always had. A token that is not a real date or
+    '<date> <src-env>' label it always had. A token that is not a real date or
     source is returned as '<date> <source>' WITHOUT touching the disk, so the
     callers' parse_run_folder boundary check still refuses it."""
-    label = f"{date_token} {source}"
-    if (not valid_calendar_date(date_token)
-            or not _SOURCE_RE.fullmatch(str(source))):
-        return label
+    parts = split_day_source(source)
+    if not valid_calendar_date(date_token) or parts is None:
+        return f"{date_token} {source}"
     name = day_source_dir(date_token, source, host).name
-    return label if name == date_token else name
+    return f"{date_token} {parts[0]}" if name == date_token else name
 
 
 def run_days_for(source, host=None):
     """[(date, folder)] newest first: every day `source` has an export run folder
-    that `day_source_dir` would read as seen from `host` (None = the host `source`
-    points at now) — that host's own folders plus the ones from before the host
-    was recorded; another host's folders are left out. Each folder is exactly the
-    one `day_source_dir` picks for its date, so a day picker offers what the
-    matrix cells will read."""
-    host = host or _source_host(source)
+    that `day_source_dir` would read — that site's own folders plus the ones from
+    before the site was recorded; another site's folders are left out. Each
+    folder is exactly the one `day_source_dir` picks for its date, so a day
+    picker offers what the matrix cells will read."""
+    if split_day_source(source) is None:
+        return []
+    env_key, host = _day_source_parts(source, host)
     out, seen = [], set()
     for name in list_output_days():
         m = _RUN_RE.fullmatch(name)
         day, src, env, tag = m.groups()
-        if f"{src or 'ssor'}-{env or 'prod'}" != source or day in seen:
+        if f"{src or 'ssor'}-{env or 'prod'}" != env_key or day in seen:
             continue
         if tag is not None and tag != host:
             continue
         seen.add(day)
-        out.append((day, day_source_dir(day, source, host)))
+        out.append((day, day_source_dir(day, env_key, host)))
     return out
 
 

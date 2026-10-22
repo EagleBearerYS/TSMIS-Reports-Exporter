@@ -21,8 +21,10 @@ import report_catalog
 import report_library
 import reports
 from common import DATA_SOURCES, ENVIRONMENTS
-from paths import day_source_dir, run_folder_host
-from site_target import HOST_LABELS, host_kind_for
+from paths import (day_source_dir, day_source_key, qualify_day_source,
+                   run_folder_host, split_day_source)
+from site_target import (HOST_DEV, HOST_LABELS, HOST_MAIN, HOST_OTHER,
+                         host_kind_for)
 
 log = logging.getLogger("tsmis.matrix")
 
@@ -68,17 +70,68 @@ def default_env_label(key):
     return f"{src.upper()} / {env.title()}" if env else str(key).upper()
 
 
-def day_source_options(keys):
-    """The by-day matrices' source picker: each env key labelled with the TSMIS
-    site it points at right now — the site whose exports the matrix reads
-    ('SSOR / Prod · dev site'). `host` rides along for the UI."""
+def day_source_keys():
+    """The day matrices' sources (v0.49.1): every env key on the main site and on
+    the dev site ('ssor-prod main-site', 'ssor-prod dev-site', …), so either
+    site's exports can be compared whichever site the app points at — plus the
+    'other' site for a pair whose Settings address is on another host."""
     out = []
-    for k in keys:
-        src, _, env = str(k).partition("-")
-        host = host_kind_for(src, env)
-        out.append({"key": k, "label": f"{default_env_label(k)} · {HOST_LABELS[host]}",
-                    "host": host})
+    for k in env_keys():
+        src, _, env = k.partition("-")
+        hosts = [HOST_MAIN, HOST_DEV]
+        if host_kind_for(src, env) == HOST_OTHER:
+            hosts.append(HOST_OTHER)
+        out += [day_source_key(k, h) for h in hosts]
     return out
+
+
+def day_source_label(source):
+    """'ssor-prod dev-site' -> 'SSOR / Prod · dev site'."""
+    parts = split_day_source(source)
+    if not parts:
+        return str(source)
+    env_key, host = parts
+    return (f"{default_env_label(env_key)} · {HOST_LABELS[host]}" if host
+            else default_env_label(env_key))
+
+
+def day_source_env(source):
+    """The 'src-env' key of a day-matrix source ('ssor-prod dev-site' -> 'ssor-prod')."""
+    parts = split_day_source(source)
+    return parts[0] if parts else str(source)
+
+
+def day_source_exportable(source):
+    """True when the source's site is the one its pair exports from right now —
+    the only site a matrix can export today's column from (the export opens the
+    address Settings points at)."""
+    parts = split_day_source(source)
+    if not parts:
+        return False
+    env_key, host = parts
+    src, _, env = env_key.partition("-")
+    return host is None or host == host_kind_for(src, env)
+
+
+def day_source_input(source):
+    """A source handed in by the UI in its explicit site form (a bare 'ssor-prod'
+    from an older caller gets the site it points at now), or None when it is not
+    a source at all. Callers still check it is one of `day_source_keys`."""
+    return qualify_day_source(source) if split_day_source(source) else None
+
+
+def normalize_day_source(source, default=BASELINE_DEFAULT):
+    """A valid day-matrix source for `source`: its explicit site form when that is
+    one of `day_source_keys`, else `default` on the site it points at now."""
+    key = qualify_day_source(source, default)
+    return key if key in day_source_keys() else qualify_day_source(default)
+
+
+def day_source_options():
+    """The day matrices' source picker: every source of `day_source_keys`,
+    labelled with its site ('SSOR / Prod · dev site'). `host` rides along."""
+    return [{"key": k, "label": day_source_label(k), "host": split_day_source(k)[1]}
+            for k in day_source_keys()]
 
 
 def day_hosts(source, days):

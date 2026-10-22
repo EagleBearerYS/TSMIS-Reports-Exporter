@@ -164,6 +164,7 @@ class GuiArcgisMixin:
         import arcgis_matrix
         import matrix
 
+        source = matrix.day_source_input(source)
         if source not in arcgis_matrix.sources():
             return {"error": "Unknown data source."}
         settings.set_arcgis_matrix_source(source)
@@ -172,7 +173,7 @@ class GuiArcgisMixin:
         if kept != settings.get_arcgis_matrix_days():
             settings.set_arcgis_matrix_days(kept)
         self._emit_log("Reports-vs-ArcGIS matrix source set to "
-                       f"{matrix.default_env_label(source)}.")
+                       f"{matrix.day_source_label(source)}.")
         self._push_state()
         return {"ok": True, "source": source, "days": kept}
 

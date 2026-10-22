@@ -52,8 +52,10 @@ _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 # rows + sources + baseline identity
 # --------------------------------------------------------------------------- #
 def sources():
-    """The data-source options (the matrix columns are days WITHIN one source)."""
-    return matrix.env_keys()
+    """The source options — each data source / environment on the main site and
+    on the dev site ("ssor-prod dev-site"; the matrix columns are days WITHIN one
+    source), so either site's exports compare whatever the app points at."""
+    return matrix.day_source_keys()
 
 
 def _rows():
@@ -111,7 +113,8 @@ def baseline_dir(source, baseline_id, dest):
         return None
     kind, date = parsed
     if kind == "store":
-        return Path(dest) / source if dest else None
+        # The Everything store keeps one folder per environment, whatever the site.
+        return Path(dest) / matrix.day_source_env(source) if dest else None
     if not parse_run_folder(day_folder_name(date, source)):
         return None
     return day_source_dir(date, source)      # CMP-AUD-092: real folder (legacy incl.)
@@ -124,8 +127,8 @@ def baseline_label(source, baseline_id):
     if parsed is None:
         return None
     kind, date = parsed
-    return (f"{source.upper()} (store)" if kind == "store"
-            else f"{source.upper()} {date}")
+    env = matrix.day_source_env(source).upper()
+    return f"{env} (store)" if kind == "store" else f"{env} {date}"
 
 
 # --------------------------------------------------------------------------- #
@@ -279,7 +282,7 @@ def baseline_options(source, dest):
     rows = _rows()
     total = sum(1 for r in rows if r[3])
     opts = []
-    store_dir = Path(dest) / source if dest else None
+    store_dir = Path(dest) / matrix.day_source_env(source) if dest else None
     store_n = _present_count(store_dir, rows)
     if store_n:
         opts.append({"id": STORE_BASELINE, "label": "All Reports store",
@@ -303,7 +306,7 @@ def baseline_matrix_snapshot(source, days, baseline_id, hidden=None, dest=None,
     user's drag-to-reorder preference; `dest` is the Everything store root (the
     "store" baseline lives under it)."""
     now = now if now is not None else time.time()
-    source = source if source in sources() else SOURCE_DEFAULT
+    source = matrix.normalize_day_source(source, SOURCE_DEFAULT)
     days = [d for d in (days or []) if isinstance(d, str)]
     hidden = set(hidden or [])
     all_rows = _rows()
@@ -365,7 +368,9 @@ def baseline_matrix_snapshot(source, days, baseline_id, hidden=None, dest=None,
 
     return {
         "source": source,
-        "sources": matrix.day_source_options(sources()),
+        "sources": matrix.day_source_options(),
+        "source_env": matrix.day_source_env(source),
+        "source_label": matrix.day_source_label(source),
         "day_hosts": matrix.day_hosts(source, days),
         "days": days,
         "baseline": {
@@ -450,7 +455,8 @@ def build_baseline_cell(source, date, row_key, baseline_id, dest, events,
 
     dir_a = day_source_dir(date, source)     # CMP-AUD-092: real folder (legacy incl.)
     dest_path = out_path(date, source, row_key, baseline_id)
-    labels = (f"{source.upper()} {date}", baseline_label(source, baseline_id))
+    labels = (f"{matrix.day_source_env(source).upper()} {date}",
+              baseline_label(source, baseline_id))
     source_paths = (dir_a, bdir)
     # CMP-AUD-098: capture the input identity BEFORE the comparator reads.
     fp_folders = (tsmis_dir(date, source, subdir), bdir / subdir)
