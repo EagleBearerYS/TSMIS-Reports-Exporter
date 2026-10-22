@@ -380,15 +380,20 @@ the PDF-vs-Excel picker tags a family with both editions `HL` and a one-edition 
 three pickers; an older bridge without the map falls back to the bare date.
 
 **Every day says which TSMIS site it came from** (v0.49.0, all four day matrices). Run
-folders record the site (`2026-10-07 ssor-prod dev-site`), and a day matrix reads the
-site its source points at now plus the days from before the site was recorded (see
+folders record the site (`2026-10-07 ssor-prod dev-site`). Since v0.49.1 the source
+picker offers every source on both sites — `SSOR / Prod · main site`,
+`SSOR / Prod · dev site`, … (`matrix.day_source_options`; the value saved is
+`ssor-prod dev-site`) — so a matrix compares either site's exports whatever the app
+points at, plus the days from before the site was recorded (see
 [architecture.md](architecture.md#run-folders-v0100-replaces-bare-dated-outputs-site-tag-v0490)).
-So the source picker labels each source with that site (`SSOR / Prod · dev site`,
-`matrix.day_source_options`), and the snapshot's `day_hosts` (date → `main` / `dev` /
-`other`, or null) puts the site under every day column header (`mxDaySiteTag`) and into
-every add-day option — `2026-10-07  ·  dev site  ·  HL HSL RD`, or
-`2026-10-02  ·  site not recorded  ·  RS` for a day exported before v0.49.0, which could
-be from either site. An older bridge without `day_hosts` shows neither.
+The snapshot's `day_hosts` (date → `main` / `dev` / `other`, or null) puts the site under
+every day column header (`mxDaySiteTag`) and into every add-day option —
+`2026-10-07  ·  dev site  ·  HL HSL RD`, or `2026-10-02  ·  site not recorded  ·  RS` for a
+day exported before v0.49.0, which could be from either site. An older bridge without
+`day_hosts` shows neither. On the vs TSN matrix, `snap.exportable` is false when the
+source is not on the site the app exports from: the today-column, row and cell export
+actions are left out and **Export today** is disabled with the reason in its tooltip.
+The env-access flags key on `snap.source_env` (`ssor-prod`), not the site-qualified source.
 
 ### The Compare-tab "vs Baseline Matrix" (v0.26.0)
 

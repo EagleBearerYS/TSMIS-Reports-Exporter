@@ -34,6 +34,7 @@ import exporter
 import matrix
 import paths
 import run_report
+import settings
 import site_target
 import visual_evidence
 from events import Events
@@ -203,16 +204,21 @@ def test_matrices():
             c.check("day_hosts: the site each column's folder records",
                     matrix.day_hosts("ssor-prod", [DAY, "2026-10-02"])
                     == {DAY: "dev", "2026-10-02": None})
-            opts = matrix.day_source_options(["ssor-prod", "ars-test"])
-            c.check("the source picker names the site the matrix reads",
-                    opts[0] == {"key": "ssor-prod", "label": "SSOR / Prod · dev site",
-                                "host": "dev"}
-                    and opts[1]["label"] == "ARS / Test · dev site")
+            opts = {o["key"]: o for o in matrix.day_source_options()}
+            c.check("the source picker offers every source on both sites (v0.49.1)",
+                    opts["ssor-prod main-site"] == {"key": "ssor-prod main-site",
+                                                    "label": "SSOR / Prod · main site",
+                                                    "host": "main"}
+                    and opts["ars-test dev-site"]["label"] == "ARS / Test · dev site"
+                    and len(opts) == 12)
             snap = day_matrix.day_matrix_snapshot("ssor-prod", [DAY, "2026-10-02"],
                                                   today=DAY)
-            c.check("the vs-TSN snapshot carries day_hosts + labelled sources",
-                    snap["day_hosts"] == {DAY: "dev", "2026-10-02": None}
-                    and snap["sources"][0]["label"] == "SSOR / Prod · dev site")
+            c.check("a bare v0.49.0 source reads as the site it points at now",
+                    snap["source"] == "ssor-prod dev-site"
+                    and snap["source_label"] == "SSOR / Prod · dev site"
+                    and snap["source_env"] == "ssor-prod" and snap["exportable"])
+            c.check("the vs-TSN snapshot carries day_hosts",
+                    snap["day_hosts"] == {DAY: "dev", "2026-10-02": None})
             ramp = snap["cells"]["ramp_detail"]
             c.check("the cells read the dev-site and the unrecorded exports",
                     ramp[DAY]["export"]["present"] and ramp["2026-10-02"]["export"]["present"])
@@ -227,6 +233,46 @@ def test_matrices():
             c.check("result-cache keys differ per site for the same day",
                     day_matrix.day_folder_name(DAY, "ssor-prod")
                     == f"{DAY} ssor-prod main-site")
+
+
+def test_explicit_site_source():
+    print("a matrix picks its site (v0.49.1): dev-site exports compare with the app on main:")
+    with temp_dir("tsmis_rfs_pick_") as tmp, temp_dir("tsmis_rfs_cfg_") as cfg, \
+            patch(paths, "OUTPUT_ROOT", tmp), patch(day_matrix, "OUTPUT_ROOT", tmp), \
+            patch(baseline_matrix, "OUTPUT_ROOT", tmp), \
+            patch(settings, "CONFIG_FILE", cfg / "config.json"), pinned_site("main"):
+        settings._cache = settings._cache_mtime = None
+        _export(tmp / f"{DAY} ssor-prod dev-site", "clean_ramp")
+        _export(tmp / "2026-09-25 ssor-prod main-site", "clean_ramp")
+        dev = "ssor-prod dev-site"
+        today = paths.today_str()
+        c.check("the dev-site day is offered while the app points at the main site",
+                day_matrix.available_days(dev)
+                == [today] + [d for d in (DAY,) if d != today]
+                and baseline_matrix.available_days(dev) == [DAY])
+        c.check("and the main-site source still shows only the main site's days",
+                baseline_matrix.available_days("ssor-prod main-site") == ["2026-09-25"])
+        snap = day_matrix.day_matrix_snapshot(dev, [DAY], today=today)
+        c.check("the cells read the dev-site Clean Road export",
+                snap["source"] == dev
+                and snap["cells"]["clean_ramp"][DAY]["export"]["present"])
+        c.check("today cannot export from it (the app exports from the main site)",
+                snap["exportable"] is False
+                and day_matrix.day_matrix_snapshot("ssor-prod main-site", [],
+                                                   today=today)["exportable"] is True)
+        settings.set_day_matrix_source(dev)
+        c.check("the choice is saved with its site",
+                settings.get_day_matrix_source() == dev)
+        settings.set_day_matrix_source("ssor-prod")
+        c.check("a bare saved source (v0.49.0) reads as the site it points at now",
+                settings.get_day_matrix_source() == "ssor-prod main-site")
+        c.check("a garbled saved source falls back to the default on that site",
+                matrix.normalize_day_source("zz", "ssor-prod") == "ssor-prod main-site"
+                and matrix.day_source_input("zz") is None)
+        c.check("the Everything store baseline is per environment, whatever the site",
+                baseline_matrix.baseline_dir(dev, "store", str(tmp / "dest"))
+                == tmp / "dest" / "ssor-prod"
+                and baseline_matrix.baseline_label(dev, "store") == "SSOR-PROD (store)")
 
 
 class _FakePage:
@@ -398,6 +444,7 @@ def main():
     test_names_round_trip()
     test_reader_precedence()
     test_matrices()
+    test_explicit_site_source()
     test_shipped_export()
     test_compare_labels()
     test_evidence_path_budget()

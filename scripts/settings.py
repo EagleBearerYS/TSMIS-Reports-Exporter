@@ -27,7 +27,7 @@ import os
 import tempfile
 from urllib.parse import parse_qs, urlsplit
 
-from paths import CONFIG_FILE, OUTPUT_ROOT
+from paths import CONFIG_FILE, OUTPUT_ROOT, qualify_day_source
 
 log = logging.getLogger("tsmis.settings")
 
@@ -792,10 +792,12 @@ _DEFAULT_DAY_MATRIX_SOURCE = "ssor-prod"
 
 
 def get_day_matrix_source():
+    """The saved source in its explicit '<src>-<env> <host>-site' form
+    (paths.qualify_day_source): a bare v0.49.0 'ssor-prod' means the site that
+    pair points at now."""
     raw = _read_file().get("day_matrix_source")
-    if isinstance(raw, str) and raw.strip():
-        return raw.strip()
-    return _DEFAULT_DAY_MATRIX_SOURCE
+    raw = raw.strip() if isinstance(raw, str) else ""
+    return qualify_day_source(raw, _DEFAULT_DAY_MATRIX_SOURCE)
 
 
 def set_day_matrix_source(key):
@@ -851,10 +853,12 @@ _DEFAULT_PVE_MATRIX_SOURCE = "ssor-prod"
 
 
 def get_pve_matrix_source():
+    """The saved source in its explicit '<src>-<env> <host>-site' form
+    (paths.qualify_day_source): a bare v0.49.0 'ssor-prod' means the site that
+    pair points at now."""
     raw = _read_file().get("pve_matrix_source")
-    if isinstance(raw, str) and raw.strip():
-        return raw.strip()
-    return _DEFAULT_PVE_MATRIX_SOURCE
+    raw = raw.strip() if isinstance(raw, str) else ""
+    return qualify_day_source(raw, _DEFAULT_PVE_MATRIX_SOURCE)
 
 
 def set_pve_matrix_source(key):
@@ -933,10 +937,12 @@ _DEFAULT_ARCGIS_MATRIX_SOURCE = "ssor-prod"
 
 
 def get_arcgis_matrix_source():
+    """The saved source in its explicit '<src>-<env> <host>-site' form
+    (paths.qualify_day_source): a bare v0.49.0 'ssor-prod' means the site that
+    pair points at now."""
     raw = _read_file().get("arcgis_matrix_source")
-    if isinstance(raw, str) and raw.strip():
-        return raw.strip()
-    return _DEFAULT_ARCGIS_MATRIX_SOURCE
+    raw = raw.strip() if isinstance(raw, str) else ""
+    return qualify_day_source(raw, _DEFAULT_ARCGIS_MATRIX_SOURCE)
 
 
 def set_arcgis_matrix_source(key):
@@ -1030,10 +1036,12 @@ _DEFAULT_BASELINE_MATRIX_SOURCE = "ssor-prod"
 
 
 def get_baseline_matrix_source():
+    """The saved source in its explicit '<src>-<env> <host>-site' form
+    (paths.qualify_day_source): a bare v0.49.0 'ssor-prod' means the site that
+    pair points at now."""
     raw = _read_file().get("baseline_matrix_source")
-    if isinstance(raw, str) and raw.strip():
-        return raw.strip()
-    return _DEFAULT_BASELINE_MATRIX_SOURCE
+    raw = raw.strip() if isinstance(raw, str) else ""
+    return qualify_day_source(raw, _DEFAULT_BASELINE_MATRIX_SOURCE)
 
 
 def set_baseline_matrix_source(key):

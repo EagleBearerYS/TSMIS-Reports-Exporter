@@ -48,8 +48,10 @@ _CACHE_IDENTITY = "pdf-vs-excel-by-day"
 # rows + sources
 # --------------------------------------------------------------------------- #
 def sources():
-    """The data-source options (matrix columns are days WITHIN one source)."""
-    return matrix.env_keys()
+    """The source options — each data source / environment on the main site and
+    on the dev site ("ssor-prod dev-site"; the matrix columns are days WITHIN one
+    source), so either site's exports compare whatever the app points at."""
+    return matrix.day_source_keys()
 
 
 def _pve_rows():
@@ -267,7 +269,7 @@ def pve_matrix_snapshot(source, days, hidden=None, dest=None, now=None,
     family exported only one edition shows as needs-export)."""
     now = now if now is not None else time.time()
     today = today if today is not None else today_str()
-    source = source if source in sources() else SOURCE_DEFAULT
+    source = matrix.normalize_day_source(source, SOURCE_DEFAULT)
     days = [d for d in (days or []) if isinstance(d, str)]
     hidden = set(hidden or [])
     all_rows = _pve_rows()
@@ -307,7 +309,9 @@ def pve_matrix_snapshot(source, days, hidden=None, dest=None, now=None,
 
     return {
         "source": source,
-        "sources": matrix.day_source_options(sources()),
+        "sources": matrix.day_source_options(),
+        "source_env": matrix.day_source_env(source),
+        "source_label": matrix.day_source_label(source),
         "day_hosts": matrix.day_hosts(source, days),
         "days": days,
         "today": today,

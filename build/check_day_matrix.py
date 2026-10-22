@@ -231,8 +231,10 @@ def main():
         _touch(matrix.tsn_input_root(dest, "highway_log") / "tsn.xlsx")
 
         print("day_matrix engine — sources, rows, available days:")
-        check("six data sources", len(day_matrix.sources()) == 6
-              and "ssor-prod" in day_matrix.sources())
+        # v0.49.1: every data source/environment on the main AND the dev site.
+        check("twelve sources (six on each site)", len(day_matrix.sources()) == 12
+              and "ssor-prod main-site" in day_matrix.sources()
+              and "ssor-prod dev-site" in day_matrix.sources())
         rows = {r[0]: r for r in day_matrix._day_rows()}
         check("HL Excel supported (excel) + HL PDF supported (pdf)",
               rows["highway_log"][3] == "excel" and rows["highway_log"][4]
@@ -274,7 +276,8 @@ def main():
         snap = day_matrix.day_matrix_snapshot(
             "ssor-prod", ["2026-06-17", "2026-06-18"], dest=str(dest))
         check("source + day columns recorded",
-              snap["source"] == "ssor-prod" and snap["days"] == ["2026-06-17", "2026-06-18"])
+              snap["source"] == "ssor-prod main-site"      # bare = the site it points at
+              and snap["days"] == ["2026-06-17", "2026-06-18"])
         check("TSN source is PER-ROW (not a single shared dataset)",
               isinstance(snap["tsn_meta"].get("highway_log"), dict)
               and "source_kind" in snap["tsn_meta"]["highway_log"])
@@ -377,7 +380,7 @@ def main():
         a = gui_api.GuiApi()
         info = a.day_matrix_info()
         check("day_matrix_info carries available_days + sources",
-              "available_days" in info and len(info["sources"]) == 6)
+              "available_days" in info and len(info["sources"]) == 12)
         check("day_matrix_info carries the per-day report tags for the add-day picker",
               info.get("available_day_reports", {}).get("2026-06-18") == ["HL", "HL-PDF"])
         picked = dest / "picked-shared-tsn.xlsx"
@@ -515,6 +518,17 @@ def main():
             check("a CANCELLED export does NOT chain a compare",
                   a._current_job is None or a._current_job["kind"] != "compare")
             a._end_task()
+            # v0.49.1: a matrix showing the OTHER site's exports compares them but
+            # cannot export today (the export opens the address Settings points at).
+            a.set_day_matrix_source("ssor-prod dev-site")
+            refused = a.export_day_column()
+            check("a dev-site source refuses today's export while the app is on main",
+                  "dev site" in (refused.get("error") or "")
+                  and "main site" in refused["error"]
+                  and a._day_matrix_snapshot()["exportable"] is False
+                  and bool(a.export_day_row("highway_log").get("error"))
+                  and bool(a.export_day_cell("highway_log", today).get("error")))
+            a.set_day_matrix_source("ssor-prod main-site")
         finally:
             gui_matrix.MatrixBatchExportWorker = saved_mbe
         settings.set_day_matrix_days(["2026-06-17", "2026-06-18"])   # restore for open guards

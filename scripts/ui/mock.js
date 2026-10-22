@@ -148,12 +148,12 @@ function makeMockApi() {
     mock_tsn_pdfs: false,        // TSN already consolidated → vs-TSN shows real
                                  // diffs (set true to demo the consolidate-first
                                  // state: every vs-TSN cell shows "consolidate")
-    day_matrix_source: "ssor-prod",
+    day_matrix_source: "ssor-prod dev-site",
     day_matrix_days: [],
     day_matrix_hidden: [],
     day_matrix_row_order: [],    // drag-to-reorder row preference (by-day)
     day_matrix_formulas: false,
-    baseline_matrix_source: "ssor-prod",   // v0.26.0 "vs Baseline" matrix
+    baseline_matrix_source: "ssor-prod dev-site",   // v0.26.0 "vs Baseline" matrix
     baseline_matrix_days: [],
     baseline_matrix_baseline: "",          // "" = unset, "store", "day:<date>"
     baseline_matrix_hidden: [],
@@ -481,19 +481,47 @@ function makeMockApi() {
   // v0.49.0: which TSMIS site each day's run folder records. The preview is
   // pointed at the dev site, so today and the newest pulls are dev-site exports;
   // the older days predate the app recording the site (null = "site not
-  // recorded"), exactly what a real upgrade looks like.
+  // recorded"), exactly what a real upgrade looks like. v0.49.1: a matrix source
+  // names its site ("ssor-prod dev-site") and every source is offered on both
+  // sites; a site's days are its own plus the unrecorded ones.
   const MOCK_SITE = "dev";
-  function mockDayHosts(...dayLists) {
-    const out = {};
-    [MOCK_TODAY, ...dayLists.flat()].forEach((d) => { out[d] = d >= "2026-06-17" ? MOCK_SITE : null; });
+  const MOCK_ENVS = ["ssor-prod", "ssor-test", "ssor-dev", "ars-prod", "ars-test", "ars-dev"];
+  const MOCK_SITE_LABELS = { main: "main site", dev: "dev site" };
+  const mockEnv = (source) => String(source || "ssor-prod").split(" ")[0];
+  const mockSiteOf = (source) => {
+    const m = String(source || "").match(/ (main|dev)-site$/);
+    return m ? m[1] : MOCK_SITE;
+  };
+  const mockDayHost = (d) => (d >= "2026-06-17" ? MOCK_SITE : null);
+  function mockAvail(source) {
+    const site = mockSiteOf(source);
+    return (MOCK_DAY_AVAIL[mockEnv(source)] || []).filter((d) => {
+      const h = mockDayHost(d);
+      return h === null || h === site;
+    });
+  }
+  function mockDayHosts(source, ...dayLists) {
+    const site = mockSiteOf(source), out = {};
+    [MOCK_TODAY, ...dayLists.flat()].forEach((d) => {
+      out[d] = d === MOCK_TODAY ? site : (mockDayHost(d) === null ? null : site);
+    });
     return out;
   }
+  function mockSourceInfo(source) {
+    const env = mockEnv(source), site = mockSiteOf(source);
+    const [s, v] = env.split("-");
+    return { source_env: env, exportable: site === MOCK_SITE,
+             source_label: `${s.toUpperCase()} / ${v[0].toUpperCase()}${v.slice(1)} · ${MOCK_SITE_LABELS[site]}` };
+  }
   function mockSourceOptions() {
-    return ["ssor-prod", "ssor-test", "ssor-dev", "ars-prod", "ars-test", "ars-dev"].map((k) => {
+    const out = [];
+    MOCK_ENVS.forEach((k) => {
       const [s, v] = k.split("-");
-      return { key: k, host: MOCK_SITE,
-               label: `${s.toUpperCase()} / ${v[0].toUpperCase()}${v.slice(1)} · dev site` };
+      ["main", "dev"].forEach((site) => out.push({
+        key: `${k} ${site}-site`, host: site,
+        label: `${s.toUpperCase()} / ${v[0].toUpperCase()}${v.slice(1)} · ${MOCK_SITE_LABELS[site]}` }));
     });
+    return out;
   }
   // Per day, WHICH reports are actually exported (the catalog's short codes, in
   // row order) — the add-day pickers' per-option tags. A partial day is the
@@ -513,7 +541,11 @@ function makeMockApi() {
     "ssor-test": { "2026-06-16": ["HSL:xlsx"] },
   };
   function mockDayReports(table, source, withToday) {
-    const out = Object.assign({}, (table[source] || {}));
+    const avail = new Set(mockAvail(source));
+    const out = {};
+    Object.entries(table[mockEnv(source)] || {}).forEach(([d, codes]) => {
+      if (avail.has(d)) out[d] = codes;
+    });
     if (withToday) out[MOCK_TODAY] = [];          // today: always offered, nothing pulled yet
     return out;
   }
@@ -545,7 +577,7 @@ function makeMockApi() {
     { key: "clean_ramp_pdf", label: "Clean Road: Ramp (PDF)", supported: true },
   ];
   function mockDayMatrixSnapshot() {
-    const source = st.day_matrix_source || "ssor-prod";
+    const source = st.day_matrix_source || "ssor-prod dev-site";
     const days = st.day_matrix_days || [];
     const allRows = MOCK_DAY_ROWS;
     const hidden = st.day_matrix_hidden || [];
@@ -602,19 +634,20 @@ function makeMockApi() {
       });
     });
     return { source, sources: mockSourceOptions(),
-             day_hosts: mockDayHosts(days, MOCK_DAY_AVAIL[source] || []),
+             day_hosts: mockDayHosts(source, days, mockAvail(source)),
+             ...mockSourceInfo(source),
              days, today: MOCK_TODAY, rows: shown.map((r) => r.key), row_labels: rowLabels,
              row_supported: rowSupported, all_rows: allRows, hidden,
              tsn_meta: tsnMeta, cells,
              day_consolidated: Object.fromEntries(days.map((d, i) =>
                [d, { exists: i % 3 !== 0, fresh: i % 2 === 0, actionable: i % 4 !== 0 }])),
-             available_days: [MOCK_TODAY, ...(MOCK_DAY_AVAIL[source] || [])],
+             available_days: [MOCK_TODAY, ...(mockAvail(source))],
              available_day_reports: mockDayReports(MOCK_DAY_REPORTS, source, true) };
   }
   // v0.26.0 "vs Baseline" matrix mock — day columns within one source, each cell
   // vs the picked baseline (an earlier day, or the Everything store).
   function mockBaselineOptions(source) {
-    const days = MOCK_DAY_AVAIL[source] || [];
+    const days = mockAvail(source);
     const total = MOCK_DAY_ROWS.length;
     const opts = days.length
       ? [{ id: "store", label: "All Reports store", present: total, total }]
@@ -625,7 +658,7 @@ function makeMockApi() {
     return opts;
   }
   function mockBaselineMatrixSnapshot() {
-    const source = st.baseline_matrix_source || "ssor-prod";
+    const source = st.baseline_matrix_source || "ssor-prod dev-site";
     const days = st.baseline_matrix_days || [];
     const blId = st.baseline_matrix_baseline || "";
     const blDate = blId.indexOf("day:") === 0 ? blId.slice(4) : null;
@@ -661,7 +694,8 @@ function makeMockApi() {
     });
     return { source,
              sources: mockSourceOptions(),
-             day_hosts: mockDayHosts(days, MOCK_DAY_AVAIL[source] || []),
+             day_hosts: mockDayHosts(source, days, mockAvail(source)),
+             ...mockSourceInfo(source),
              days,
              baseline: { id: blId || null, kind: blId === "store" ? "store" : blDate ? "day" : null,
                          date: blDate,
@@ -670,7 +704,7 @@ function makeMockApi() {
                          dir: blId ? "C:\\demo\\baseline" : null, present: blPresent },
              rows: shown.map((r) => r.key), row_labels: rowLabels,
              row_supported: rowSupported, all_rows: MOCK_DAY_ROWS, hidden, cells,
-             available_days: MOCK_DAY_AVAIL[source] || [],
+             available_days: mockAvail(source),
              available_day_reports: mockDayReports(MOCK_DAY_REPORTS, source, false),
              baseline_options: mockBaselineOptions(source) };
   }
@@ -693,7 +727,7 @@ function makeMockApi() {
   ];
 
   function mockPveMatrixSnapshot() {
-    const source = st.pve_matrix_source || "ssor-prod";
+    const source = st.pve_matrix_source || "ssor-prod dev-site";
     const days = st.pve_matrix_days || [];
     const hidden = st.pve_matrix_hidden || [];
     const _visible = MOCK_PVE_ROWS.filter((r) => hidden.indexOf(r.key) < 0);
@@ -719,11 +753,12 @@ function makeMockApi() {
     });
     return { source,
              sources: mockSourceOptions(),
-             day_hosts: mockDayHosts(days, MOCK_DAY_AVAIL[source] || []),
+             day_hosts: mockDayHosts(source, days, mockAvail(source)),
+             ...mockSourceInfo(source),
              days, today: MOCK_TODAY,
              rows: shown.map((r) => r.key), row_labels: rowLabels,
              row_supported: rowSupported, all_rows: MOCK_PVE_ROWS, hidden, cells,
-             available_days: [MOCK_TODAY, ...(MOCK_DAY_AVAIL[source] || [])],
+             available_days: [MOCK_TODAY, ...(mockAvail(source))],
              available_day_reports: mockDayReports(MOCK_PVE_DAY_REPORTS, source, true) };
   }
   // The ArcGIS reports + "Reports vs ArcGIS" mock (2026-09-02; v0.47.0). Parity
@@ -981,7 +1016,7 @@ function makeMockApi() {
     } else step();
   }
   function mockAgMatrixSnapshot() {
-    const source = st.arcgis_matrix_source || "ssor-prod";
+    const source = st.arcgis_matrix_source || "ssor-prod dev-site";
     const days = st.arcgis_matrix_days || [];
     const hidden = st.arcgis_matrix_hidden || [];
     const _visible = MOCK_AG_ROWS.filter((r) => hidden.indexOf(r.key) < 0);
@@ -1013,14 +1048,15 @@ function makeMockApi() {
     });
     return { source,
              sources: mockSourceOptions(),
-             day_hosts: mockDayHosts(days, MOCK_DAY_AVAIL[source] || []),
+             day_hosts: mockDayHosts(source, days, mockAvail(source)),
+             ...mockSourceInfo(source),
              days, today: MOCK_TODAY,
              rows: shown.map((r) => r.key), row_labels: rowLabels,
              row_supported: rowSupported, row_family: rowFamily, all_rows: MOCK_AG_ROWS, hidden, cells,
              library: { root: "C:\\Tools\\TSMIS Exporter\\data\\arcgis_layers", drop: MOCK_AG_DROP,
                         expected: 40, staged: 40, missing: [], unknown: ["99_Scratch Export.xlsx"],
                         index_present: true, builds: mockAgBuilds },
-             available_days: MOCK_DAY_AVAIL[source] || [],
+             available_days: mockAvail(source),
              available_day_reports: mockDayReports(MOCK_AG_DAY_REPORTS, source, false) };
   }
   // v0.16.0 mock job queue — mirrors gui_api: enqueue, run one at a time, auto-
@@ -1921,7 +1957,7 @@ function makeMockApi() {
       pushState(); return { ok: true, source: s };
     },
     add_day_matrix_day: async (d) => {
-      const avail = MOCK_DAY_AVAIL[st.day_matrix_source] || [];
+      const avail = [MOCK_TODAY, ...mockAvail(st.day_matrix_source)];   // today: always addable
       if (avail.indexOf(d) < 0) return { error: "That day has no Highway Log export for this source." };
       if ((st.day_matrix_days || []).indexOf(d) < 0) st.day_matrix_days = [...(st.day_matrix_days || []), d];
       pushState(); return { ok: true, days: st.day_matrix_days };
@@ -1989,7 +2025,7 @@ function makeMockApi() {
     },
     set_baseline_matrix_baseline: async (b) => {
       b = b || "";
-      if (b && !mockBaselineOptions(st.baseline_matrix_source || "ssor-prod")
+      if (b && !mockBaselineOptions(st.baseline_matrix_source || "ssor-prod dev-site")
             .some((o) => o.id === b))
         return { error: "That baseline has no exports for this source." };
       st.baseline_matrix_baseline = b;
@@ -1997,7 +2033,7 @@ function makeMockApi() {
       pushState(); return { ok: true, baseline: b };
     },
     add_baseline_matrix_day: async (d) => {
-      const avail = MOCK_DAY_AVAIL[st.baseline_matrix_source] || [];
+      const avail = mockAvail(st.baseline_matrix_source);
       if (avail.indexOf(d) < 0) return { error: "That day has no export for this source." };
       if ((st.baseline_matrix_days || []).indexOf(d) < 0)
         st.baseline_matrix_days = [...(st.baseline_matrix_days || []), d];
@@ -2065,7 +2101,7 @@ function makeMockApi() {
       pushState(); return { ok: true, source: s };
     },
     add_pve_matrix_day: async (d) => {
-      const avail = MOCK_DAY_AVAIL[st.pve_matrix_source || "ssor-prod"] || [];
+      const avail = mockAvail(st.pve_matrix_source);
       if (avail.indexOf(d) < 0) return { error: "That day has no export for this source." };
       if ((st.pve_matrix_days || []).indexOf(d) < 0)
         st.pve_matrix_days = [...(st.pve_matrix_days || []), d];
@@ -2344,7 +2380,7 @@ function makeMockApi() {
       pushState(); return { ok: true, source: s };
     },
     add_arcgis_matrix_day: async (d) => {
-      const avail = MOCK_DAY_AVAIL[st.arcgis_matrix_source || "ssor-prod"] || [];
+      const avail = mockAvail(st.arcgis_matrix_source);
       if (avail.indexOf(d) < 0) return { error: "That day has no export for this source." };
       if ((st.arcgis_matrix_days || []).indexOf(d) < 0)
         st.arcgis_matrix_days = [...(st.arcgis_matrix_days || []), d];

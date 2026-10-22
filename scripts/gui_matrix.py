@@ -582,7 +582,9 @@ class GuiMatrixMixin:
         would widen this to per-district steps; the dated/site machinery already
         fits, only the route/district scope would change.)"""
         snap = self._day_matrix_snapshot()
-        combo = self._parse_env_keys([snap["source"]])
+        if not snap.get("exportable"):
+            return []
+        combo = self._parse_env_keys([matrix.day_source_env(snap["source"])])
         if not combo:
             return []
         src, env = combo[0]
@@ -1364,6 +1366,15 @@ class GuiMatrixMixin:
             dest=settings.get_batch_dest(),
             row_order=settings.get_day_matrix_row_order())
 
+    @staticmethod
+    def _day_export_site_error(source):
+        """Why today's column cannot export while the matrix shows the other site."""
+        here = matrix.day_source_label(
+            matrix.normalize_day_source(matrix.day_source_env(source)))
+        return (f"This matrix shows {matrix.day_source_label(source)}, but exports come "
+                f"from {here}, the site Settings points at. To export today, pick "
+                f"{here} as the source, or switch the site in Settings.")
+
     def _day_job_label(self, scope, row=None, date=None):
         rl = self._matrix_row_label(row) if row else None
         if scope == "cell":
@@ -1392,6 +1403,7 @@ class GuiMatrixMixin:
     @_api_method
     def set_day_matrix_source(self, source):
         """Set the by-day matrix data source (the day columns are dates within it)."""
+        source = matrix.day_source_input(source)
         if source not in day_matrix.sources():
             return {"error": "Unknown data source."}
         settings.set_day_matrix_source(source)
@@ -1403,7 +1415,7 @@ class GuiMatrixMixin:
         kept = [d for d in settings.get_day_matrix_days() if d in avail]
         if kept != settings.get_day_matrix_days():
             settings.set_day_matrix_days(kept)
-        self._emit_log(f"By-day matrix source set to {matrix.default_env_label(source)}.")
+        self._emit_log(f"By-day matrix source set to {matrix.day_source_label(source)}.")
         self._push_state()
         return {"ok": True, "source": source, "days": kept}
 
@@ -1498,6 +1510,8 @@ class GuiMatrixMixin:
         column 'fills itself'. Only today is exportable (past columns are the
         immutable record you pulled). Needs a saved login; the export signs in."""
         snap = self._day_matrix_snapshot()
+        if not snap.get("exportable"):
+            return {"error": self._day_export_site_error(snap["source"])}
         today = snap["today"]
         self._ensure_day_column(today)
         job = self._make_job("export", "column", f"Export all reports — {today}",
@@ -1514,6 +1528,8 @@ class GuiMatrixMixin:
             return {"error": "Unknown report for the matrix."}
         if not snap.get("row_supported", {}).get(row_key):
             return {"error": "That report has no TSN comparison yet."}
+        if not snap.get("exportable"):
+            return {"error": self._day_export_site_error(snap["source"])}
         today = snap["today"]
         self._ensure_day_column(today)
         job = self._make_job("export", "row",
@@ -1532,6 +1548,8 @@ class GuiMatrixMixin:
             return {"error": "Unknown report for the matrix."}
         if not snap.get("row_supported", {}).get(row_key):
             return {"error": "That report has no TSN comparison yet."}
+        if not snap.get("exportable"):
+            return {"error": self._day_export_site_error(snap["source"])}
         if date != snap["today"]:
             return {"error": "Only today's column can be exported — earlier days "
                              "are kept as the record you pulled. Use the rebuild "
@@ -1698,6 +1716,7 @@ class GuiMatrixMixin:
     @_api_method
     def set_pve_matrix_source(self, source):
         """Set the PDF-vs-Excel matrix data source (day columns are dates within it)."""
+        source = matrix.day_source_input(source)
         if source not in pdf_excel_matrix.sources():
             return {"error": "Unknown data source."}
         settings.set_pve_matrix_source(source)
@@ -1706,7 +1725,7 @@ class GuiMatrixMixin:
         if kept != settings.get_pve_matrix_days():
             settings.set_pve_matrix_days(kept)
         self._emit_log("PDF-vs-Excel matrix source set to "
-                       f"{matrix.default_env_label(source)}.")
+                       f"{matrix.day_source_label(source)}.")
         self._push_state()
         return {"ok": True, "source": source, "days": kept}
 
@@ -1891,6 +1910,7 @@ class GuiMatrixMixin:
     @_api_method
     def set_baseline_matrix_source(self, source):
         """Set the vs-Baseline matrix data source (both sides live within it)."""
+        source = matrix.day_source_input(source)
         if source not in baseline_matrix.sources():
             return {"error": "Unknown data source."}
         settings.set_baseline_matrix_source(source)
@@ -1907,7 +1927,7 @@ class GuiMatrixMixin:
         if settings.get_baseline_matrix_baseline() not in valid_ids:
             settings.set_baseline_matrix_baseline("")
         self._emit_log("vs-Baseline matrix source set to "
-                       f"{matrix.default_env_label(source)}.")
+                       f"{matrix.day_source_label(source)}.")
         self._push_state()
         return {"ok": True, "source": source}
 

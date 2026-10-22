@@ -245,17 +245,24 @@ pre-0.7 exports stay consolidatable. Resume/idempotency, the integrity gate, and
 live browser status are runtime behavior — see
 [engine-and-reliability.md](engine-and-reliability.md).
 
-**Which site the matrices read (v0.49.0).** The by-day matrices (vs TSN, vs
-Baseline, PDF vs Excel, Reports vs ArcGIS) keep their `(source, date)` columns and
-read, for each, the folder `day_source_dir` picks for the site the source points at
-**now** — the same site the matrix's own today-column export writes to — plus the
-folders from before the site was recorded, which could be from either site. A
-dev-site day and a main-site day therefore never share a comparison file or a cache
-record (their names follow the folder: `ramp_detail_vs_tsn 2026-10-07 ssor-prod
-dev-site.xlsx`), each source in the pickers is labelled with its site
-(`SSOR / Prod · dev site`), and every day column says which site its export
-records (or "site not recorded"). Another site's days appear after switching the
-site in Settings; a dev-vs-main comparison of one report is the Compare tab's
+**Which site the matrices read (v0.49.0; picked in the matrix since v0.49.1).** The
+by-day matrices (vs TSN, vs Baseline, PDF vs Excel, Reports vs ArcGIS) keep their
+`(source, date)` columns, and the SOURCE names the site as well:
+`ssor-prod dev-site` (`paths.split_day_source` / `qualify_day_source`). Every
+data source and environment is offered on the main site and on the dev site
+(`matrix.day_source_keys`, labelled `SSOR / Prod · dev site`), whichever site the
+app points at — v0.49.0 offered only the site Settings pointed at, which hid the
+dev-site exports as soon as the app was switched back to the main site. Each
+column reads the folder `day_source_dir` picks for that site, plus the folders from
+before the site was recorded, which could be from either site. A dev-site day and a
+main-site day therefore never share a comparison file or a cache record (their
+names follow the folder: `ramp_detail_vs_tsn 2026-10-07 ssor-prod dev-site.xlsx`),
+and every day column says which site its export records (or "site not
+recorded"). A saved bare `ssor-prod` (v0.49.0 and older) reads as the site that
+pair points at now. **Today's column exports only from the site the app points
+at** (the export opens that address): a matrix showing the other site's exports
+compares them but offers no export (`day_source_exportable`; the bridge refuses
+with the reason). A dev-vs-main comparison of one report is the Compare tab's
 folders mode, whose side labels then read `SSOR-PROD DEV` / `SSOR-PROD MAIN`.
 
 Artifact directories expose deliverables at their top level and group durable
