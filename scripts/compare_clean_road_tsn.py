@@ -56,7 +56,7 @@ TSN is FROZEN at the September-2025 cutover (roadmap D5): every difference is
 TSMIS-vs-the-2025-snapshot drift, never by itself a defect. Console-free.
 """
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from pathlib import Path
 
@@ -70,6 +70,7 @@ import clean_highway_columns as chc
 import clean_road_columns as crc
 import compare_clean_highway_tsn as cht
 import compare_tsn_common as ctc
+import comparison_contract as cc
 from compare_core import CompareSchema
 from compare_intersection_detail_tsn import _norm_control_type
 from paths import today_str
@@ -285,6 +286,38 @@ def route_identity(name, suffix):
     return base + sfx
 
 
+UNPLACED = "no postmile"
+
+
+def _unplaced_key(spec, g, route, county, prefix, roadbed, source_hint):
+    """The key of a row whose postmile cell is blank. With no postmile the row
+    cannot be placed against the other side, so it keys on what it does carry —
+    its odometer, where the file has one — under a label no real postmile can
+    take, and pairs only with a row the same file shape leaves unplaced the same
+    way (the site's other render, or another day's export)."""
+    if not county:
+        raise ValueError(
+            f"{spec.label} row (route {route}) has neither a postmile nor a "
+            f"county in {source_hint} — cannot key it to a location")
+    odometer = cht._norm_amount(g.get(spec.odometer_col)) if spec.odometer_col else ""
+    component = f"{UNPLACED} @ odometer {odometer}" if odometer else UNPLACED
+    identity = cc.make_physical_identity(
+        route, county, component,
+        (cc.RawIdentityClaim("route", route),
+         cc.RawIdentityClaim("county", county),
+         cc.RawIdentityClaim("postmile_prefix", prefix),
+         cc.RawIdentityClaim("postmile", ""),
+         cc.RawIdentityClaim("roadbed", roadbed),
+         cc.RawIdentityClaim("odometer", odometer)),
+        f"{route} / {county} / {component}")
+    return cc.physical_key(component, identity)
+
+
+def is_unplaced(key):
+    """Was this row keyed without a postmile (see `_unplaced_key`)?"""
+    return str(key).startswith(UNPLACED)
+
+
 def _key(profile, vals, source_hint, route=None):
     """(route, the physical key) for one row. `route` overrides the row's own
     route cells (the cross-environment path keys on the file's route token,
@@ -296,9 +329,13 @@ def _key(profile, vals, source_hint, route=None):
     roadbed = _s(g.get(spec.pm_suffix_col)).upper()
     if roadbed not in ("R", "L", "X"):
         roadbed = ""                     # the site's equation marker 'E' is no roadbed
+    county = _county(g.get(spec.county_col))
+    prefix = _s(g.get(spec.pm_prefix_col)).upper()
+    if not _s(g.get(spec.pm_col)):
+        return route, _unplaced_key(spec, g, route, county, prefix, roadbed,
+                                    source_hint)
     return route, cht._physical_span_key(
-        route, _county(g.get(spec.county_col)), _s(g.get(spec.pm_prefix_col)).upper(),
-        g.get(spec.pm_col), roadbed, source_hint)
+        route, county, prefix, g.get(spec.pm_col), roadbed, source_hint)
 
 
 def _row(profile, vals, side, source_hint, *, same_source=False, collapse=False):
@@ -457,6 +494,41 @@ def _schema(profile, side_a, side_b, *, notes_title, notes, context, representat
     )
 
 
+def _unplaced_routes(rows):
+    """(count, sorted routes) of the loaded rows keyed without a postmile."""
+    routes = set()
+    count = 0
+    for r in rows:
+        if any(is_unplaced(v) for v in r[1:] if isinstance(v, cc.PhysicalKey)):
+            count += 1
+            routes.add(r[0])
+    return count, sorted(routes)
+
+
+def unplaced_note_lines(spec, rows_a, rows_b, label_a, label_b):
+    """The Notes lines for rows a side's file lists with a BLANK postmile, or
+    () when every row has one (so a normal comparison's Notes are unchanged)."""
+    lines = []
+    for label, rows in ((label_a, rows_a), (label_b, rows_b)):
+        count, routes = _unplaced_routes(rows)
+        if not count:
+            continue
+        shown = ", ".join(routes[:12]) + (f" and {len(routes) - 12} more"
+                                          if len(routes) > 12 else "")
+        many = count != 1
+        lines.append(
+            f"{count:,} {spec.noun_plural if many else spec.noun} in the "
+            f"{label} file {'have' if many else 'has'} NO postmile (the postmile "
+            f"cells are blank) — route{'s' if len(routes) != 1 else ''} {shown}. "
+            "The blank is in that file itself, not something this comparison "
+            "did. Without a postmile a row cannot be placed against the other "
+            f"side, so each one is keyed '{UNPLACED} @ odometer …' on its own "
+            "odometer and pairs only with a row the other side leaves unplaced "
+            "at the same odometer; otherwise it lists as one-sided, and whatever "
+            "the other side has over that stretch lists as one-sided too.")
+    return tuple(lines)
+
+
 _SELF_NOTES = (
     "Both sides are the SITE's own renders of the same run: the print (read "
     "back from its PDF) and the Excel export. Every value compares verbatim; "
@@ -497,10 +569,12 @@ class _CleanRoadCompare:
         self._tag = f"{tag}_{spec.label.replace(' ', '')}"
         self._collapse = collapse
         if flavor == "pdf_excel":
+            self._notes_title = f"{spec.label} — TSMIS PDF vs Excel: comparison notes"
+            self._notes = _SELF_NOTES
             self._schema = _schema(
                 profile, self.file_a_label, self.file_b_label,
-                notes_title=f"{spec.label} — TSMIS PDF vs Excel: comparison notes",
-                notes=_SELF_NOTES, context=(), representation=())
+                notes_title=self._notes_title, notes=self._notes, context=(),
+                representation=())
         else:
             lines = profile.notes + ((
                 "This side was read back from the site's PRINT, whose HTML "
@@ -511,11 +585,12 @@ class _CleanRoadCompare:
                 "('_x000d_' is a carriage return); they are read decoded, the way "
                 "installed Excel shows the cell, and the character itself still "
                 "compares.",))
+            self._notes_title = f"{self.REPORT_NAME}: comparison notes"
+            self._notes = lines
             self._schema = _schema(
                 profile, self.file_a_label, self.file_b_label,
-                notes_title=f"{self.REPORT_NAME}: comparison notes",
-                notes=lines, context=profile.context,
-                representation=profile.text)
+                notes_title=self._notes_title, notes=lines,
+                context=profile.context, representation=profile.text)
 
     def suggest_name(self, path_a=None):
         return f"{self._tag}_Comparison {today_str()}.xlsx"
@@ -533,11 +608,27 @@ class _CleanRoadCompare:
 
     def compare(self, path_a, path_b, out_path, events=None, confirm_overwrite=None,
                 mode="formulas", commit_guard=None):
+        # Per call, never on the shared instance: the matrix runs cells in
+        # parallel, and each one's Notes must describe its own two files.
+        found = {}
+
+        def loader(a, b):
+            rows_a, rows_b, extra = self._load_pair(a, b)
+            found["lines"] = unplaced_note_lines(
+                self._profile.spec, rows_a, rows_b,
+                self.file_a_label, self.file_b_label)
+            return rows_a, rows_b, extra
+
+        def notes(wb):
+            return ctc.make_notes_writer(
+                self._notes_title,
+                tuple(self._notes) + tuple(found.get("lines", ())))(wb)
+
         return ctc.run_files_compare(
-            self._schema, path_a, path_b, out_path,
+            replace(self._schema, legend_writer=notes), path_a, path_b, out_path,
             banner=(f"{self._profile.spec.label} Comparison — {self.file_a_label} "
                     f"vs {self.file_b_label}"),
-            has_route=True, loader=self._load_pair, deps_ok=_DEPS_OK,
+            has_route=True, loader=loader, deps_ok=_DEPS_OK,
             deps_msg="Required components are missing (openpyxl).",
             side_a=self.file_a_label, side_b=self.file_b_label,
             events=events, confirm_overwrite=confirm_overwrite, mode=mode,

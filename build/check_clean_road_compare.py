@@ -290,6 +290,76 @@ def test_highway(tmp):
             and crt.route_identity("058U", "") == "058U" and crt.route_identity("001", None) == "001")
 
 
+def _notes_text(path):
+    wb = load_workbook(path, read_only=True)
+    try:
+        return " ".join(str(v) for r in wb["Notes"].iter_rows(values_only=True)
+                        for v in r if v is not None)
+    finally:
+        wb.close()
+
+
+def test_highway_blank_postmile(tmp):
+    print("Highway rows with NO postmile (the 2026-10-22 dev-site export, routes 001/003):")
+    spec = crc.HIGHWAY
+    run = tmp / "2026-10-22 ssor-prod dev-site" / spec.key
+    run.mkdir(parents=True)
+    rows = [_thy("11.111", "11.115", THY_BEGIN_OFFSET_AMT="7.195", THY_END_OFFSET_AMT="7.199"),
+            _thy("11.115", "11.349", THY_BEGIN_OFFSET_AMT="7.199",
+                 THY_END_OFFSET_AMT="7.433", THY_BEGIN_PM_AMT="", THY_END_PM_AMT=""),
+            _thy("11.349", "11.357", THY_BEGIN_OFFSET_AMT="7.433", THY_END_OFFSET_AMT="7.441")]
+    _site_file(run / "2026-10-22 ssor-prod dev-site clean_highway_route_005S.xlsx", spec, rows)
+    xl = _consolidate(con_hwy, run, tmp / "blank_xl.xlsx")
+    raw = tmp / "CA HIGHWAYS blank.xlsx"
+    _tsn_file(raw, spec, [_tsn_thy("11.111", "11.115"), _tsn_thy("11.115", "11.349"),
+                          _tsn_thy("11.349", "11.357")])
+    out = tmp / "blank_vs_tsn.xlsx"
+    res = crt.HIGHWAY_VS_TSN.compare(str(xl), str(raw), str(out), events=_Quiet(),
+                                     confirm_overwrite=lambda p: True, mode="values")
+    got = _counts(res)
+    c.check("a site row with a blank postmile no longer stops the comparison "
+            "('canonical postmile value must be a non-empty string')",
+            res.status == "ok", res.message)
+    c.check("...the placed rows pair, the unplaced one and TSN's row over that stretch "
+            "list one-sided",
+            got == {"paired_rows": 2, "side_a_only_rows": 1, "side_b_only_rows": 1,
+                    "differing_cells": got.get("differing_cells")}, got)
+    rows_a = crt.load_site(xl, crt.profile_for("clean_highway"), pdf=False)
+    key = rows_a[1][1 + list(spec.header).index("THY_BEGIN_PM_AMT")]
+    c.check("the unplaced row keys on its odometer under a label no postmile can take",
+            crt.is_unplaced(key) and str(key) == "no postmile @ odometer 7.199"
+            and key.physical_identity.display == "005S / SD / no postmile @ odometer 7.199",
+            (str(key), getattr(key, "physical_identity", None)))
+    notes = _notes_text(out)
+    c.check("the Notes sheet says how many rows have no postmile and on which route",
+            "1 segment in the TSMIS file has NO postmile" in notes and "route 005S" in notes,
+            notes[:300])
+    clean = tmp / "clean_vs_tsn.xlsx"
+    crt.HIGHWAY_VS_TSN.compare(str(tmp / "hwy_xl.xlsx"), str(tmp / "CA HIGHWAYS.xlsx"),
+                               str(clean), events=_Quiet(),
+                               confirm_overwrite=lambda p: True, mode="values")
+    c.check("...and a file whose rows all have a postmile gets no such note",
+            "NO postmile" not in _notes_text(clean))
+    pdf = tmp / "blank_pdf.xlsx"
+    _mark_pdf(xl, pdf)
+    pve = _counts(crt.HIGHWAY_PDF_VS_EXCEL.compare(
+        str(pdf), str(xl), str(tmp / "blank_pve.xlsx"), events=_Quiet(),
+        confirm_overwrite=lambda p: True, mode="preview"))
+    c.check("PDF vs Excel: the same unplaced row on both renders pairs on its odometer",
+            pve == {"paired_rows": 3, "side_a_only_rows": 0, "side_b_only_rows": 0,
+                    "differing_cells": 0}, pve)
+    day_b = tmp / "2026-10-21 ssor-prod dev-site" / spec.key
+    day_b.mkdir(parents=True)
+    shutil.copy(next(run.glob("*.xlsx")),
+                day_b / "2026-10-21 ssor-prod dev-site clean_highway_route_005S.xlsx")
+    env = _counts(cee.CLEAN_HIGHWAY.compare_folders(
+        str(run.parent), str(day_b.parent), str(tmp / "blank_env.xlsx"),
+        events=_Quiet(), confirm_overwrite=lambda p: True, mode="preview"))
+    c.check("between two days (vs Baseline) the unplaced row pairs too",
+            env == {"paired_rows": 3, "side_a_only_rows": 0, "side_b_only_rows": 0,
+                    "differing_cells": 0}, env)
+
+
 def test_intersection(tmp):
     print("Intersection: design-code prefix, signal fold, YY-MM-DD dates:")
     spec = crc.INTERSECTION
@@ -325,6 +395,7 @@ def main():
         run_b = test_ramp(tmp)
         test_ramp_env(tmp, run_b)
         test_highway(tmp)
+        test_highway_blank_postmile(tmp)
         test_intersection(tmp)
     c.check("the comparison profiles hold each report's unsourced columns as context",
             set(crc.HIGHWAY.unsourced) <= set(crt.profile_for("clean_highway").context)
