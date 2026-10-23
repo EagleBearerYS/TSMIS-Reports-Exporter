@@ -972,12 +972,87 @@ def test_skipped_span_source_truth():
               _illegible_marker_cells(clean_out) == [])
 
 
+def test_prefix_change_split():
+    """A span that changes postmile PREFIX inside one county (001 LA: Highway
+    Group 'R39.741' -> '40.769') continues in the second prefix space where
+    that space resumes, not from 0 — the county-line rule painted Divided over
+    0-40.769 of LA, where the layer says Undivided from 18.29 (v0.50.0)."""
+    print("a same-county prefix change is split where the prefix space resumes:")
+    from collections import defaultdict
+
+    u = crl.pm_units
+
+    def sp(b, e, value, od=None, od_len=None):
+        return cch._Span(u(b), u(e), (value,), (1.0, 1.0), 1.0, od, od_len)
+
+    buckets = defaultdict(lambda: defaultdict(list))
+    buckets[("001", "R", "LA", "")]["HG"] += [sp(16.005, 18.29, "D"),
+                                              sp(18.29, 20.607, "U")]
+    buckets[("001", "R", "LA", "")]["MED"] += [sp(0.0, 39.741, "H"),
+                                               sp(40.7, 45.0, "H")]
+    buckets[("001", "R", "LA", "R")]["MED"] += [sp(39.741, 40.7, "H")]
+    parked = [("HG", "001", "R", "LA", "R", "LA", "",
+               cch._Span(u(39.741), u(40.769), ("D",), (2.0, 2.0), 2.0, 39.741,
+                         1.028))]
+    cch._split_parked(parked, buckets, [])
+    plain = [(crl.pm_float(s.b), crl.pm_float(s.e), s.vals[0])
+             for s in buckets[("001", "R", "LA", "")]["HG"]]
+    realigned = [(crl.pm_float(s.b), crl.pm_float(s.e), s.vals[0])
+                 for s in buckets[("001", "R", "LA", "R")]["HG"]]
+    check("the realigned part stays in its own stretch of the R space",
+          realigned == [(39.741, 40.7, "D")])
+    check("the continuation starts where the plain space resumes (40.7), never at 0",
+          (40.7, 40.769, "D") in plain and min(b for b, _e, v in plain if v == "D") >= 16.005
+          and not any(b < 40 and e > 40 for b, e, _v in plain))
+    check("the Undivided stretch keeps its only span",
+          [v for b, e, v in plain if b <= 19.0 < e] == ["U"])
+
+    def spans_of(bk, key, tag):
+        return [(crl.pm_float(s.b), crl.pm_float(s.e), s.vals[0]) for s in bk[key][tag]]
+
+    # 128 SON: the L stretch L4.045-L5.883 sits between plain 0-4.86 and plain
+    # 4.87-24.761 (odometers 50.902 / 55.762 / 57.6), and NAP follows at 77.49.
+    def son_buckets():
+        bk = defaultdict(lambda: defaultdict(list))
+        bk[("128", "R", "SON", "")]["MED"] += [sp(0.0, 4.86, "M", 50.902, 4.86),
+                                               sp(4.87, 24.761, "M", 57.6, 19.891)]
+        bk[("128", "R", "SON", "L")]["MED"] += [sp(4.045, 5.883, "M", 55.762, 1.838)]
+        bk[("128", "R", "SON", "L")]["HG"] += [sp(4.648, 4.859, "U", 56.365, 0.211)]
+        bk[("128", "R", "NAP", "")]["HG"] += [sp(4.55, 10.0, "U", 82.041, 5.45)]
+        bk[("128", "R", "NAP", "")]["MED"] += [sp(0.0, 10.0, "M", 77.49, 10.0)]
+        return bk
+
+    buckets = son_buckets()
+    cch._split_parked([("TVS", "128", "R", "SON", "L", "SON", "",
+                        cch._Span(u(5.883), u(5.74), ("A",), (2.0, 2.0), 2.0, 57.6,
+                                  0.87))], buckets, [])
+    check("a span that starts exactly where its first space ends lands wholly in the second",
+          spans_of(buckets, ("128", "R", "SON", ""), "TVS") == [(4.87, 5.74, "A")]
+          and spans_of(buckets, ("128", "R", "SON", "L"), "TVS") == [])
+
+    buckets = son_buckets()
+    warnings = []
+    cch._split_parked([("HG", "128", "R", "SON", "L", "NAP", "",
+                        cch._Span(u(4.971), u(4.55), ("U",), (2.0, 2.0), 2.0, 56.688,
+                                  25.353))], buckets, warnings)
+    check("a county line that also changes prefix covers the first county's other "
+          "space between them (SON 4.87-24.761)",
+          spans_of(buckets, ("128", "R", "SON", ""), "HG") == [(4.87, 24.761, "U")])
+    check("... but never that space's stretch before the span (SON 0-4.86)",
+          not any(b < 4.86 for b, _e, _v in spans_of(buckets, ("128", "R", "SON", ""), "HG")))
+    check("... and still places the two ends",
+          (4.971, 5.883, "U") in spans_of(buckets, ("128", "R", "SON", "L"), "HG")
+          and (0.0, 4.55, "U") in spans_of(buckets, ("128", "R", "NAP", ""), "HG")
+          and warnings == [])
+
+
 def main():
     test_dialects_and_algebra()
     test_stream_and_index()
     test_consolidator_end_to_end()
     test_normalizer_and_comparator()
     test_skipped_span_source_truth()
+    test_prefix_change_split()
     print()
     if _fail:
         print(f"FAILED: {len(_fail)} check(s): {_fail}")

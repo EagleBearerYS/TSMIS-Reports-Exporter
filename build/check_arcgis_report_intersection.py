@@ -346,8 +346,15 @@ def main():
               bool(exports) and all(hasattr(m, "SUBDIR")
                                     and hasattr(m, "out_path_for")
                                     for m in exports))
+        # The comparison shows-but-never-counts what the BUILD has no source
+        # for, plus — for the Clean Road files — what the SITE's export leaves
+        # blank by design (EXPORT_CONTEXT_FIELDS); nothing else.
+        build_context = [c for c in build_mod.CONTEXT_COLUMNS
+                         if c in cmp_mod.SHARED_HEADER]
+        export_context = list(getattr(cmp_mod, "EXPORT_CONTEXT_FIELDS", ()))
         check(f"{key}: the build and comparator agree on context columns",
-              tuple(build_mod.CONTEXT_COLUMNS) == tuple(cmp_mod.CONTEXT_FIELDS))
+              set(cmp_mod.CONTEXT_FIELDS) == set(build_context) | set(export_context)
+              and len(set(cmp_mod.CONTEXT_FIELDS)) == len(cmp_mod.CONTEXT_FIELDS))
         check(f"{key}: comparable in the registry's own terms",
               arcgis_reports.can_compare(key))
 

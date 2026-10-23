@@ -31,9 +31,9 @@ comparator per report serves both.
 
 The three Clean Road files are rows too (owner decision 2026-09-02): the site
 now exports them, so "our layer build vs the site's export" is TSMIS vs TSMIS
-exactly like the report rows. Clean Road Highway already has its build (the
-CA HIGHWAYS workbook), and the site's export of every Clean Road file
-consolidates since v0.48.0; the comparator between the two is not written yet.
+exactly like the report rows. Clean Road Highway's build is the CA HIGHWAYS
+workbook; Intersection and Ramp are point projections in the site export's own
+shape (`arcgis_clean_road_build`); all three compare since v0.50.0.
 """
 from collections import OrderedDict, namedtuple
 from functools import lru_cache
@@ -59,9 +59,11 @@ _REPORTS = OrderedDict((
     ("highway_detail", ("arcgis_report_highway_detail",
                         "compare_highway_detail_arcgis")),
     ("highway_summary", (None, None)),
-    ("clean_highway", ("consolidate_clean_highway", None)),
-    ("clean_intersection", (None, None)),
-    ("clean_ramp", (None, None)),
+    ("clean_highway", ("consolidate_clean_highway",
+                       "compare_clean_highway_arcgis")),
+    ("clean_intersection", ("arcgis_report_clean_intersection",
+                            "compare_clean_intersection_arcgis")),
+    ("clean_ramp", ("arcgis_report_clean_ramp", "compare_clean_ramp_arcgis")),
 ))
 
 KEYS = tuple(_REPORTS)

@@ -762,9 +762,9 @@ function makeMockApi() {
              available_day_reports: mockDayReports(MOCK_PVE_DAY_REPORTS, source, true) };
   }
   // The ArcGIS reports + "Reports vs ArcGIS" mock (2026-09-02; v0.47.0). Parity
-  // with arcgis_reports: 11 REPORTS (the ArcGIS reports tab — two build +
-  // compare, Clean Road Highway builds but has no comparison yet, the rest have
-  // no build yet) and their 22 export EDITIONS (the matrix rows — Excel and PDF
+  // with arcgis_reports: 11 REPORTS (the ArcGIS reports tab — five build +
+  // compare: Intersection Detail, Highway Detail and the three Clean Road files;
+  // the rest have no build yet) and their 22 export EDITIONS (the matrix rows — Excel and PDF
   // each compare against their report's ONE ArcGIS build).
   const MOCK_AG_DROP = { fingerprint: "xlsx1:40:9c1e4b7a2f0d", exported: "2026-10-05",
                          exported_at: "2026-10-05T17:39:59", newest_at: "2026-10-05T19:03:05",
@@ -790,11 +790,11 @@ function makeMockApi() {
      [["highway_detail", "Highway Detail", "HD", true], ["highway_detail_pdf", "Highway Detail (PDF)", "HD-PDF", true]]],
     ["highway_summary", "Highway Summary", "HS", false, false,
      [["highway_summary", "Highway Summary", "HS", true], ["highway_summary_pdf", "Highway Summary (PDF)", "HS-PDF", true]]],
-    ["clean_highway", "Clean Road: Highway", "CR-HWY", true, false,
+    ["clean_highway", "Clean Road: Highway", "CR-HWY", true, true,
      [["clean_highway", "Clean Road: Highway", "CR-HWY", true], ["clean_highway_pdf", "Clean Road: Highway (PDF)", "CR-HWY-PDF", true]]],
-    ["clean_intersection", "Clean Road: Intersection", "CR-INT", false, false,
+    ["clean_intersection", "Clean Road: Intersection", "CR-INT", true, true,
      [["clean_intersection", "Clean Road: Intersection", "CR-INT", true], ["clean_intersection_pdf", "Clean Road: Intersection (PDF)", "CR-INT-PDF", true]]],
-    ["clean_ramp", "Clean Road: Ramp", "CR-RMP", false, false,
+    ["clean_ramp", "Clean Road: Ramp", "CR-RMP", true, true,
      [["clean_ramp", "Clean Road: Ramp", "CR-RMP", true], ["clean_ramp_pdf", "Clean Road: Ramp (PDF)", "CR-RMP-PDF", true]]],
   ];
   const MOCK_AG_ROWS = [];

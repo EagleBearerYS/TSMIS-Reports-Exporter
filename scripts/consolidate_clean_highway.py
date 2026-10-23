@@ -76,9 +76,17 @@ SKIP_REASON = ("as-of spans whose begin or end postmile is unreadable cannot "
                "be placed by the county+postmile rule; their known-endpoint "
                "anchors are marked instead of guessed")
 
+# How closely the two halves of a same-county prefix change must add up to
+# the span's own odometer length for the split to be taken (PM units, 0.005 mi).
+_PREFIX_FIT = 500
+
 # The 74-column THY header (clean_highway_columns is the shared contract).
 THY_HEADER = list(chc.ARC_HEADER)   # the TSN 74 + our build-only columns
 _COL = {name: i for i, name in enumerate(THY_HEADER)}
+# The ArcGIS reports lane's surface (`arcgis_reports`): the built sheet's header
+# and the columns a comparison of this build shows but never counts.
+HEADER = THY_HEADER
+CONTEXT_COLUMNS = tuple(chc.CONTEXT_COLUMNS)
 
 # The identity/span columns every span layer contributes. District rides every
 # span (labels dialect), so THY_DISTRICT_CODE paints from the covering spans
@@ -381,8 +389,15 @@ def _split_parked(parked, buckets, warnings):
             wins.extend((s.od, s.od + s.od_len) for s in hg
                         if s.od is not None and s.od_len is not None)
     od_windows = {k: _merge_windows(v) for k, v in od_windows.items()}
+    spaces = _unparked_spaces(buckets)
+    prefixes = defaultdict(set)
+    for route, county, prefix in spaces:
+        prefixes[(route, county)].add(prefix)
 
     for tag, route, align, c1, p1, c2, p2, span in parked:
+        if c1 == c2 and _split_prefix_change(tag, route, align, c1, p1, p2,
+                                             span, buckets, spaces):
+            continue
         placed = False
         if span.e == 0 and span.od_len is not None:
             # The span ENDS exactly at the next space's origin — the second
@@ -431,12 +446,127 @@ def _split_parked(parked, buckets, warnings):
                     _Span(lo, hi, span.vals, span.rank, span.item,
                           wins[0][0], (hi - lo) / crl.PM_SCALE, span.district))
                 placed = True
+        if c1 != c2 and _cover_end_county_spaces(
+                tag, route, align, ((c1, p1), (c2, p2)), span, buckets,
+                spaces, prefixes, od_windows):
+            placed = True
         if not placed:
             warnings.append(
                 f"{SPAN_LAYERS[tag][0]}: a cross-county span "
                 f"({route} {c1}/{p1 or '-'} {crl.pm_text(span.b)} → {c2}/"
                 f"{p2 or '-'} {crl.pm_text(span.e)}) could not be split — "
                 "skipped.")
+
+
+def _unparked_spaces(buckets):
+    """A snapshot of the unparked spans of every layer, by (route, county,
+    prefix) space and alignment — taken before any parked span is placed, so
+    the split of one parked span never depends on where another landed."""
+    spaces = defaultdict(lambda: defaultdict(list))
+    for (route, align, county, prefix), tags in buckets.items():
+        for spans in tags.values():
+            spaces[(route, county, prefix)][align].extend(spans)
+    return spaces
+
+
+def _align_windows(spaces, key, align):
+    """The merged postmile windows one space covers on `align` (both
+    alignments when that one has no span there)."""
+    by_align = spaces.get(key) or {}
+    spans = by_align.get(align) or [s for v in by_align.values() for s in v]
+    return _merge_windows([(s.b, s.e) for s in spans])
+
+
+def _split_prefix_change(tag, route, align, county, p1, p2, span, buckets,
+                         spaces):
+    """Split a span that changes postmile PREFIX inside one county (a
+    realignment: 'R39.741' → '40.769' on 001 LA). Unlike a county line, the
+    second prefix space does not start at 0 there — it resumes where the
+    realignment rejoins it — so the county rule's [0 → end] would paint the
+    span over that whole space (it put Divided over 0–40.769 of 001 LA, where
+    the layer says Undivided from 18.29).
+
+    The split is taken only when it is unambiguous: the span begins inside a
+    window of its first space and ends inside a window of its second, and the
+    tail of the one plus the head of the other add up to the span's own
+    odometer length. Then the first part runs to where the first space ends
+    and the second starts where the second space resumes. Anything else —
+    no odometer, an odometer jump, a third space in between — returns False
+    and keeps the county rule."""
+    if span.od_len is None or span.od_len <= 0:
+        return False
+    w1 = next(((wb, we) for wb, we in _align_windows(spaces, (route, county, p1),
+                                                       align)
+               if wb <= span.b <= we), None)
+    w2 = next(((wb, we) for wb, we in _align_windows(spaces, (route, county, p2),
+                                                       align)
+               if wb <= span.e <= we), None)
+    if w1 is None or w2 is None:
+        return False
+    first, second = w1[1] - span.b, span.e - w2[0]
+    if abs(first + second - span.od_len * crl.PM_SCALE) > _PREFIX_FIT:
+        return False
+    if first > 0:
+        buckets[(route, align, county, p1)][tag].append(
+            _Span(span.b, w1[1], span.vals, span.rank, span.item, span.od,
+                  first / crl.PM_SCALE, span.district))
+    if second > 0:
+        buckets[(route, align, county, p2)][tag].append(
+            _Span(w2[0], span.e, span.vals, span.rank, span.item,
+                  (span.od + first / crl.PM_SCALE
+                   if span.od is not None else None),
+                  second / crl.PM_SCALE, span.district))
+    return first > 0 or second > 0
+
+
+def _window_od(spaces, key, align, window):
+    """The odometer range one postmile window of a space covers, read off the
+    unparked spans inside it on `align` (the median of what their odometers
+    say the window starts at), or None when none of them carries one."""
+    wb, we = window
+    by_align = spaces.get(key) or {}
+    starts = sorted(s.od - (s.b - wb) / crl.PM_SCALE
+                    for s in by_align.get(align) or ()
+                    if wb <= s.b and s.e <= we and s.od is not None
+                    and s.od_len is not None and s.od_len > 0)
+    if not starts:
+        return None
+    lo = starts[len(starts) // 2]
+    return lo, lo + (we - wb) / crl.PM_SCALE
+
+
+def _cover_end_county_spaces(tag, route, align, ends, span, buckets, spaces,
+                             prefixes, od_windows):
+    """A cross-county span can also change prefix inside its first or last
+    county (128: SON L4.971 → NAP 4.55 runs through SON's plain 4.87–24.761
+    between the two). The chain walk covers only the spaces whose HIGHWAY
+    GROUP odometers it knows, so such a stretch had no span at all. Here every
+    other space of the first and last county gets the span over each of its
+    windows whose odometer range lies mostly inside the span's — that window
+    only, never the space's whole extent."""
+    od_lo, od_hi = (span.od, span.od + span.od_len) if (
+        span.od is not None and span.od_len is not None) else (None, None)
+    if od_lo is None or od_hi <= od_lo:
+        return False
+    placed = False
+    for county, own in ends:
+        for prefix in sorted(prefixes.get((route, county), ())):
+            key = (route, county, prefix)
+            if (county, prefix) in ends or key in od_windows:
+                continue
+            for window in _align_windows(spaces, key, align):
+                rng = _window_od(spaces, key, align, window)
+                if rng is None or window[1] <= window[0]:
+                    continue
+                if _overlap_len((od_lo, od_hi), [rng]) < 0.5 * (rng[1] - rng[0]):
+                    continue
+                buckets[(route, align, county, prefix)][tag].append(
+                    _Span(window[0], window[1], span.vals, span.rank,
+                          span.item, rng[0],
+                          (window[1] - window[0]) / crl.PM_SCALE,
+                          span.district))
+                placed = True
+    return placed
 
 
 # --------------------------------------------------------------------------- #
@@ -1423,6 +1553,23 @@ def _write_workbook(out_path, rows, index, asof_date, lib_root, warnings,
             except OSError as e:      # silent-ok: the temp is orphaned only after a failed save; the error path already reports that failure
                 log.warning("could not remove %s (%s: %s)", tmp.name,
                             type(e).__name__, e)
+
+
+def is_arcgis_report(path):
+    """Is `path` a CA HIGHWAYS workbook this module built (its marker sheet)?
+    An unreadable file answers False; the loader that follows says why."""
+    from openpyxl import load_workbook
+
+    try:
+        wb = load_workbook(path, read_only=True)
+    except Exception as e:    # silent-ok: a role probe — an unopenable file is simply not one of ours, and the loader that follows reports the real problem
+        log.info("clean highway build probe: %s unreadable (%s: %s)",
+                 path, type(e).__name__, e)
+        return False
+    try:
+        return MARKER_SHEET in wb.sheetnames
+    finally:
+        wb.close()
 
 
 def report_facts(path):

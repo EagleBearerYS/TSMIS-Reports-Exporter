@@ -97,6 +97,12 @@ APP_MODULES = [
     "compare_highway_detail_arcgis",     # the ArcGIS-vs-TSMIS Highway Detail comparison
     "arcgis_report_intersection_detail",  # the IM layers rendered as Intersection Detail
     "compare_intersection_detail_arcgis",  # the ArcGIS-vs-TSMIS Intersection Detail comparison
+    "arcgis_clean_road_build",           # shared substrate of the Clean Road builds (v0.50.0)
+    "arcgis_report_clean_intersection",  # the Clean Road Intersection build
+    "arcgis_report_clean_ramp",          # the Clean Road Ramp build
+    "compare_clean_road_arcgis",         # the Clean Road build-vs-export comparison
+    "compare_clean_highway_arcgis", "compare_clean_intersection_arcgis",
+    "compare_clean_ramp_arcgis",
     "gui_arcgis_api",                    # the ArcGIS tab endpoints
     # v0.46.0 — the in-app layer refresh: ArcGIS Pro discovery + worker sessions,
     # the refresh/probe orchestration, its GUI workers, and the stand-in ArcPy

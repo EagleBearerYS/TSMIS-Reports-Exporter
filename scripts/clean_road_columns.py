@@ -116,6 +116,7 @@ class CleanRoadSpec:
     pm_prefix_col: str
     pm_col: str
     pm_suffix_col: str
+    odometer_col: str = ""      # the record's odometer column, "" where it has none
 
     @property
     def site_only(self):
@@ -132,7 +133,8 @@ HIGHWAY = CleanRoadSpec(
     unsourced=_HIGHWAY_UNSOURCED,
     route_col="THY_ROUTE_NAME", suffix_col="THY_ROUTE_SUFFIX_CODE",
     county_col="THY_COUNTY_CODE", pm_prefix_col="THY_PM_PREFIX_CODE",
-    pm_col="THY_BEGIN_PM_AMT", pm_suffix_col="THY_PM_SUFFIX_CODE")
+    pm_col="THY_BEGIN_PM_AMT", pm_suffix_col="THY_PM_SUFFIX_CODE",
+    odometer_col="THY_BEGIN_OFFSET_AMT")
 
 INTERSECTION = CleanRoadSpec(
     key="clean_intersection", pdf_key="clean_intersection_pdf",
@@ -155,7 +157,8 @@ RAMP = CleanRoadSpec(
     unsourced=_RAMP_UNSOURCED,
     route_col="RAM_ROUTE_NAME", suffix_col="RAM_ROUTE_SUFFIX_CODE",
     county_col="RAM_COUNTY_CODE", pm_prefix_col="RAM_PM_PREFIX_CODE",
-    pm_col="RAM_PM_LOC_AMT", pm_suffix_col="RAM_PM_SUFFIX_CODE")
+    pm_col="RAM_PM_LOC_AMT", pm_suffix_col="RAM_PM_SUFFIX_CODE",
+    odometer_col="RAM_BEGIN_OFFSET_AMT")
 
 SPECS = (HIGHWAY, INTERSECTION, RAMP)
 BY_KEY = {s.key: s for s in SPECS}
@@ -197,6 +200,7 @@ for _spec in SPECS:
     for _c in (_spec.route_col, _spec.suffix_col, _spec.county_col,
                _spec.pm_prefix_col, _spec.pm_col, _spec.pm_suffix_col):
         assert _c in _spec.tsn_header, f"{_spec.key}: location column {_c} not shared"
+    assert not _spec.odometer_col or _spec.odometer_col in _spec.header
 assert HIGHWAY.header == tuple(chc.HEADER) and len(HIGHWAY.unsourced) == 22
 assert len(INTERSECTION.header) == 55 and len(INTERSECTION.unsourced) == 10
 assert len(RAMP.header) == 34 and RAMP.site_only == RAMP_SITE_ONLY
