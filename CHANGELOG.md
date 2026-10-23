@@ -3,6 +3,55 @@
 All notable changes to TSMIS Reports Exporter, newest first. Each GitHub
 release shows only its own section (see `build/gen_release_notes.py`).
 
+## v0.50.0 — 2026-10-23
+
+The Clean Road Highway comparison works again on the 2026-10-22 dev-site export,
+and all three Clean Road files now compare against the ArcGIS layers on the
+Reports vs ArcGIS matrix.
+
+- **Clean Road Highway rows with no postmile no longer stop the comparison.** The
+  2026-10-22 dev-site export has 385 rows on routes 001 and 003 whose begin and end
+  postmiles are blank (the 2026-10-02 export had none). Every comparison of the
+  file (vs TSN, PDF vs Excel, vs Baseline, vs ArcGIS) failed with *"canonical
+  postmile value must be a non-empty string"*. Such a row is now placed by its
+  odometer instead, listed as `no postmile @ odometer 7.199`, and the Notes sheet
+  says how many there are and on which routes. A file whose rows all have
+  postmiles compares exactly as before.
+- **Clean Road on Reports vs ArcGIS.** The six Clean Road rows (Excel and PDF of
+  Highway, Intersection, Ramp) were greyed. They now compare the site's file with
+  our own build of it from the layers, refreshed on the ArcGIS reports tab:
+  - **Highway** compares the CA HIGHWAYS build against the site's export, with the
+    same row key and format reconciliations as the vs TSN comparison.
+  - **Intersection** and **Ramp** are new builds that follow the site's own
+    pipelines. Intersection: the site's row universe, an intersection of two state
+    routes listed under both, legs picked by route. Ramp: the ramp point's own LRS
+    measure for Highway Group, City, Population and seg order. Columns the site
+    leaves blank stay blank, except the ramp odometer, which the business
+    requirements ask for; it is shown, never counted.
+  - On the 2026-10-22 export against the 2026-10-05 layers: Intersection
+    16,382 paired, 93 / 3 one-sided, 4,079 differing cells; Ramp 15,214
+    paired, 0 / 0 one-sided, 20 cells; Highway 47,557 paired,
+    9,590 / 4,078 one-sided, 169,817 cells.
+- **CA HIGHWAYS build: a prefix change inside one county.** A layer span that
+  changes postmile prefix part-way through a county (a realignment, e.g. Highway
+  Group `R39.741` → `40.769` on 001 LA) was split as if it crossed a county line,
+  so its second part covered that prefix space from postmile 0. On 001 LA that
+  painted Divided over 0–40.8 where the layer says Undivided from 18.29. When the two
+  parts add up to the span's own odometer length, the second part now starts where
+  that prefix space resumes; otherwise the old rule stays. A span that crosses a
+  county line and also changes prefix (128: SON L4.971 → NAP 4.55) now also covers
+  the plain stretch of the first county between the two (SON 4.87–24.761). Before,
+  that stretch was covered only by accident, by the over-extended earlier span. Against the TSN extract (2026-10-05 layers): 282,832 → 222,076 differing cells, Highway Group 2,530 → 1,363, Population 2,589 → 1,548, paired 52,675 → 52,701. The `CRH-SW-E2/E3` canary's counts move with it; its re-bless is owed on the work PC (roadmap B1).
+- **City codes.** Eleven city names the derived table lacked are added, from the
+  site's own codes on the same records (Glendale GNDL, West Covina WCOV, Elk Grove
+  ELKG and eight more), and the intersection layers' spelling *San Bernadino* now
+  reads as SBD.
+
+Verified on this machine through the app's own matrix paths, on the owner's
+2026-10-22 dev-site export and the 2026-10-05 layer library; the 2026-10-02
+highway comparison (blank-postmile fix only) reproduces its recorded result exactly (47,746 paired, 3,989 /
+12,337 one-sided, 141,593 cells). The work-PC run is next (roadmap B1).
+
 ## v0.49.1 — 2026-10-22
 
 The day matrices now let you pick which TSMIS site's exports to compare. In

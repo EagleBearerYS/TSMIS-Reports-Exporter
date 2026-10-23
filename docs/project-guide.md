@@ -187,6 +187,10 @@ carry forward across a gap, City does NOT — carry makes City 23 points worse) 
 is `InventoryItemStartDate` at 100.0%** — it was nearly written off as sourceless, which is
 the DA2 mistake exactly, so SEARCH THE LAYERS before declaring a column unsourced.
 Same-date statewide baseline: 15,177 paired, 8,862 differing cells, 33 of 36 columns ≤1.3%.
+**The three Clean Road files compare too since v0.50.0** (§9n): Highway against the CA
+HIGHWAYS build, Intersection and Ramp against builds that follow the SITE's own
+pipelines — note the site now picks intersection legs by ROUTE_ID, not the LEG_TYPE rule
+the Intersection Detail build still uses.
 **Highway Detail was the first** (`arcgis_report_highway_detail` +
 `compare_highway_detail_arcgis`). It does NOT re-derive from the layers: Highway Detail
 IS the CA HIGHWAYS table printed (33 of its 34 columns are THY columns), so it PROJECTS

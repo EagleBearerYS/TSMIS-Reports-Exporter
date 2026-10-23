@@ -522,7 +522,7 @@ The dev site's **"Clean Road Files"** group (`data_value` `clean_highway` / `cle
 - `wait_js` = `EXPORT_READY_JS` OR the empty marker; `is_empty` = the structural `#rampResults .ramp-empty` (`*_showResults('none')` renders `<span class="ramp-empty">No results found in this segment.</span>` with NO action bar) with the loose "No … found" text as the fallback; `save = save_via_export_button` (`clh_/cli_/clr_exportToExcel()` → a client-side `XLSX.writeFile`, one sheet "Clean Road Highway" / "… Intersection" / "… Ramp"; the engine's no-download fast-fail is the backstop).
 - The reports reuse the site's Highway Log / Intersection Detail / Ramp Detail query pipelines — Clean Highway runs the WHOLE Highway Log builder plus four extra layer lookups (functional class 91, forest 115, `SegOrderId` 122, route breaks 133) — so expect **Highway-Log-class run times**, not Ramp-Detail ones.
 - **Print editions.** The site's `*_printAll()` print editions (landscape, cover page, scale-to-fit) are wired since **v0.45.2** (`clean_<kind>_pdf`, stable ids 20/21/22; `exporter._save_clean_road_pdf` neutralizes `window.print`, keeps the `.clh-print-root` layout, writes Letter landscape at the site's 0.35in `@page` margins, and raises EmptyExport when the print body has no rows). Each shares its Excel sibling's `data_value`, so ticking both coalesces into one render.
-- **Consolidate + compare since v0.48.0** — both editions, off the 2026-10-02 statewide delivery: see [Clean Road site exports](#clean-road-site-exports--consolidate-and-compare-v0480) below. The app's OWN Clean Road Highway build lives on the ArcGIS tab (footnote 7 above); all three Clean Road files are ROWS of that tab's Reports vs ArcGIS matrix (`arcgis_reports.py`), which stays greyed for them until the build-vs-export comparator is written (the site's exports consolidate now; the comparator does not exist yet).
+- **Consolidate + compare since v0.48.0** — both editions, off the 2026-10-02 statewide delivery: see [Clean Road site exports](#clean-road-site-exports--consolidate-and-compare-v0480) below. The app's OWN builds of all three files live on the ArcGIS tab (footnote 7 above): the CA HIGHWAYS workbook and, since **v0.50.0**, the Clean Road Intersection and Ramp files, which follow the site's own pipelines. All three are ROWS of that tab's Reports vs ArcGIS matrix (`arcgis_reports.py`), both editions each, compared with the site's export ([comparison-engine.md](comparison-engine.md) §9n).
 - **Verified offline against the REAL captured site source, not only fixtures:** the shipped `select_report` was driven over every dropdown option on the 9.1 capture (each arms, County fans to ALL, Route + Generate present) and on the 8.10 capture (the five reports greyed there raise `ReportUnavailableError`); on 9.1, Generate with every ArcGIS query stubbed empty renders the `.ramp-empty` state each spec recognises. Live data and the download are work-PC only (roadmap B1).
 
 ### Clean Road site exports — consolidate and compare (v0.48.0)
@@ -572,6 +572,14 @@ route / county / postmile columns.
   cells.
 - **Cross-environment** keys every row on the file's route token, the identity the
   engine requires, and reads the PDF edition through the same print reader.
+- **A row with no postmile** (v0.50.0). The 2026-10-22 dev-site Highway export has 385
+  rows on routes 001 and 003 whose begin and end postmiles are blank (the 2026-10-02
+  export had none). Every flavor keys such a row on its odometer — `no postmile @
+  odometer 7.199` — instead of stopping, so it lists one-sided (or pairs with the same
+  row in the other render or day), and the Notes sheet counts them by route. On that
+  export: Highway 47,459 paired, 4,176 / 12,624 one-sided,
+  140,150 cells; Intersection 16,125 / 260 / 501, 5,587; Ramp 15,204 / 10 / 206,
+  15,994.
 
 Evidence images are not wired for these prints.
 

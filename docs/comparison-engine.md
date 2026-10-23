@@ -1316,6 +1316,56 @@ Pinned by `build/check_summary_editions.py`, `build/check_clean_road_print.py` a
 
 ---
 
+### 9n. The Clean Road files — ArcGIS builds vs the site's export (v0.50.0)
+
+The three Clean Road rows of the Reports vs ArcGIS matrix (§12d), both editions each.
+Side A is OUR build of the file from the layer library; side B the site's own file for a
+day, consolidated. TSMIS vs TSMIS, so a difference is a gap in the build or a finding
+about how the site builds its file. Both sides go through the ONE Clean Road projection
+and key (`compare_clean_road_tsn._row` / `_key`), so the build-vs-site and site-vs-TSN
+comparisons can never key a record differently; only format reconciliations apply.
+
+- **Highway** (`compare_clean_highway_arcgis`) reads the CA HIGHWAYS build (§9j) projected
+  onto the site's 74 columns, keeps the build's unplaceable-span anchors NON-ASSERTING
+  (HF-01), and uses the site-vs-TSN context set. The site cuts a segment at every event
+  point of its Highway Log engine and the build at every layer breakpoint, so one-sided
+  rows are mostly the two segmentations.
+- **Intersection** (`arcgis_report_clean_intersection`) follows the SITE's pipeline
+  (`intd_queryIntersections`, 9.1 capture), not the older Intersection Detail build
+  (§9l): the universe is the IM rows not retired with the geometry live at the as-of; a
+  state x state intersection is listed under BOTH routes (the site's file repeats those
+  INTERSECTION_IDs); legs are picked by ROUTE_ID — the leg on the file's route is the
+  mainline, any other the cross street, Increasing then `_P` then the lowest
+  APPROACH_ID — because LEG_TYPE is a road-class flag (every leg of a state x state
+  intersection is Major). Highway Group / City / Population come from the span layers at
+  the postmile on the intersection's roadbed (`PostmileOverlay`: Left spans first for a
+  left-roadbed point; a span that changes county or prefix part-way also covers its end
+  space). INX_MAIN_BEGIN_DATE / INX_CROSS_BEGIN_DATE are the layer's Main_Begin_Date /
+  Cross_Begin_Date ON PURPOSE: the site writes the geometry begin date into both, and that
+  is a finding this comparison is meant to show.
+- **Ramp** (`arcgis_report_clean_ramp`) follows `clean_ramp.js`: SHS Ramp Pt rows live at
+  the as-of (one per Ramp_Name), SHS Ramp attributes by inventory window only (first in
+  layer order — the site's query has no calibration filter), Highway Group / City /
+  Population / seg order at the ramp point's own AR measure on its RouteID
+  (`MeasureOverlay`, the site's `queryRangeLayer` rule: `_S` before `_P`, ends inclusive,
+  current calibration first), the direction from the Route Direction table (TO on the
+  right alignment, FROM on the left). The design description is the domain name whole
+  ('D- Diamond Type Ramp'), blank for a code outside the domain. RAM_BEGIN_OFFSET_AMT is
+  written from ODMeasure (the business requirements ask for the odometer) and shown as
+  context, since the site leaves it blank.
+- **Bound result** (the 2026-10-22 dev-site export vs the 2026-10-05 layers): Intersection
+  16,382 paired, 93 / 3 one-sided, 4,079 differing cells
+  (2,548 of them the two begin dates); Ramp 15,214 paired, 0 / 0
+  one-sided, 20 cells; Highway 47,557 paired, 9,590 / 4,078 one-sided,
+  169,817 cells.
+- **A site row with no postmile** (385 Highway rows on 001 / 003 in the 2026-10-22
+  export) keys on its odometer as `no postmile @ odometer …` in every Clean Road
+  comparison (`compare_clean_road_tsn.UNPLACED`) and the Notes sheet counts them by
+  route; it used to stop the comparison.
+- Locked by `build/check_arcgis_clean_road.py` (both builds from a synthetic library, all
+  three comparisons) and the registry contract in `check_arcgis_report_intersection`
+  (a comparator's context = the build's + the export's own `EXPORT_CONTEXT_FIELDS`).
+
 ## 10. Internal mechanics (quick reference)
 
 - **`union_keys(keys_t, keys_n)`** — union in DOCUMENT order, grouped by route: side-A routes in
@@ -1627,7 +1677,7 @@ rows (`arcgis_reports.editions()`, derived from `report_catalog.EXPORT`: a print
 edition's key is its family's plus `_pdf`, Ramp Summary's Excel sibling `_excel`; the
 report's own key leads), in the site's report order, the reports still waiting on a
 build listed greyed with the reason, and the three Clean Road files (owner decision
-2026-09-02). **Columns = exported days you add; each cell = that day's export of the
+2026-09-02; comparable since v0.50.0, §9n). **Columns = exported days you add; each cell = that day's export of the
 row's edition, consolidated from its run folder through the shared
 `matrix._ensure_consolidated`, vs the report's ONE ArcGIS build.** Both sides are TSMIS,
 so they should agree. Until v0.47.0 a row was a report and its cell read whichever

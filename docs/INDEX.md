@@ -12,10 +12,11 @@ touching.
 
 ## Current status and work
 
-**Current release: v0.49.1 (2026-10-22)** — every export run folder records which
-TSMIS site it came from (`… ssor-prod dev-site` / `main-site`), so dev-site and
-main-site exports never mix, and each day matrix picks which site's exports it
-compares; since v0.48.0 every edition of every report
+**Current release: v0.50.0 (2026-10-23)** — the three Clean Road files compare
+against the ArcGIS layers on the Reports vs ArcGIS matrix, and a Clean Road row with
+no postmile no longer stops a comparison; every export run folder records which
+TSMIS site it came from (`… ssor-prod dev-site` / `main-site`), and each day matrix
+picks which site's exports it compares; since v0.48.0 every edition of every report
 consolidates and compares (22 rows). The comparison-audit ledger records 246
 closed findings. Confirm release state in `version.py` and `CHANGELOG.md`;
 the roadmap tracks remaining acceptance, follow-ups, and feature work.

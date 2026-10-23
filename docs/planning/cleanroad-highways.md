@@ -301,6 +301,14 @@ IM Filter Points (never exported), IM Intersection Manager Metadata (2 rows),
 MS2 Traffic Station, Posted Speed Limit, the HPMS family, and the 8
 empty-in-export SHS layers.
 
+**SHIPPED v0.50.0 (2026-10-23).** Both builds exist and all three Clean Road rows
+compare on the Reports vs ArcGIS matrix — see
+[comparison-engine.md](../comparison-engine.md) §9n. They follow the site's own
+pipelines (`clean_intersection.js` / `clean_ramp.js`, 9.1 capture) rather than the
+schema-level mapping above where the two differ: intersection legs by ROUTE_ID, not
+LEG_TYPE; ramp lookups by the point's AR measure. The vs-TSN comparison of these builds
+is not wired (no request for it).
+
 **Re-target (2026-09-02).** The site now exports all three Clean Road files
 (v0.44.0), so the CA INTERSECTIONS and CA RAMPS builds above land as ROWS of the
 ArcGIS tab's **Reports vs ArcGIS matrix** (*Reports vs layers* until v0.47.0; their
