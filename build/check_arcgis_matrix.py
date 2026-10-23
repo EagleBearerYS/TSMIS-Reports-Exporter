@@ -27,6 +27,8 @@ from _checklib import write_comparison_stub  # noqa: E402
 
 import arcgis_layers  # noqa: E402
 import arcgis_matrix as agm  # noqa: E402
+import arcgis_report_clean_intersection as acri  # noqa: E402
+import arcgis_report_clean_ramp as acrr  # noqa: E402
 import arcgis_report_highway_detail as ah  # noqa: E402
 import arcgis_report_intersection_detail as ari  # noqa: E402
 import arcgis_reports  # noqa: E402
@@ -116,11 +118,13 @@ def test_rows_from_registry():
           == ["ramp_summary", "ramp_summary_excel"])
     comparable = {r.key for r in rows if r.comparable}
     buildable = {r.key for r in rows if r.buildable}
-    check("both editions of the two rendered reports compare",
+    check("both editions of the five rendered reports compare (the three Clean Road "
+          "files since v0.50.0)",
           comparable == {"intersection_detail", "intersection_detail_pdf",
-                         "highway_detail", "highway_detail_pdf"})
-    check("Clean Road Highway builds but neither edition compares yet",
-          buildable == comparable | {"clean_highway", "clean_highway_pdf"})
+                         "highway_detail", "highway_detail_pdf"} | {"clean_highway", "clean_highway_pdf", "clean_intersection",
+                         "clean_intersection_pdf", "clean_ramp", "clean_ramp_pdf"})
+    check("every buildable report's editions compare",
+          buildable == comparable)
     check("every row carries a label and a code", all(r.label and r.code for r in rows))
     check("every row that cannot compare says why",
           all(r.why for r in rows if not r.comparable)
@@ -236,7 +240,9 @@ def test_library_and_snapshot_states():
         with _patch(arcgis_layers, "drop_info", lambda lib_root=None: dict(DROP)), \
              _patch(crl, "inventory", _full_inventory), \
              _patch(ah, "OUT_PATH", hd_build), _patch(ari, "OUT_PATH", id_build), \
-             _patch(cch, "OUT_PATH", cr_build):
+             _patch(cch, "OUT_PATH", cr_build), \
+             _patch(acri, "OUT_PATH", tmp / "builds" / acri.FILENAME), \
+             _patch(acrr, "OUT_PATH", tmp / "builds" / acrr.FILENAME):
             # nothing built yet
             lib = agm.library_snapshot()
             check("library names the drop", lib["drop"]["fingerprint"] == DROP["fingerprint"])
@@ -246,9 +252,9 @@ def test_library_and_snapshot_states():
                   and bs["highway_detail"]["missing_layers"] == [])
             check("a row with no build module: not available, says why",
                   not bs["ramp_summary"]["available"] and bs["ramp_summary"]["why"])
-            check("Clean Road Highway: available but not comparable, says why",
-                  bs["clean_highway"]["available"] and not bs["clean_highway"]["comparable"]
-                  and bs["clean_highway"]["why"])
+            check("the three Clean Road files: available and comparable, no reason",
+                  all(bs[k]["available"] and bs[k]["comparable"] and not bs[k]["why"]
+                      for k in ("clean_highway", "clean_intersection", "clean_ramp")))
             snap = agm.ag_matrix_snapshot(SRC, [DAY], library=lib, today="2099-01-01")
             cells = snap["cells"]
             check("snapshot shape (rows/days/cells/library, no tsn_meta)",
@@ -270,7 +276,7 @@ def test_library_and_snapshot_states():
             rep = agm.reports_snapshot()
             check("the ArcGIS reports snapshot: every report in registry order, counts",
                   [r["key"] for r in rep["reports"]] == list(arcgis_reports.KEYS)
-                  and rep["buildable"] == 3 and rep["built"] == 0
+                  and rep["buildable"] == 5 and rep["built"] == 0
                   and rep["reports_root"] == str(tmp / "arcgis_reports"))
             check("a buildable report lists the layers it reads",
                   "SHS Landmark" in rep["builds"]["highway_detail"]["layers"])
@@ -291,7 +297,8 @@ def test_library_and_snapshot_states():
                   rs["cmp"]["supported"] is False and rs["cmp"]["why"])
             check("row_supported mirrors comparability",
                   snap["row_supported"]["highway_detail"] is True
-                  and snap["row_supported"]["clean_highway"] is False)
+                  and snap["row_supported"]["clean_ramp_pdf"] is True
+                  and snap["row_supported"]["ramp_summary"] is False)
             check("available_days offers the exported day only",
                   agm.available_days(SRC) == [DAY])
             check("the add-day tag is the report's code",
@@ -603,7 +610,8 @@ def test_reports_endpoints_and_worker():
     job = host.jobs[-1] if host.jobs else {}
     check("Refresh all queues ONE build job over every buildable report, in order",
           r.get("ok") and job.get("kind") == "arcgis_build"
-          and job.get("rows") == ["intersection_detail", "highway_detail", "clean_highway"]
+          and job.get("rows") == ["intersection_detail", "highway_detail", "clean_highway",
+                                  "clean_intersection", "clean_ramp"]
           and job.get("label") == "Refresh every ArcGIS report")
     host.build_arcgis_report("highway_detail_pdf", "2026-08-17")
     job = host.jobs[-1]
@@ -632,10 +640,11 @@ def test_reports_endpoints_and_worker():
         ok = host._dispatch_arcgis_build_job(host.jobs[0])
     check("dispatch starts the worker with every report of the job",
           ok and started and started[-1][0] == ["intersection_detail", "highway_detail",
-                                                "clean_highway"])
+                                                "clean_highway", "clean_intersection",
+                                                "clean_ramp"])
     check("dispatch sets the building phase, first report, total",
           host._matrix == {"phase": "building", "row": "Intersection Detail", "cell": None,
-                           "done": 0, "total": 3})
+                           "done": 0, "total": 5})
 
     # The real worker over a stubbed build: one fails, the rest land; one terminal.
     tmp = Path(tempfile.mkdtemp(prefix="agbw_"))
