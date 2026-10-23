@@ -326,9 +326,11 @@ class _PointOverlay:
         return carried
 
 
-def _read_overlay(lib, index, tag, *, asof, events):
-    """One span layer's as-of spans as a `_PointOverlay`."""
-    layer, attr, carry = OVERLAY_LAYERS[tag]
+def _read_overlay(lib, index, tag, *, asof, events, spec=None):
+    """One span layer's as-of spans as a `_PointOverlay`. `spec` is a
+    (layer, attribute, carry) triple for a layer outside OVERLAY_LAYERS (the
+    Clean Road builds sample `SHS Inv Network Date` this way)."""
+    layer, attr, carry = spec or OVERLAY_LAYERS[tag]
     entry = index.get(layer) or {}
     ov = _PointOverlay(carry)
     n = 0

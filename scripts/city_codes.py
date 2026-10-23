@@ -10,6 +10,13 @@ Derivation script: the local corpus
 ground-truth/Clean Road and ArcGIS layers/_analysis/derive_city_codes.py.
 An unmapped name passes through verbatim so it SURFACES in a comparison
 instead of vanishing.
+
+v0.50.0 added the eleven names the table lacked that the site's own Clean Road
+Ramp and Intersection files (the 2026-10-22 dev-site export) code on the same
+rows — ARCADIA ADA, AZUSA AZU, BIG BEAR LAKE BBL, DUARTE DRT, ELK GROVE ELKG,
+GLENDALE GNDL (the 2026-07 layer spelled it GLANDALE), LA PALMA LPMA, MONROVIA
+MNRO, RIVERBANK RVBK, SAN GABRIEL SGB, WEST COVINA WCOV — each 96-100% of the
+votes on 2 to 54 co-located records.
 """
 
 CITY_CODES = {
@@ -25,6 +32,7 @@ CITY_CODES = {
     'ANGELS': 'ANG',
     'ANTIOCH': 'ANT',
     'APPLE VALLEY': 'APLV',
+    'ARCADIA': 'ADA',
     'ARCATA': 'ARC',
     'ARROYO GRANDE': 'ARGD',
     'ARTESIA': 'ART',
@@ -34,6 +42,7 @@ CITY_CODES = {
     'ATWATER': 'ATW',
     'AUBURN': 'AUB',
     'AVENAL': 'AVNL',
+    'AZUSA': 'AZU',
     'BAKERSFIELD': 'BKD',
     'BALDWIN PARK': 'BWP',
     'BANNING': 'BAN',
@@ -44,6 +53,7 @@ CITY_CODES = {
     'BELMONT': 'BMT',
     'BENICIA': 'BEN',
     'BERKELEY': 'BER',
+    'BIG BEAR LAKE': 'BBL',
     'BISHOP': 'BIS',
     'BLYTHE': 'BLY',
     'BRAWLEY': 'BRW',
@@ -103,6 +113,7 @@ CITY_CODES = {
     'DORRIS': 'DRS',
     'DOS PALOS': 'DPLS',
     'DOWNEY': 'DNY',
+    'DUARTE': 'DRT',
     'DUBLIN': 'DBLN',
     'DUNSMUIR': 'DMR',
     'EAST OAKDALE': 'EPAO',
@@ -112,6 +123,7 @@ CITY_CODES = {
     'EL MONTE': 'EMTE',
     'EL PASO DE ROBLES': 'PSRS',
     'EL SEGUNDA': 'ESEG',
+    'ELK GROVE': 'ELKG',
     'EMERYVILLE': 'EMV',
     'ENCINITAS': 'ENTS',
     'ESCALON': 'ESL',
@@ -137,6 +149,7 @@ CITY_CODES = {
     'GARDEN GROVE': 'GGR',
     'GILROY': 'GIL',
     'GLANDALE': 'GNDL',
+    'GLENDALE': 'GNDL',
     'GLENDORA': 'GDR',
     'GONZALES': 'GNZ',
     'GRAND TERRACE': 'GRTR',
@@ -176,6 +189,7 @@ CITY_CODES = {
     'LA HABRA': 'LHB',
     'LA MESA': 'LMSA',
     'LA MIRADA': 'LMRD',
+    'LA PALMA': 'LPMA',
     'LA VERNE': 'LVN',
     'LAFAYETTE': 'LFYT',
     'LAGUNA BEACH': 'LGNB',
@@ -227,6 +241,7 @@ CITY_CODES = {
     'MISSION VIEJO': 'MSNV',
     'MOD': 'MOD',
     'MON': 'MON',
+    'MONROVIA': 'MNRO',
     'MONTAGUE': 'MNTG',
     'MONTCLAIR': 'MCL',
     'MONTE SERENO': 'MSO',
@@ -299,6 +314,7 @@ CITY_CODES = {
     'RIO DELL': 'RDEL',
     'RIO VISTA': 'RVS',
     'RIPON': 'RIP',
+    'RIVERBANK': 'RVBK',
     'RIVERSIDE': 'RIV',
     'ROCKLIN': 'ROC',
     'ROHNERT PARK': 'RNPK',
@@ -315,6 +331,7 @@ CITY_CODES = {
     'SAN DIEGO': 'SD',
     'SAN DIMAS': 'SDMS',
     'SAN FRANCISCO': 'SF',
+    'SAN GABRIEL': 'SGB',
     'SAN JOSE': 'SJS',
     'SAN JUAN BAUTISTA': 'SJB',
     'SAN JUAN CAPISTRANO': 'SJCP',
@@ -390,6 +407,7 @@ CITY_CODES = {
     'WATERFORD': 'WTRF',
     'WATSONVILLE': 'WAT',
     'WEED': 'WEED',
+    'WEST COVINA': 'WCOV',
     'WEST SACRAMENTO': 'WSAC',
     'WESTLAKE VILLAGE': 'WLKV',
     'WESTMINSTER': 'WTM',

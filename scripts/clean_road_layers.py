@@ -186,6 +186,9 @@ COUNTY_CODES = {
     "SOLANO": "SOL", "SONOMA": "SON", "STANISLAUS": "STA", "SUTTER": "SUT",
     "TEHAMA": "TEH", "TRINITY": "TRI", "TULARE": "TUL", "TUOLUMNE": "TUO",
     "VENTURA": "VEN", "YOLO": "YOL", "YUBA": "YUB",
+    # The IM intersection layers spell it this way on 966 current rows (the
+    # 2026-10-05 drop); every other layer spells it right.
+    "SAN BERNADINO": "SBD",
 }
 _VALID_COUNTIES = frozenset(COUNTY_CODES.values())
 
