@@ -66,6 +66,7 @@ try:
 except ImportError:
     _DEPS_OK = False
 
+import arcgis_clean_road_build as acb
 import clean_highway_columns as chc
 import clean_road_columns as crc
 import compare_clean_highway_tsn as cht
@@ -83,6 +84,15 @@ NORMALIZATION_VERSION = 1
 _HIGHWAY_TSN_MARKER = cht.NORMALIZATION_VERSION
 
 _WS = re.compile(r"\s+")
+
+# The marker sheets the app's own ArcGIS builds carry: the CA HIGHWAYS build's
+# and the Intersection / Ramp builds'. Either one means the workbook is OUR
+# reconstruction from the layers — never the site's export, never TSN.
+_BUILD_MARKERS = (chc.ARC_MARKER_SHEET, acb.MARKER_SHEET)
+
+
+def _is_arcgis_build(wb):
+    return any(m in wb.sheetnames for m in _BUILD_MARKERS)
 
 
 def _s(v):
@@ -377,7 +387,7 @@ def load_site(path, profile, *, pdf, same_source=False, collapse=False):
         ctc.reject_pdf_source(path, f"TSMIS {label}", spec.label)
     name, wb = _open(path)
     try:
-        if chc.ARC_MARKER_SHEET in wb.sheetnames:
+        if _is_arcgis_build(wb):
             raise ValueError(
                 f"{name} is the app's own ArcGIS-built Clean Road workbook, not "
                 "the site's export — pick the consolidated Clean Road export "
@@ -427,7 +437,7 @@ def load_tsn(path, profile, *, collapse=False):
             "extract or the TSN library's normalized copy.")
     name, wb = _open(path)
     try:
-        if chc.ARC_MARKER_SHEET in wb.sheetnames:
+        if _is_arcgis_build(wb):
             raise ValueError(
                 f"{name} is an ArcGIS-built Clean Road workbook, so it cannot "
                 f"stand as the TSN side — pick the TSN {spec.tsn_label} extract or "
