@@ -1,5 +1,5 @@
 // ArcGIS tab module (v0.29.0, split like the other ui-*.js — same global scope).
-// Four sub-tabs, in the order the work flows:
+// Five sub-tabs, in the order the work flows:
 //   LAYERS (v0.46.0, first) — the app's own copy of the 40 TSMIS layers and the
 //                       in-app refresh that replaced the manual export: ArcGIS
 //                       Pro's status + a quick check, every layer with its rows /
@@ -16,6 +16,9 @@
 //                       from the layers in the library now. Both sides are TSMIS,
 //                       so they should agree; the build's as-of date sits beside
 //                       the export day in the Notes.
+//   THREE-WAY (v0.51.0) — each Clean Road export edition vs its TSN extract vs
+//                       its ArcGIS build, by day: where TSN and the layers agree
+//                       and the report doesn't. Lives in ui-arcgis-three-way.js.
 //   CLEAN ROAD VS TSN — the CA HIGHWAYS build (as-of date + Build button) and
 //                       the ArcGIS-vs-TSN comparison launcher (formulas/values
 //                       checkboxes ride the same start flow as the classic
@@ -102,6 +105,7 @@ function syncArcgisLock() {
   if (agSub === "reports") updateArcgisMatrixProgress();
   if (agSub === "layers") updateArcgisLayersProgress();
   if (agSub === "builds") updateArcgisBuildsProgress();
+  if (agSub === "threeway") updateThreeWayMatrixProgress();
 }
 
 // The tab's one entry point: render whichever sub-tab is showing (and apply
@@ -111,12 +115,14 @@ function renderArcgisTab() {
   if (agSub === "layers") renderArcgisLayers();
   else if (agSub === "builds") renderArcgisBuilds();
   else if (agSub === "reports") renderArcgisMatrix();
+  else if (agSub === "threeway") renderThreeWayMatrix();
   else renderArcgis();
 }
 
 // ---- sub-tabs ------------------------------------------------------------ //
 const AG_SUBS = { layers: ["subAgLayers", "agLayers"], builds: ["subAgBuilds", "agBuilds"],
-                  reports: ["subAgReports", "agReports"], cleanroad: ["subAgCleanRoad", "agCleanRoad"] };
+                  reports: ["subAgReports", "agReports"], threeway: ["subAgThreeWay", "agThreeWay"],
+                  cleanroad: ["subAgCleanRoad", "agCleanRoad"] };
 
 function setArcgisSub(which) {
   agSub = AG_SUBS[which] ? which : "layers";
@@ -703,6 +709,7 @@ function bindArcgis() {
   $("subAgCleanRoad").onclick = () => setArcgisSub("cleanroad");
   $("subAgReports").onclick = () => setArcgisSub("reports");
   bindArcgisBuilds();
+  bindThreeWay();
   $("btnAgGoBuilds").onclick = () => setArcgisSub("builds");
   $("btnAgRefreshAll").onclick = async () => {
     const n = (AGL && AGL.expected) || 40;

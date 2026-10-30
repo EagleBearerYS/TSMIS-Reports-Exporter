@@ -103,7 +103,11 @@ APP_MODULES = [
     "compare_clean_road_arcgis",         # the Clean Road build-vs-export comparison
     "compare_clean_highway_arcgis", "compare_clean_intersection_arcgis",
     "compare_clean_ramp_arcgis",
+    "three_way",                         # the TSMIS vs TSN vs ArcGIS engine (v0.51.0)
+    "compare_clean_road_three_way",      # its Clean Road adapters
+    "three_way_matrix",                  # the ArcGIS tab's Three-way by-day matrix
     "gui_arcgis_api",                    # the ArcGIS tab endpoints
+    "gui_three_way_api",                 # the ArcGIS ▸ Three-way endpoints
     # v0.46.0 — the in-app layer refresh: ArcGIS Pro discovery + worker sessions,
     # the refresh/probe orchestration, its GUI workers, and the stand-in ArcPy
     # the frozen --self-test drives the shipped worker with.

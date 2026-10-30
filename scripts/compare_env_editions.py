@@ -28,6 +28,7 @@ from pathlib import Path
 import clean_road_columns as crc
 import compare_clean_road_tsn as crt
 import compare_env as ce
+import compare_tsn_common as ctc
 import consolidate_highway_summary as _hs
 import consolidate_tsmis_clean_highway_pdf as _crh_pdf
 import consolidate_tsmis_clean_intersection_pdf as _cri_pdf
@@ -223,13 +224,27 @@ def _clean_road_pdf_side(spec, module):
     return load
 
 
+def _clean_road_schema(spec, report_name):
+    """The file's extract date is CONTEXT — shown, never counted: it is the day
+    the site made the file, so two pulls on different days differ there on every
+    row. The vs-TSN and vs-ArcGIS comparisons read it the same way."""
+    context = tuple(c for c in spec.header if c.endswith("_EXTRACT_DATE"))
+    return CompareSchema(
+        report_name=report_name, header=list(spec.header),
+        id_noun=spec.noun, id_noun_plural=spec.noun_plural,
+        context_fields=context, context_header_fill="808080" if context else "",
+        legend_writer=ctc.make_notes_writer(f"{report_name}: comparison notes", (
+            f"CONTEXT, shown and never counted: {', '.join(context)} — the day the "
+            "site made the file, so two pulls made on different days differ there "
+            "on every row. Every other column is compared.",)))
+
+
 def _clean_road_excel(spec):
     return ce.EnvCompare(
         spec.key, spec.label, spec.key, sheet_name=spec.sheet,
         expected_header=list(spec.header), key_col=spec.pm_col,
         physical_key_builder=_clean_road_keys(spec),
-        base_schema=CompareSchema(report_name=spec.label, header=list(spec.header),
-                                  id_noun=spec.noun, id_noun_plural=spec.noun_plural))
+        base_schema=_clean_road_schema(spec, spec.label))
 
 
 def _clean_road_pdf(spec, module):
@@ -237,9 +252,7 @@ def _clean_road_pdf(spec, module):
         spec.pdf_key, f"{spec.label} (PDF)", spec.pdf_key, sheet_name=spec.sheet,
         key_col=spec.pm_col, flat_pdf_loader=_clean_road_pdf_side(spec, module),
         physical_key_builder=_clean_road_keys(spec),
-        base_schema=CompareSchema(report_name=f"{spec.label} (PDF)",
-                                  header=list(spec.header),
-                                  id_noun=spec.noun, id_noun_plural=spec.noun_plural))
+        base_schema=_clean_road_schema(spec, f"{spec.label} (PDF)"))
 
 
 CLEAN_HIGHWAY = _clean_road_excel(crc.HIGHWAY)

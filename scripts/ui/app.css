@@ -1092,11 +1092,12 @@ body.busy .option-row:hover { background: transparent; }
   display: none; flex-direction: column; gap: 12px; flex-shrink: 0;
   padding: 12px 14px; max-height: 46%; overflow-y: auto;
 }
-body.matrix-wide:not(.mw-day):not(.mw-bl):not(.mw-pve):not(.mw-ag) #matrixConfig { display: flex; }
+body.matrix-wide:not(.mw-day):not(.mw-bl):not(.mw-pve):not(.mw-ag):not(.mw-tw) #matrixConfig { display: flex; }
 body.matrix-wide.mw-day #dayMatrixConfig { display: flex; }
 body.matrix-wide.mw-bl #baselineMatrixConfig { display: flex; }
 body.matrix-wide.mw-pve #pveMatrixConfig { display: flex; }
 body.matrix-wide.mw-ag #arcgisMatrixConfig { display: flex; }
+body.matrix-wide.mw-tw #threeWayMatrixConfig { display: flex; }
 
 /* The ArcGIS "Reports vs layers" row header carries a second line: the row's
    ONE layer build (as-of date, record count, and whether it came from the

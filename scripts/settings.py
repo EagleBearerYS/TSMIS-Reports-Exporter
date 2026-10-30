@@ -907,12 +907,12 @@ def set_pve_matrix_hidden(keys):
 
 def get_pve_matrix_row_order():
     """The user's drag-to-reorder family-row order (default: none = registry order)."""
-    return _get_str_list("pve_matrix_row_order")
+    return _get_order("pve_matrix_row_order")
 
 
 def set_pve_matrix_row_order(keys):
     """Persist the PDF-vs-Excel family-row drag order. Empty -> cleared."""
-    return _set_str_list("pve_matrix_row_order", keys)
+    return _set_order("pve_matrix_row_order", keys)
 
 
 def get_pve_matrix_formulas():
@@ -990,11 +990,11 @@ def set_arcgis_matrix_hidden(keys):
 
 def get_arcgis_matrix_row_order():
     """The user's drag-to-reorder row order (default: none = registry order)."""
-    return _get_str_list("arcgis_matrix_row_order")
+    return _get_order("arcgis_matrix_row_order")
 
 
 def set_arcgis_matrix_row_order(keys):
-    return _set_str_list("arcgis_matrix_row_order", keys)
+    return _set_order("arcgis_matrix_row_order", keys)
 
 
 def get_arcgis_matrix_formulas():
@@ -1005,6 +1005,74 @@ def get_arcgis_matrix_formulas():
 
 def set_arcgis_matrix_formulas(on):
     return _set_flag("arcgis_matrix_formulas", on)
+
+
+# ---- ArcGIS-tab "Three-way" matrix (v0.51.0) -------------------------------
+# A source, ordered day-columns, hidden rows and a drag row order, like the
+# Reports-vs-ArcGIS matrix. Its TSN side honours the vs-TSN matrices' TSN pick
+# (`matrix_tsn_files`) and its ArcGIS side is the report's one build, so neither
+# has a setting of its own. Values workbooks only, so no formulas toggle.
+
+_DEFAULT_THREE_WAY_MATRIX_SOURCE = "ssor-prod"
+
+
+def get_three_way_matrix_source():
+    """The saved source in its explicit '<src>-<env> <host>-site' form."""
+    raw = _read_file().get("three_way_matrix_source")
+    raw = raw.strip() if isinstance(raw, str) else ""
+    return qualify_day_source(raw, _DEFAULT_THREE_WAY_MATRIX_SOURCE)
+
+
+def set_three_way_matrix_source(key):
+    """Save (or, empty, reset) the three-way matrix source."""
+    data = dict(_read_file())
+    key = (key or "").strip()
+    if key:
+        data["three_way_matrix_source"] = key
+    else:
+        data.pop("three_way_matrix_source", None)
+    _atomic_write(data)
+    log.info("settings: three_way_matrix_source -> %s", key or "(default)")
+    return get_three_way_matrix_source()
+
+
+def get_three_way_matrix_days():
+    """The ordered day-column date strings the user added (default: none)."""
+    raw = _read_file().get("three_way_matrix_days")
+    if isinstance(raw, list):
+        return [d for d in raw if isinstance(d, str) and d]
+    return []
+
+
+def set_three_way_matrix_days(days):
+    """Persist the ordered three-way day-column list. Empty -> cleared."""
+    data = dict(_read_file())
+    days = [d for d in (days or []) if isinstance(d, str) and d]
+    if days:
+        data["three_way_matrix_days"] = days
+    else:
+        data.pop("three_way_matrix_days", None)
+    _atomic_write(data)
+    log.info("settings: three_way_matrix_days -> %s", days or "(none)")
+    return get_three_way_matrix_days()
+
+
+def get_three_way_matrix_hidden():
+    """Hidden edition rows on the three-way matrix (default: none)."""
+    return _get_str_list("three_way_matrix_hidden")
+
+
+def set_three_way_matrix_hidden(keys):
+    return _set_str_list("three_way_matrix_hidden", keys)
+
+
+def get_three_way_matrix_row_order():
+    """The user's drag-to-reorder row order (default: none = registry order)."""
+    return _get_order("three_way_matrix_row_order")
+
+
+def set_three_way_matrix_row_order(keys):
+    return _set_order("three_way_matrix_row_order", keys)
 
 
 def get_arcgis_python():

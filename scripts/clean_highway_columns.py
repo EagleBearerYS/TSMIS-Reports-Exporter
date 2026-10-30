@@ -103,7 +103,11 @@ PROVENANCE = {
     "THY_CREATE_DATE": (_T, "", "", "TSN bookkeeping — left empty"),
     "THY_CREATE_USER_NAME": (_T, "", "", "TSN bookkeeping — left empty"),
     "THY_SEG_ORDER_ID": (_S, "SHS Inv Network Date", "SegOrderId", ""),
-    "THY_DISTRICT_CODE": (_S, "SHS District", "District_Code", ""),
+    "THY_DISTRICT_CODE": (_S, "SHS Highway Group", "District",
+                          "the covering spans' own District field (the Highway "
+                          "Group span first, else any covering span) — every "
+                          "span layer carries it; the SHS District layer is not "
+                          "read (its route-length spans lose middle counties)"),
     "THY_COUNTY_CODE": (_S, "(every span layer)", "BeginCounty/EndCounty",
                         "the county+PM bucket identity"),
     "THY_ROUTE_NAME": (_S, "(every span layer)", "RouteNum", ""),
@@ -118,8 +122,9 @@ PROVENANCE = {
     "THY_LENGTH_MILES_AMT": (_Y, "(overlay)", "", "end PM − begin PM"),
     "THY_LEFT_ROAD_EFF_DATE": (_S, "(left-road block)",
                                "InventoryItemStartDate",
-                               "composite: newest member layer's item date "
-                               "(candidate rule)"),
+                               "SHS Travel Way L's own item date; where it has "
+                               "no span, the newest of the block's other layers "
+                               "(the primary-layer rule, DA1/DA5)"),
     "THY_LT_SURF_TYPE_CODE": (_S, "SHS Surface Type L", "Surface_Type_L", ""),
     "THY_LT_LANES_AMT": (_S, "SHS Travel Way L", "Total_Num_Lanes_L",
                          "Total lanes, not Thru (proven on 001)"),
@@ -138,8 +143,9 @@ PROVENANCE = {
                                    "Shld_Width_Treated_In_L", ""),
     "THY_LT_SIG_CHG_IND": (_N, "", "", "TASAS change tracking — no layer"),
     "THY_MEDIAN_EFF_DATE": (_S, "(median block)", "InventoryItemStartDate",
-                            "composite: newest of Median/Barrier/Curb "
-                            "Landscape"),
+                            "SHS Median's own item date; where it has no span, "
+                            "the newer of Barrier / Curb Landscape (the "
+                            "primary-layer rule, DA1/DA5)"),
     "THY_MEDIAN_TYPE_CODE": (_S, "SHS Median", "Median_Type", ""),
     "THY_CURB_LANDSCAPE_CODE": (_S, "SHS Curb Landscape", "Curb_Landscape", ""),
     "THY_MEDIAN_BARRIER_CODE": (_S, "SHS Barrier", "Barrier_Type", ""),
@@ -148,8 +154,9 @@ PROVENANCE = {
     "THY_MEDIAN_SIG_CHG_IND": (_N, "", "", "TASAS change tracking — no layer"),
     "THY_RIGHT_ROAD_EFF_DATE": (_S, "(right-road block)",
                                 "InventoryItemStartDate",
-                                "composite: newest member layer's item date "
-                                "(candidate rule)"),
+                                "SHS Travel Way R's own item date; where it has "
+                                "no span, the newest of the block's other layers "
+                                "(the primary-layer rule, DA1/DA5)"),
     "THY_RT_SURF_TYPE_CODE": (_S, "SHS Surface Type R", "Surface_Type_R", ""),
     "THY_RT_LANES_AMT": (_S, "SHS Travel Way R", "Total_Num_Lanes_R",
                          "Total lanes, not Thru (proven on 001)"),
@@ -199,7 +206,10 @@ PROVENANCE = {
                                 "the winning span's slope, compared at 3 "
                                 "decimals (the extract's own 4th-decimal "
                                 "arithmetic wobble never counts)"),
-    "THY_LANDMARK_SHORT_DESC": (_S, "SHS Landmark", "Landmarks_Short", ""),
+    "THY_LANDMARK_SHORT_DESC": (_S, "SHS Landmark", "Landmarks_Short",
+                                "the landmark point(s) at the segment's begin "
+                                "postmile — the longest text where several "
+                                "share it"),
     "THY_POPULATION_CODE": (_S, "SHS Population", "Population_Code", ""),
     "THY_POPULATION_EFF_DATE": (_S, "SHS Population", "InventoryItemStartDate",
                                 "BUILD-ONLY: the TSN extract has no such "

@@ -1131,6 +1131,7 @@ function dispatch(events) {
           if (S.tab === "compare" && S.compareGroup === BASELINE_MATRIX_GROUP) renderBaselineMatrix();
           if (S.tab === "compare" && S.compareGroup === PVE_MATRIX_GROUP) renderPveMatrix();
           if (typeof arcgisMatrixActive === "function" && arcgisMatrixActive()) renderArcgisMatrix();
+          if (typeof threeWayMatrixActive === "function" && threeWayMatrixActive()) renderThreeWayMatrix();
           if (S.tab === "arcgis" && typeof agSub !== "undefined" && agSub === "layers") renderArcgisLayers();
           if (S.tab === "arcgis" && typeof agSub !== "undefined" && agSub === "builds") renderArcgisBuilds();
           break;
@@ -1332,6 +1333,9 @@ function bindEvents() {
   // The ArcGIS "Reports vs layers" matrix rides the same queue.
   $("btnAgQueueClear")?.addEventListener("click", () => api.matrix_queue_clear());
   $("btnAgQueueStopAll")?.addEventListener("click", () => api.matrix_stop_all());
+  // …and so does the ArcGIS "Three-way" matrix (v0.51.0).
+  $("btnTwQueueClear")?.addEventListener("click", () => api.matrix_queue_clear());
+  $("btnTwQueueStopAll")?.addEventListener("click", () => api.matrix_stop_all());
 
   renderThemeButton();
   $("btnTheme").onclick = () => {

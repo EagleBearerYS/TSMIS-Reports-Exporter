@@ -332,6 +332,20 @@ def main():
               dr.get("ok") and dr["order"] == ["highway_log"]
               and settings.get_day_matrix_row_order() == ["highway_log"])
         a.set_day_matrix_row_order([])
+        # The PDF vs Excel and Reports vs ArcGIS orders were stored SORTED, so a
+        # drag snapped back to alphabetical order.
+        for label, setter, getter, keys in (
+                ("PDF vs Excel", settings.set_pve_matrix_row_order,
+                 settings.get_pve_matrix_row_order, ["ramp_detail", "highway_log"]),
+                ("Reports vs ArcGIS", settings.set_arcgis_matrix_row_order,
+                 settings.get_arcgis_matrix_row_order,
+                 ["intersection_detail", "highway_detail"]),
+                ("Three-way", settings.set_three_way_matrix_row_order,
+                 settings.get_three_way_matrix_row_order, ["clean_ramp", "clean_highway"])):
+            setter(keys)
+            check(f"{label}: a dragged row order is kept as dragged, not sorted",
+                  getter() == keys)
+            setter([])
 
         print("TSN file pick + scoped refresh + TSN-PDF consolidate gate:")
         check("tsn file bad subdir rejected",

@@ -36,6 +36,7 @@ scripts_path()
 
 from openpyxl import Workbook, load_workbook  # noqa: E402
 
+import arcgis_clean_road_build as acb  # noqa: E402
 import clean_highway_columns as chc  # noqa: E402
 import clean_road_columns as crc  # noqa: E402
 import compare_clean_road_tsn as crt  # noqa: E402
@@ -209,6 +210,24 @@ def test_ramp(tmp):
              lambda: crt.RAMP_VS_TSN.compare(str(xl), str(xl), str(tmp / "g4.xlsx"), **q))):
         res = call()
         c.check(label, res.status == "error", res.status)
+    # The Intersection / Ramp ArcGIS builds write the site export's own sheet and
+    # header, so only their marker sheet tells them apart (v0.51.0: the loaders
+    # refused the CA HIGHWAYS build's marker only, and took a point build as the
+    # site's export or as TSN).
+    point_build = tmp / "ramp_point_build.xlsx"
+    wb = load_workbook(xl)
+    wb.create_sheet(acb.MARKER_SHEET).append(["Report", "clean_ramp"])
+    wb.save(point_build)
+    for label, call in (
+            ("the site side refuses our ArcGIS Ramp build (same sheet, its own marker)",
+             lambda: crt.RAMP_VS_TSN.compare(str(point_build), str(raw),
+                                              str(tmp / "g5.xlsx"), **q)),
+            ("the TSN side refuses it too",
+             lambda: crt.RAMP_VS_TSN.compare(str(xl), str(point_build),
+                                              str(tmp / "g6.xlsx"), **q))):
+        res = call()
+        c.check(label, res.status == "error" and "ArcGIS" in (res.message or ""),
+                (res.status, res.message))
     return run
 
 
@@ -232,6 +251,19 @@ def test_ramp_env(tmp, run_b):
                                                   str(tmp / "e2.xlsx"), **q))
     c.check("a changed cell counts", diff["differing_cells"] == 1 and diff["paired_rows"] == 3,
             diff)
+    # Two pulls made on different days carry different extract dates on every
+    # row; that is the file's own date, not the road's, so it never counts.
+    _site_file(next(run_a.glob("*.xlsx")), crc.RAMP,
+               [_ramp("0.606", RAM_EXTRACT_DATE="10/01/2026"),
+                _ramp("0.682", RAM_DESCRIPTION="005/SB  ON FR MAIN",
+                      RAM_EXTRACT_DATE="10/01/2026"),
+                _ramp("1.5", RAM_ROUTE_NAME="007", RAM_DESIGN_DESC="label differs",
+                      RAM_CITY_CODE="LA", RAM_EXTRACT_DATE="10/01/2026")])
+    dated = _counts(cee.CLEAN_RAMP.compare_folders(str(run_a.parent), str(run_b.parent),
+                                                   str(tmp / "e3.xlsx"), **q))
+    c.check("a different extract date on every row counts nothing (vs Baseline)",
+            dated == {"paired_rows": 3, "side_a_only_rows": 0, "side_b_only_rows": 0,
+                      "differing_cells": 0}, dated)
 
 
 def _thy(begin, end, **kw):

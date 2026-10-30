@@ -425,14 +425,16 @@ proved the wiring — a new matrix cost a table row per report instead of a fift
 if-chain. Lives in `pdf_excel_matrix.py`; the sub-tab renders through the same
 `ui-matrix.js` as the other three.
 
-### The ArcGIS tab (v0.29.0; Layers since v0.46.0; ArcGIS reports + Reports vs ArcGIS since v0.47.0)
+### The ArcGIS tab (v0.29.0; Layers since v0.46.0; ArcGIS reports + Reports vs ArcGIS since v0.47.0; Three-way since v0.51.0)
 
 The one tab that never touches the TSMIS site. Everything builds from the
 `arcgis_layers/` library, which the app refreshes itself; `gui_arcgis_api.py`
-(ArcGIS reports, the matrix, Clean Road) and `gui_arcgis_layers_api.py` (Layers) own
-the endpoints, and `ui-arcgis.js` + `ui-arcgis-reports.js` render them. Four
-sub-tabs in the order the work flows — layers → the reports built from them → every
-export compared against those reports — with Layers first (and the default):
+(ArcGIS reports, the matrix, Clean Road), `gui_arcgis_layers_api.py` (Layers) and
+`gui_three_way_api.py` (Three-way) own the endpoints, and `ui-arcgis.js` +
+`ui-arcgis-reports.js` + `ui-arcgis-three-way.js` render them. Five sub-tabs in the
+order the work flows — layers → the reports built from them → every export compared
+against those reports → every export against TSN and those reports at once — with
+Layers first (and the default):
 
 - **Layers** (v0.46.0) — replaces the owner's manual per-layer export.
   - **ArcGIS Pro card** — where ArcGIS Pro's `arcgispro-py3` python.exe was found
@@ -523,6 +525,24 @@ export compared against those reports — with Layers first (and the default):
     established row, so the saved hidden rows / row order and the comparisons made
     before v0.47.0 keep applying; the comparison files keep their `_vs_layers`
     names.
+- **Three-way** (v0.51.0) — a by-day **matrix** of the reports that have all three
+  sources (the six Clean Road editions): each cell compares that day's export with
+  the report's TSN dataset AND its ArcGIS build at once
+  ([comparison-engine.md](comparison-engine.md) §9o, §12e). The cell headlines
+  **report ≠** — the cells where TSN and the layers agree and the report doesn't —
+  so the expected TSN drift (the report follows the layers; TSN is frozen at the
+  cutover) stays out of the way; its sub-line adds `missing` (records TSN and the
+  layers have that the report leaves out), `expected` and `ArcGIS ≠`, and its
+  colour is green / amber / red by report findings. The **three sides** card above
+  the grid shows each report's TSN dataset and ArcGIS build as a chip; each row
+  header's second line says *TSN ✓ · ArcGIS as of D*. A missing side reads **needs
+  export / needs TSN / needs ArcGIS** and names every side that is missing. The
+  workbook lists every finding with the ArcGIS layer and field it comes from. Same
+  `ui-matrix.js` primitives, full-width via `body.matrix-wide.mw-tw` with its own
+  corner `#threeWayMatrixConfig` (queue, add-day, how to read a cell, row toggles —
+  no formulas toggle: the workbook is values only), the shared queue
+  (`which:"three_way"` → `ThreeWayMatrixCompareWorker`). Its TSN side honours the
+  vs-TSN matrices' TSN pick; the ArcGIS side is the report's one build.
 - **Clean Road vs TSN** — builds our own CA HIGHWAYS table from the layers as-of a
   chosen date and compares it against the TSN extract, both flavors. The as-of box
   matters: `resolve_default_asof()` takes its default from the *staged TSN
@@ -541,7 +561,8 @@ endpoints, the `#mock` preview and `check_arcgis_matrix` derive from the registr
 and an edition becomes comparable on its own once the app consolidates it. Read
 [planning/cleanroad-highways.md](planning/cleanroad-highways.md) first for the
 measured build rules, and don't re-derive them. Mock + bridge exercised at
-`/index.html#mock` (ArcGIS ▸ Layers / ArcGIS reports / Reports vs ArcGIS). The
+`/index.html#mock` (ArcGIS ▸ Layers / ArcGIS reports / Reports vs ArcGIS /
+Three-way). The
 refresh is proven offline by `check_arcgis_refresh` and the frozen `--self-test`,
 both of which run the SHIPPED worker against the stand-in ArcPy in
 `arcgis_selftest.py`; real ArcPy only exists on the work PC — its first real run
