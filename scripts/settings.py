@@ -907,12 +907,12 @@ def set_pve_matrix_hidden(keys):
 
 def get_pve_matrix_row_order():
     """The user's drag-to-reorder family-row order (default: none = registry order)."""
-    return _get_str_list("pve_matrix_row_order")
+    return _get_order("pve_matrix_row_order")
 
 
 def set_pve_matrix_row_order(keys):
     """Persist the PDF-vs-Excel family-row drag order. Empty -> cleared."""
-    return _set_str_list("pve_matrix_row_order", keys)
+    return _set_order("pve_matrix_row_order", keys)
 
 
 def get_pve_matrix_formulas():
@@ -990,11 +990,11 @@ def set_arcgis_matrix_hidden(keys):
 
 def get_arcgis_matrix_row_order():
     """The user's drag-to-reorder row order (default: none = registry order)."""
-    return _get_str_list("arcgis_matrix_row_order")
+    return _get_order("arcgis_matrix_row_order")
 
 
 def set_arcgis_matrix_row_order(keys):
-    return _set_str_list("arcgis_matrix_row_order", keys)
+    return _set_order("arcgis_matrix_row_order", keys)
 
 
 def get_arcgis_matrix_formulas():
