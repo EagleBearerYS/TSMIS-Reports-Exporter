@@ -12,12 +12,14 @@ touching.
 
 ## Current status and work
 
-**Current release: v0.50.0 (2026-10-23)** — the three Clean Road files compare
-against the ArcGIS layers on the Reports vs ArcGIS matrix, and a Clean Road row with
-no postmile no longer stops a comparison; every export run folder records which
-TSMIS site it came from (`… ssor-prod dev-site` / `main-site`), and each day matrix
-picks which site's exports it compares; since v0.48.0 every edition of every report
-consolidates and compares (22 rows). The comparison-audit ledger records 246
+**Current release: v0.51.0 (2026-10-29)** — a three-way comparison puts each Clean
+Road file beside TSN and the ArcGIS build at once and sorts every cell by who
+disagrees, so the cells where TSN and the layers agree and the report does not stand
+apart from the drift; every column traces to its ArcGIS layer, and the ArcGIS tab
+gains a Three-way matrix ([comparison-engine.md](comparison-engine.md) §9o, §12e).
+Since v0.50.0 the Clean Road files compare against the ArcGIS layers and every run
+folder records which TSMIS site it came from; since v0.48.0 every edition of every
+report consolidates and compares (22 rows). The comparison-audit ledger records 246
 closed findings. Confirm release state in `version.py` and `CHANGELOG.md`;
 the roadmap tracks remaining acceptance, follow-ups, and feature work.
 
@@ -45,7 +47,7 @@ the roadmap tracks remaining acceptance, follow-ups, and feature work.
 | [auth-and-signin.md](auth-and-signin.md) | Anything about signing into TSMIS — the token-in-hash session model, the `CONFIG` lexical-global trap, device sign-in / Edge recapture / portability, LNA pre-grant, signed-in detection, the two login chips. |
 | [gui.md](gui.md) | You're in the desktop GUI — pywebview/WebView2, the threading + queue model, Python↔JS layering, the **five pywebview traps**, the `#mock` preview and its gotchas. |
 | [reports.md](reports.md) | You need the report catalog, a single report's `ReportSpec`/save/empty behavior, the `cs-disabled` rule, or the "add a report / consolidator / comparison" recipes. |
-| [comparison-engine.md](comparison-engine.md) | You're in `compare_core` — the regression lock + harness, the two flavors, key-field / roadbed key / duplicate-pairing, ditto non-asserting, the verdict / incompleteness contract, write-path safety, the comparison families (including the ArcGIS-sourced ones, §9j Clean Road, §9k–§9l the reports rendered from the layers, §9m the last nine editions (v0.48.0), and their by-day matrix in §12d), the **speed contract** (§2b — the composite-style cache and the streamed package read, both output-locked) and the **counts-only preview** (§2c — what it does and why it can never certify), and the **visual-evidence decoration** (§13 — the five print-crop adapters: Highway Log, Highway Sequence, Intersection Detail, Ramp Detail, and **Highway Detail** since v0.37.0; its env evidence joined in v0.38.3, so all five PDF rows support that lane). |
+| [comparison-engine.md](comparison-engine.md) | You're in `compare_core` — the regression lock + harness, the two flavors, key-field / roadbed key / duplicate-pairing, ditto non-asserting, the verdict / incompleteness contract, write-path safety, the comparison families (including the ArcGIS-sourced ones, §9j Clean Road, §9k–§9l the reports rendered from the layers, §9m the last nine editions (v0.48.0), §9n the Clean Road files vs the layers, §9o the three-way TSMIS vs TSN vs ArcGIS comparison (v0.51.0), and their by-day matrices in §12d–§12e), the **speed contract** (§2b — the composite-style cache and the streamed package read, both output-locked) and the **counts-only preview** (§2c — what it does and why it can never certify), and the **visual-evidence decoration** (§13 — the five print-crop adapters: Highway Log, Highway Sequence, Intersection Detail, Ramp Detail, and **Highway Detail** since v0.37.0; its env evidence joined in v0.38.3, so all five PDF rows support that lane). |
 | [planning/comparison-perfection/README.md](planning/comparison-perfection/README.md) | You want to know **why a comparison behaves the way it does**. The comparison-perfection project's record — **COMPLETE, shipped as v0.28.0**; **246/246 CLOSED** — the HD pre-release block (133 · 142 · 186 · 192 + 045-HD) fell to the vendor's 2026-08-17 release in v0.37.0 / v0.38.0, and subsequent fixes include 244 (v0.38.2), 245 (v0.39.1), and 246 (v0.45.0). Audit ledgers, source bindings, canary bindings and advisory reviews in one folder. It is a record, not a worklist. |
 | [planning/comparison-perfection/comparison-phase4-tsn-source-rebaseline.md](planning/comparison-perfection/comparison-phase4-tsn-source-rebaseline.md) | You're auditing or changing a vs-TSN source, normalizer, comparator, or evidence adapter — exact 29-member comparison-truth and 14-member evidence manifests, source roles, member hashes, raw identity facts, known admission defects, and the Phase-4 source-first gates. |
 | [highway_log/columns.md](highway_log/columns.md) | You need the corrected 31-column Highway Log labels (the vendor mislabeled most) — `highway_log_columns.py`, tooltips, the Legend sheet. |
@@ -94,7 +96,7 @@ points), every claim anchored to `file:symbol`.
 - **Work-PC constraints / what's safe for IT / audit findings** → it-and-security.md
 - **Golden checks / how to verify / test-data locations** → verification-and-testing.md
 - **Adding a report / consolidator / comparison** → reports.md
-- **ArcGIS layers / Clean Road / rendering a report from the layers (ArcGIS reports) / the Reports-vs-ArcGIS matrix** → planning/cleanroad-highways.md + comparison-engine.md §9j–§9l and §12d + gui.md (the ArcGIS tab)
+- **ArcGIS layers / Clean Road / rendering a report from the layers (ArcGIS reports) / the Reports-vs-ArcGIS matrix / the three-way comparison** → planning/cleanroad-highways.md + comparison-engine.md §9j–§9o and §12d–§12e + gui.md (the ArcGIS tab)
 - **Refreshing the layer library / ArcGIS Pro's Python / the export worker (v0.46.0)** → gui.md "The ArcGIS tab" (Layers) + it-and-security.md §1 (the one other program the app starts); code: `arcgis_pro.py`, `arcgis_refresh.py`, `arcgis_worker/export_layers.py`; proof: `check_arcgis_refresh` + `arcgis_selftest.py`
 - **Making a comparison faster (and the rules that keep it output-locked)** → comparison-engine.md §2b–§2c + planning/vs-tsn-comparison-speed.md
 

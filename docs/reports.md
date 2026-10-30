@@ -571,7 +571,10 @@ route / county / postmile columns.
   one-sided, 5,599 cells; Highway 47,746 paired, 3,989 / 12,337 one-sided, 141,593
   cells.
 - **Cross-environment** keys every row on the file's route token, the identity the
-  engine requires, and reads the PDF edition through the same print reader.
+  engine requires, and reads the PDF edition through the same print reader. Since
+  v0.51.0 the file's extract date is context there too (shown, never counted): it is
+  the day the site made the file, so two pulls made on different days differed on every
+  row — Ramp, 2026-10-02 vs 2026-10-22, 15,234 differing cells, 20 of them real.
 - **A row with no postmile** (v0.50.0). The 2026-10-22 dev-site Highway export has 385
   rows on routes 001 and 003 whose begin and end postmiles are blank (the 2026-10-02
   export had none). Every flavor keys such a row on its odometer — `no postmile @
@@ -580,6 +583,11 @@ route / county / postmile columns.
   export: Highway 47,459 paired, 4,176 / 12,624 one-sided,
   140,150 cells; Intersection 16,125 / 260 / 501, 5,587; Ramp 15,204 / 10 / 206,
   15,994.
+- **Three ways** (v0.51.0). Each file also compares against TSN and the app's ArcGIS
+  build at once, cell by cell, on the ArcGIS tab's Three-way matrix: *report differs*
+  (TSN and the layers agree, the report does not), *ArcGIS differs*, *all differ*,
+  *TSN differs* (expected drift), with every column traced to its ArcGIS layer — see
+  [comparison-engine.md](comparison-engine.md) §9o.
 
 Evidence images are not wired for these prints.
 

@@ -3,6 +3,85 @@
 All notable changes to TSMIS Reports Exporter, newest first. Each GitHub
 release shows only its own section (see `build/gen_release_notes.py`).
 
+## v0.51.0 — 2026-10-29
+
+A new comparison puts each Clean Road file beside TSN and the app's ArcGIS build at
+once, so the cells where TSN and the layers agree and the TSMIS report does not
+stand apart from the expected drift. Every column traces to its ArcGIS layer.
+
+- **Three-way comparison: TSMIS vs TSN vs ArcGIS.** A TSMIS-vs-TSN difference alone
+  cannot say whether the report is wrong or the road changed after TSN froze. The
+  layers can. The new comparison takes a Clean Road file (Highway, Intersection or
+  Ramp; Excel or PDF), the TSN extract and the build from the layers, and sorts
+  every cell:
+  - **Report differs**: TSN and ArcGIS agree, the report does not. Look here first.
+  - **ArcGIS differs**: the report agrees with TSN and our build does not, so the
+    build has a gap or the report reads another source.
+  - **All differ**, **TSN differs** (the report follows the layers and TSN is out of
+    date, which is expected) and **agree**.
+
+  Records that TSN and ArcGIS both have and the report lacks are listed as *missing
+  from the report*.
+- **The workbook.** Summary: the inputs and their dates, cells by class, a table per
+  column. **Report differs**: one row per cell, with the three values, the ArcGIS
+  layer and field, how the build gets the value, where to look it up and a link to
+  the record in the grid. The **Three-way** grid: every record and column, each
+  compared cell colored by class and written TSMIS first (`3 ≠ 2 (TSN & ArcGIS)`,
+  `3 (TSN: 2)`, `3 (ArcGIS: 1)`). Then ArcGIS differs, All differ, **Layer trace**
+  and Notes.
+- **Every column traces to its ArcGIS layer.** The Layer trace sheet names each
+  column's layers, fields and rule, plus each layer's library file and the feature
+  service it was exported from. It is generated from each build's own provenance
+  table, so it describes exactly what the build reads.
+- **The Three-way matrix**, a new sub-tab on the ArcGIS tab after Reports vs ArcGIS.
+  It has a row per Clean Road file and edition and a column per exported day. Each
+  cell shows the report-differs count, with the missing-from-report, TSN-differs
+  and ArcGIS-differs counts under it. It uses the same TSN library and ArcGIS builds
+  as the other matrices and reads stale when any of the three changes.
+- **Measured** on the 2026-10-22 dev-site export, the 2025-09 TSN extracts and the
+  builds from the 2026-10-05 layers:
+  - **Ramp:** 15,204 records on all three, 5 report-differs cells.
+  - **Intersection:** 16,122 records, 2,867 report-differs. Most are begin dates
+    where the site writes the geometry date (2,463) and seg order IDs (290). 91
+    intersections are missing from the report; route 072 in LA and route 083 are
+    76 of them.
+  - **Highway:** 46,791 records, 69,394 report-differs. 9,770 are the site's own
+    segmentation (end postmile and length). On routes 101 and 099 the export
+    leaves the median and the right roadbed's lanes and widths blank on about
+    2,100 and 518 rows, where TSN and the layers both describe a divided highway
+    (about 26,000 cells; the 10-02 export is the same). In the left roadbed about
+    half the report-differs cells carry the previous segment's value, and the
+    district code lags a county line by one segment (005 MER 0.794 reads 06, not
+    10).
+- **Clean Road vs TSN refuses an ArcGIS build in the wrong slot.** The loaders
+  refused only the CA HIGHWAYS build, so a Clean Road Intersection or Ramp build
+  put in the export or TSN slot was read as if it were that file. Both builds are
+  refused now.
+- **Highway provenance corrected.** The provenance table said `THY_DISTRICT_CODE`
+  came from SHS District and that the block effective dates took the newest member
+  layer. The build reads the covering span's own District field and, since
+  v0.39.3, the primary layer's date. The table now says so, and with it the CA
+  HIGHWAYS build's Provenance sheet and the Layer trace. No value changes.
+- **Clean Road vs Baseline and between environments: the extract date no longer
+  counts.** It is the day the site made the file, so two pulls made on different
+  days differed on every row. Ramp, 2026-10-02 against 2026-10-22, showed 15,234
+  differing cells, 20 of them real. The extract date is now shown and never
+  counted, as in the vs TSN and vs ArcGIS comparisons.
+- **A dragged row order sticks on the PDF vs Excel and Reports vs ArcGIS
+  matrices.** Their row order was saved sorted, so a dragged row snapped back.
+- **Every Clean Road comparison re-verified** on the 2026-10-02 and 2026-10-22
+  exports, Excel and PDF, through the app's own comparators. PDF vs Excel is
+  identical for all three reports on both days, and every vs TSN and vs ArcGIS
+  result recorded before reproduces exactly. In all 12 three-way runs the
+  report-vs-TSN and report-vs-ArcGIS counts equal those comparisons' own. The one
+  exception is four Ramp cells whose Excel text ends in a carriage return; vs TSN
+  counts those by design. This check found the wrong-slot and extract-date
+  problems above.
+
+Verified on this machine through the app's own comparators, on the owner's
+2026-10-02 and 2026-10-22 exports and the 2026-10-05 layer library; the frozen
+build passes its self-test. The work-PC run is next (roadmap B1).
+
 ## v0.50.0 — 2026-10-23
 
 The Clean Road Highway comparison works again on the 2026-10-22 dev-site export,

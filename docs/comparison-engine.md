@@ -1485,7 +1485,27 @@ What the report-differs cells are, checked against the consolidated exports:
   route 083 again, so likely the 17-day gap between the export and the 2026-10-05 layers.
 
 Highway's ArcGIS-differs class is the CA HIGHWAYS build's own residual (DA5/DA6), spread over
-the left and right roadbed blocks.
+the left and right roadbed blocks. Highway reads **partial**, as its Reports vs ArcGIS cell does:
+the CA HIGHWAYS build records 102 spans it could not place (HF-01), the Summary names that input
+as the reason, and the 161 cells those spans cover are undecided.
+
+**Verified for the release on both real exports** (2026-10-02 and 2026-10-22, Excel and PDF,
+every comparison run through the shipped comparators' counts-only previews — 12 three-way runs):
+
+| | PDF vs Excel | vs TSN (paired · cells), 10-02 / 10-22 | vs ArcGIS (paired · cells), 10-02 / 10-22 |
+|---|---|---|---|
+| Ramp | 15,214 paired, 0 cells, both days | 15,204 · 15,989 / 15,990 (PDF) | 15,214 · 0 / 20 |
+| Intersection | 16,461 / 16,385, 0 cells | 16,201 · 5,599 / 16,125 · 5,587 | 16,458 · 4,092 / 16,382 · 4,079 |
+| Highway | 51,735 / 51,635, 0 cells | 47,746 · 141,593 / 47,459 · 140,150 | 47,852 · 171,632 / 47,557 · 169,817 |
+
+Every Excel edition gives its PDF edition's numbers, every result recorded before reproduces
+exactly (vs TSN on both days, vs ArcGIS on 10-22: §9n, [reports.md](reports.md)), and in all 12 runs the three-way's
+TSMIS-vs-TSN and TSMIS-vs-ArcGIS paired rows and differing cells equal the two comparisons' own —
+the one difference the four Ramp Excel CR cells above (15,993 / 15,994 vs TSN). The day-to-day
+comparison (vs Baseline, 10-02 against 10-22) found the extract date counted on every row; with
+it context (v0.51.0) Ramp reads 20 differing cells and Intersection 1 plus the 76 intersections
+only the 10-02 export has (route 072 LA 65, route 083 11 — the same 76 the three-way finds missing
+from the report), Excel and PDF alike; Highway (Excel) 2,027 cells on 51,136 paired segments.
 
 Locked by `build/check_three_way.py` (the classes; Ramp end to end on the shipped path —
 the real build, the real consolidation, a raw TSN extract — counts, every sheet, the list's
