@@ -1308,7 +1308,9 @@ the registry's required surface for every registered report).
   path through their consolidators' own readers; the Clean Road reports key every row on the file's
   route token (the engine's identity contract), and their prints convert through the PDF
   consolidator in a scratch folder like the other print editions, with the producer's completion
-  carried through (`check_compare_env_pdf_completion` covers all three).
+  carried through (`check_compare_env_pdf_completion` covers all three). Their `*_EXTRACT_DATE`
+  is a context field (v0.51.0), as in the vs-TSN and vs-ArcGIS flavors: it is the day the site
+  made the file, so a vs-Baseline pair of two days otherwise differed on every row.
 
 Pinned by `build/check_summary_editions.py`, `build/check_clean_road_print.py` and
 `build/check_clean_road_compare.py`; the real-data numbers are in
@@ -1365,6 +1367,131 @@ comparisons can never key a record differently; only format reconciliations appl
 - Locked by `build/check_arcgis_clean_road.py` (both builds from a synthetic library, all
   three comparisons) and the registry contract in `check_arcgis_report_intersection`
   (a comparator's context = the build's + the export's own `EXPORT_CONTEXT_FIELDS`).
+
+### 9o. Three-way comparisons — TSMIS vs TSN vs ArcGIS (`three_way.py`, v0.51.0)
+
+The first comparison with THREE sides, and the first that is not a `compare_core`
+workbook: one report's records from the site's export (TSMIS), the frozen TSN extract
+(TSN) and our build of the report from the layers (ArcGIS), classified cell by cell. It
+exists because of a coworker's reading of the TSMIS-vs-TSN comparisons: most mismatches
+were expected, because the layers differed from TSN too — but in some the layers matched
+TSN and the report was wrong. TSMIS replaced TSN (D5), so a TSMIS-vs-TSN difference alone
+cannot tell a report defect from network change; the layers can. The three Clean Road
+files are the reports it serves first — the only ones with all three sources.
+
+**The classes** (a cell of a record present on all three sides):
+
+| Class | Meaning | Reading |
+|---|---|---|
+| **report differs** | TSN = ArcGIS ≠ TSMIS | two independent sources agree and the report does not — look here first |
+| ArcGIS differs | TSMIS = TSN ≠ ArcGIS | our build disagrees with both: a build gap, or the report reads another source than the traced layer |
+| all differ | three values | read side by side |
+| TSN differs | TSMIS = ArcGIS ≠ TSN | expected: the report follows the layers, TSN is out of date |
+| agree | all three equal | |
+| undecided | the ArcGIS cell is the HF-01 unavailable anchor | only TSMIS vs TSN is known; never a finding |
+
+**One value space.** Each side goes through the report's ONE Clean Road projection
+(`compare_clean_road_tsn._row`: the format-only reconciliations both two-sided comparisons
+use — ISO dates, canonical amounts, the county period, TSN's design-code domain letter,
+the control-type and on/off crosswalks) and the same-source render rule on all three
+(`ctc.same_source_render_rows`: edge control characters fold away — the Reports-vs-ArcGIS
+reading), then compare_core's TRIM. Equality is therefore transitive and the five value
+classes partition every compared cell exactly. The one measured consequence: on the
+2026-10-02 Ramp export the Excel-vs-TSN cell counts 4 cells more than the print's
+(15,993 vs 15,989) — the four route-010 "Cactus City rest area" descriptions whose Excel
+cells end in a carriage return, compared content under CMP-AUD-197 — and the three-way,
+which folds the CR, agrees with the print.
+
+**Pairing is the two comparisons' own, anchored on the report.** The report's rows pair
+with TSN through `compare_core.keys_for` + `pair_occurrences_by_similarity` under the
+TSMIS-vs-TSN comparison's schema, and with ArcGIS under the Reports-vs-ArcGIS comparison's
+schema, independently; TSN and ArcGIS rows neither paired with a report row pair with each
+other ("TSN + ArcGIS, missing from the TSMIS report" — the record-level analogue of
+report differs). So a record is never keyed differently than in either two-sided
+comparison, and on records present on all three, the pairwise counts reproduce theirs:
+`check_three_way` asserts paired rows and differing cells against both comparisons' own
+counts-only previews, and the real-data sweep below did the same statewide.
+
+**Compared columns** = the columns BOTH two-sided comparisons count. Intersection's
+`INX_CONNECTION_ID` and Ramp's `RAM_DESIGN_DESC` are counted only against ArcGIS (TSN numbers
+intersections in another id space and words its design codes its own way), so they are
+shown here and counted in Reports vs ArcGIS. Highway 46 · Intersection 42 · Ramp 18.
+
+**Layer trace — every column to its ArcGIS layer.** The workbook names, for every column,
+the layer(s) and field(s) the build reads and the rule (`ThreeWaySchema.trace`, built by
+`compare_clean_road_three_way` from each build's own provenance table — Highway's
+`clean_highway_columns.PROVENANCE`, Intersection's / Ramp's `PROVENANCE` — so it can never
+describe a column differently from the build), plus each layer's library file and feature
+service from the `00_INDEX.xlsx` manifest. Building the trace corrected two stale entries in
+the Highway provenance: `THY_DISTRICT_CODE` comes from the covering span's own `District`
+field (the build has never read `SHS District`), and the three block effective dates follow
+the PRIMARY-layer rule (DA1/DA5), not the "newest member layer" text they still carried.
+
+**The workbook** (values only, `three_way.write_workbook`): **Summary** (the three inputs and
+their dates, the vintage warning, records by presence, cells by class, a per-column table
+with each column's layer), **Report differs** (one row per cell: the three values, the
+ArcGIS layer and field, how the build gets it, where to look it up — route · county · PM, an
+intersection's INTERSECTION_ID — and a link to its grid row), **Three-way** (every record,
+every column; a compared cell leads with the TSMIS value, then whichever source disagrees:
+`3 ≠ 2 (TSN & ArcGIS)`, `3 (TSN: 2)`, `3 (ArcGIS: 1)`, `3 ≠ TSN 2 ≠ ArcGIS 1`, filled by
+class; per-row class counts and a Presence column to filter on), **ArcGIS differs**, **All
+differ**, **Layer trace**, **Notes**. Written to a temp sibling and moved into place
+(`artifact_store.atomic_save_if`), so a failed write keeps the last good one.
+
+**Truth is the sidecar.** The counts (`ThreeWayCounts`, versioned) are published in the
+workbook's mtime-coupled outcome sidecar under `three_way` (`consolidation_meta.write_outcome`
+via `producer_extra`); `three_way.read_counts` returns them only while the sidecar is trusted
+and still describes the file, so a rewritten workbook reads as unknown. A capped duplicate
+pairing or a partial input (`ctc._merge_input_outcomes` over the three inputs) makes the
+comparison `partial`.
+
+**Role gates** come from the loaders: side 1 must be the site's consolidated export, side 2
+the TSN extract or the library's normalized copy, side 3 the app's own build of the same
+report. Building them exposed a hole in the site-vs-TSN loaders: they refused only the CA
+HIGHWAYS build's `ArcGIS Build` marker, so a Clean Road Intersection or Ramp build (same
+sheet, same header, its own `ArcGIS Clean Road Build` marker) read as the site's export —
+or as TSN. `compare_clean_road_tsn` now refuses both markers (red→green in
+`check_clean_road_compare`).
+
+**Measured** (the 2026-10-22 dev-site export, the TSN extracts of 2025-09, the builds from the
+2026-10-05 layers):
+
+| | records on all three | missing from report | report differs | ArcGIS differs | all differ | TSN differs | agree |
+|---|---|---|---|---|---|---|---|
+| Ramp | 15,204 | 0 | 5 | 4 | 9 | 15,976 | 257,678 |
+| Intersection | 16,122 | 91 | 2,867 | 1,011 | 14 | 2,688 | 670,544 |
+| Highway | 46,791 | 5,862 | 69,394 | 74,923 | 17,607 | 49,787 | 1,940,514 |
+
+What the report-differs cells are, checked against the consolidated exports:
+
+- **Intersection** (2,867): `INX_MAIN_BEGIN_DATE` (1,961) and `INX_CROSS_BEGIN_DATE` (502) —
+  the site writes the geometry date where TSN and the layer both carry the leg's own date;
+  `INX_SEG_ORDER_ID` (290) — blank or different in the site's file where both others agree.
+  The 91 intersections missing from the report: 76 are route 072's LA part (65) and route 083
+  (11), both gone from the 10-22 export (the 10-02 export misses 15).
+- **Highway** (69,394), in four groups. The segmentation: `END PM` (4,488) and `LENGTH`
+  (5,282) — the site cuts at every Highway Log event. **Routes 101 and 099** (about 26,000
+  cells: 90% of the median block's, 67% of the right roadbed's): the export leaves the median
+  columns and the right roadbed's lanes and widths blank on about 2,100 of route 101's 2,939
+  rows, and on route 099 the median on 803 of 1,495 rows and the right roadbed's on 518 — on
+  the 10-02 export as on the 10-22 one — where TSN and the layers both describe a divided
+  highway. **The left roadbed** (19,365 cells): in about half (10,447) the site's value is
+  the previous segment's TSN value — the previous segment's alone 7,426 times, the next
+  one's alone 706 — as if the report applied a change one segment late. And
+  `THY_DISTRICT_CODE` (101) — the previous county's district carried into
+  the next county's first segment (005 MER 0.794 reads district 06, not 10) — plus the three
+  format habits the Notes name (`E` 968, `005S` 257, the route suffix 78).
+- **Ramp** (5): five `RAM_DESCRIPTION` cells drop "RTE 83/" from route-071 descriptions —
+  route 083 again, so likely the 17-day gap between the export and the 2026-10-05 layers.
+
+Highway's ArcGIS-differs class is the CA HIGHWAYS build's own residual (DA5/DA6), spread over
+the left and right roadbed blocks.
+
+Locked by `build/check_three_way.py` (the classes; Ramp end to end on the shipped path —
+the real build, the real consolidation, a raw TSN extract — counts, every sheet, the list's
+layer and link, the grid texts and fills, the missing-from-report record, the role gates,
+the sidecar binding, the pairing equal to both two-sided comparisons; every column of all
+three reports traced to library layers; the matrix).
 
 ## 10. Internal mechanics (quick reference)
 
@@ -1772,6 +1899,46 @@ report's PDF-vs-Excel self-check proves it — so one comparator per report serv
   Excel AND the PDF edition against the same build — cache record, identity, the cell
   reading stale after a rebuilt build, zero evidence artifacts — `build_report`'s guards
   + as-of default, and the reports endpoints + the multi-report worker).
+
+### 12e. The ArcGIS-tab "Three-way" matrix (`scripts/three_way_matrix.py`, v0.51.0)
+
+The **sixth** matrix, on the ArcGIS tab between Reports vs ArcGIS and Clean Road vs TSN.
+**Rows = every consolidated export edition of a report with a three-way adapter**
+(`compare_clean_road_three_way.REPORTS` — the six Clean Road editions), **columns = exported
+days**, **each cell = that day's export vs the report's TSN dataset vs its ArcGIS build**
+(§9o). Every side is the one the two-sided matrices already use: the TSN dataset is the
+by-day vs-TSN matrix's (`matrix.tsn_source`, healed by `tsn_library.ensure_current` before a
+build, the user's `matrix_tsn_files` pick honoured), the ArcGIS build is
+`arcgis_matrix.arcgis_side(family)`, and the export consolidates through the shared
+`matrix._ensure_consolidated`.
+
+- **Cell state** rides the shared `matrix._staleness` with three sources — `export` (the
+  day's folder, fingerprinted), `tsn` (its identity token, required) and `layers` (the
+  build's content identity) — so a moved export, a rebuilt TSN library or a refreshed
+  ArcGIS build reads the cell stale. The COUNTS never come from the cache: `cell_state`
+  reads them from the workbook's own sidecar (`three_way.read_counts`), and a built
+  workbook without a trusted sidecar reads `outcome_missing`. Several missing sides are all
+  named (`missing_sides`); `missing_side` is the first, in export / tsn / layers order.
+- **The cell** headlines **report ≠** (TSN = ArcGIS ≠ TSMIS) and colours by report findings —
+  report-differs cells plus records missing from the report — green at zero, amber below
+  `MX_HI`, red above; the sub-line adds `missing`, `expected` (TSN differs) and `ArcGIS ≠`;
+  the tooltip carries every class and the record counts.
+- **Store:** `output/comparisons/three-way-by-day/<run>/<row>_three_way <run>.xlsx`, the
+  freshness cache in `_state/_results.json` (identity `three-way-by-day`: built-at mtime,
+  completion, input fingerprint, `source_identities` {tsn, layers}, producer version) and the
+  attempts overlay beside it.
+- **Queue:** compare Jobs carry `which:"three_way"` → `ThreeWayMatrixCompareWorker`.
+  Bridge (`gui_three_way_api`): `three_way_matrix_info`, `set_three_way_matrix_source`,
+  `add_/remove_three_way_matrix_day`, `set_three_way_matrix_report`,
+  `set_three_way_matrix_row_order`, `set_three_way_matrix_day_order`,
+  `build_three_way_matrix_cell`, `rebuild_three_way_matrix`,
+  `open_three_way_cell_comparison`, `open_three_way_comparisons_folder`. Settings:
+  `three_way_matrix_source/days/hidden/row_order`. Values workbooks only, so no formulas
+  toggle.
+- **Locked by** `build/check_three_way.py::test_matrix` (the six rows, the missing-side
+  states, `build_cell` through the real consolidation and comparison, a fresh cell with the
+  published counts, staleness on a moved TSN token / a refreshed build / a new export route,
+  the scoped rebuild list, the refusal of an edition not exported that day).
 
 ## 13. Visual evidence (`scripts/visual_evidence.py` + the per-report adapters, v0.21.0; Intersection Detail joined in v0.22.0, Highway Log in v0.24.0, Highway Sequence in v0.25.0, Ramp Detail in v0.26.0; the exact-source rebuild + the cross-environment lane in RB-4/HF-05+HF-10)
 

@@ -111,7 +111,11 @@ _DYNAMIC_REPORT_MODULES = ("matrix", "day_matrix", "pdf_excel_matrix",
                            "compare_intersection_detail_arcgis",
                            # v0.46.0: the in-app layer refresh (the Layers tab).
                            "arcgis_pro", "arcgis_refresh", "arcgis_selftest",
-                           "gui_arcgis_layers_api", "gui_worker_arcgis")
+                           "gui_arcgis_layers_api", "gui_worker_arcgis",
+                           # v0.51.0: the Three-way matrix and its Clean Road
+                           # adapters, imported inside its endpoints and worker.
+                           "three_way", "three_way_matrix",
+                           "compare_clean_road_three_way")
 
 
 def run(emit=None):
