@@ -251,6 +251,19 @@ def test_ramp_env(tmp, run_b):
                                                   str(tmp / "e2.xlsx"), **q))
     c.check("a changed cell counts", diff["differing_cells"] == 1 and diff["paired_rows"] == 3,
             diff)
+    # Two pulls made on different days carry different extract dates on every
+    # row; that is the file's own date, not the road's, so it never counts.
+    _site_file(next(run_a.glob("*.xlsx")), crc.RAMP,
+               [_ramp("0.606", RAM_EXTRACT_DATE="10/01/2026"),
+                _ramp("0.682", RAM_DESCRIPTION="005/SB  ON FR MAIN",
+                      RAM_EXTRACT_DATE="10/01/2026"),
+                _ramp("1.5", RAM_ROUTE_NAME="007", RAM_DESIGN_DESC="label differs",
+                      RAM_CITY_CODE="LA", RAM_EXTRACT_DATE="10/01/2026")])
+    dated = _counts(cee.CLEAN_RAMP.compare_folders(str(run_a.parent), str(run_b.parent),
+                                                   str(tmp / "e3.xlsx"), **q))
+    c.check("a different extract date on every row counts nothing (vs Baseline)",
+            dated == {"paired_rows": 3, "side_a_only_rows": 0, "side_b_only_rows": 0,
+                      "differing_cells": 0}, dated)
 
 
 def _thy(begin, end, **kw):
