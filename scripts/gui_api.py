@@ -70,6 +70,7 @@ from gui_compare_api import GuiCompareMixin
 from gui_settings_api import GuiSettingsMixin
 from gui_arcgis_api import GuiArcgisMixin
 from gui_arcgis_layers_api import GuiArcgisLayersMixin
+from gui_three_way_api import GuiThreeWayMixin
 
 log = logging.getLogger("tsmis.gui")
 # Everything shown in the GUI's log pane is mirrored here, so tsmis.log
@@ -198,8 +199,8 @@ def _report_list_payload():
 
 
 class GuiApi(GuiExportMixin, GuiAuthMixin, GuiCompareMixin,
-             GuiArcgisMixin, GuiArcgisLayersMixin, GuiSettingsMixin, GuiUpdateMixin,
-             GuiMatrixMixin):
+             GuiArcgisMixin, GuiArcgisLayersMixin, GuiThreeWayMixin, GuiSettingsMixin,
+             GuiUpdateMixin, GuiMatrixMixin):
     """State + bridge behind the WebView UI. Public methods = the JS api."""
 
     def __init__(self):

@@ -339,7 +339,9 @@ def main():
                  settings.get_pve_matrix_row_order, ["ramp_detail", "highway_log"]),
                 ("Reports vs ArcGIS", settings.set_arcgis_matrix_row_order,
                  settings.get_arcgis_matrix_row_order,
-                 ["intersection_detail", "highway_detail"])):
+                 ["intersection_detail", "highway_detail"]),
+                ("Three-way", settings.set_three_way_matrix_row_order,
+                 settings.get_three_way_matrix_row_order, ["clean_ramp", "clean_highway"])):
             setter(keys)
             check(f"{label}: a dragged row order is kept as dragged, not sorted",
                   getter() == keys)

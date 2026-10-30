@@ -131,8 +131,8 @@ pairs county-blind by decision with the exposure measured and disclosed in the N
 (524 of 59,457 keys carry >1 row; 438 of those span counties = 976 rows, 1.6%).
 **Never infer a county.**
 
-**The ArcGIS tab has FOUR sub-tabs, in the order the work flows (v0.47.0):
-Layers → ArcGIS reports → Reports vs ArcGIS → Clean Road vs TSN.** Everything builds
+**The ArcGIS tab has FIVE sub-tabs, in the order the work flows (v0.51.0):
+Layers → ArcGIS reports → Reports vs ArcGIS → Three-way → Clean Road vs TSN.** Everything builds
 from the `arcgis_layers/` library, which **Layers** (first, v0.46.0) refreshes
 in-app: ArcGIS Pro's own Python runs `arcgis_worker/export_layers.py` (ArcPy can't
 ship in the bundle), and `arcgis_refresh` checks and swaps each exported layer in.
@@ -150,7 +150,14 @@ sub-tab only); a build gates on its own `REQUIRED_LAYERS`. **Reports vs ArcGIS**
 rows = every EXPORT EDITION of those reports — Excel and PDF are separate rows —
 columns = exported days, each cell = that day's consolidated export vs the report's
 one ArcGIS build, which the row picks up by itself (`arcgis_side`). The ArcGIS
-builds are Excel, so BOTH editions compare against the same build.
+builds are Excel, so BOTH editions compare against the same build. **Three-way**
+(v0.51.0, `three_way.py` + `three_way_matrix.py`, §9o / §12e) compares each Clean
+Road edition against TSN AND its ArcGIS build at once and classifies every cell:
+**report differs** (TSN = ArcGIS ≠ TSMIS — two sources against the report, the
+one to chase), ArcGIS differs (the build against both), all differ, TSN differs
+(expected drift) and agree. Pairing is the two two-sided comparisons' own;
+compared columns are the ones both count; every column is traced to the ArcGIS
+layer and field the build reads; the counts live in the workbook's sidecar.
 
 **Clean Road (v0.29.0) builds the HIGHWAY clean-road file**: our
 own CA HIGHWAYS table from the owner's per-layer ArcGIS exports in
@@ -583,6 +590,12 @@ scripts/                     the engine (console-free) + console & GUI drivers +
   arcgis_report_intersection_detail.py   the IM layers rendered as Intersection Detail —
                              a POINT report, so no segmentation: the row universe, the
                              Major/Minor leg rule, and the per-column overlay carry rule
+  three_way.py               the three-way engine (v0.51.0): TSMIS vs TSN vs ArcGIS cell
+                             classes, pairing anchored on the report through compare_core's
+                             own keying, the values workbook, the counts in its sidecar
+  compare_clean_road_three_way.py   the Clean Road adapters: loaders, the two pairing
+                             schemas, the every-column layer trace, "look it up" locations
+  three_way_matrix.py        the ArcGIS-tab Three-way by-day matrix (TSN + ArcGIS + export)
   highway_log_columns.py intersection_detail_columns.py highway_detail_columns.py   the per-report column labels
   highway_summary_columns.py the Highway Summary layout SoT: sections/codes + the ONE
                              strict miles reader the consolidator, the cross-env loader
@@ -590,6 +603,7 @@ scripts/                     the engine (console-free) + console & GUI drivers +
                              the shared within-section CODES the TSN print pairs on
   gui_main.py gui_api.py     GUI entry / the bridge core (state, pump, gate)
   gui_export_api.py gui_auth_api.py gui_compare_api.py gui_settings_api.py gui_update.py   the endpoint mixins (S1)
+  gui_arcgis_api.py gui_arcgis_layers_api.py gui_three_way_api.py   the ArcGIS tab's endpoint mixins
   gui_worker.py              re-export SHIM over gui_worker_export/_env/_maint/_matrix.py (S2)
   task_coordinator.py contract.py        GUI task-state owner / Python⇄JS bridge enum SSOT
   gui_endpoint.py gui_matrix.py gui_win32.py   the endpoint envelope (+_task_endpoint/pick_path) / matrix mixin / Win32

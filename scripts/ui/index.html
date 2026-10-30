@@ -48,6 +48,7 @@
   <symbol id="i-save" viewBox="0 0 24 24"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></symbol>
   <symbol id="i-warn" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
   <symbol id="i-loader" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></symbol>
+  <symbol id="i-network" viewBox="0 0 24 24"><rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/></symbol>
   <symbol id="i-compare" viewBox="0 0 24 24"><path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/></symbol>
   <symbol id="i-grid" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></symbol>
   <symbol id="i-external" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
@@ -740,6 +741,10 @@
           <button class="subtab" id="subAgReports" role="tab" aria-selected="false">
             <svg class="ic"><use href="#i-compare"/></svg>Reports vs ArcGIS
           </button>
+          <button class="subtab" id="subAgThreeWay" role="tab" aria-selected="false"
+                  title="Each export vs TSN vs its ArcGIS build — where TSN and the layers agree and the report doesn't">
+            <svg class="ic"><use href="#i-network"/></svg>Three-way
+          </button>
           <button class="subtab" id="subAgCleanRoad" role="tab" aria-selected="false">
             <svg class="ic"><use href="#i-grid"/></svg>Clean Road vs TSN
           </button>
@@ -880,6 +885,62 @@
           </button>
         </div>
         </div><!-- /agReports -->
+
+        <!-- Sub-tab 4 (v0.51.0): every export edition vs TSN vs its report's
+             ArcGIS build, by day — the cells where TSN and the layers agree and
+             the report doesn't stand apart from the expected TSN drift -->
+        <div id="agThreeWay" class="mx-pane hidden">
+        <div class="card-section" id="twSidesSection">
+          <div class="section-head">
+            <span class="section-label">The three sides</span>
+            <span class="section-meta" id="twSidesMeta">—</span>
+          </div>
+          <p class="hint" id="twSidesHint">Checking the TSN datasets and the ArcGIS reports…</p>
+          <div class="agb-chiprow">
+            <div class="agb-chips" id="twSideChips"></div>
+            <span class="spacer"></span>
+            <button class="btn btn-subtle btn-small" id="btnTwGoBuilds">
+              <svg class="ic"><use href="#i-file-text"/></svg>ArcGIS reports
+            </button>
+          </div>
+        </div>
+
+        <div class="card-section mx-gridsection">
+          <div class="section-head">
+            <span class="section-label">TSMIS vs TSN vs ArcGIS — by export day</span>
+            <span class="section-meta">
+              Source
+              <span class="tb-select select-light"><select id="twMatrixSource"></select><svg class="ic"><use href="#i-chevron-down"/></svg></span>
+              <span class="hint" id="twMatrixProgress" hidden></span>
+            </span>
+          </div>
+          <div class="matrix-legend">
+            <span class="mx-key mx-match">no report finding</span>
+            <span class="mx-key mx-diff-lo">few report findings</span>
+            <span class="mx-key mx-diff-hi">many report findings</span>
+            <span class="mx-key mx-partial">partial inputs</span>
+            <span class="mx-key mx-stale">stale</span>
+            <span class="mx-key mx-missing">needs TSN / ArcGIS build / export</span>
+          </div>
+          <div class="matrix-wrap"><div class="matrix-grid" id="twMatrixGrid"></div></div>
+        </div>
+
+        <div class="card-section actions-row">
+          <button class="btn btn-subtle btn-small" id="btnTwMxBuildAll">
+            <svg class="ic"><use href="#i-layers"/></svg>Compare all
+          </button>
+          <button class="btn btn-subtle btn-small" id="btnTwMxRebuildAll">
+            <svg class="ic"><use href="#i-refresh"/></svg>Rebuild stale
+          </button>
+          <button class="btn btn-subtle btn-small" id="btnTwMxOpenComparisons">
+            <svg class="ic"><use href="#i-folder-open"/></svg>Open comparisons folder
+          </button>
+          <span class="spacer"></span>
+          <button class="btn btn-subtle btn-small hidden" id="btnTwMxCancel">
+            <svg class="ic"><use href="#i-x"/></svg>Cancel
+          </button>
+        </div>
+        </div><!-- /agThreeWay -->
 
         <!-- Sub-tab 4: the clean-road files vs the TSN extract -->
         <div id="agCleanRoad" class="hidden">
@@ -1551,6 +1612,56 @@
           <div class="mx-toggles" id="agMatrixReportToggles"></div>
         </div>
       </div>
+
+      <!-- Three-way matrix config zone (v0.51.0): shown on the ArcGIS tab's
+           "Three-way" sub-tab (body.matrix-wide.mw-tw). The shared job queue,
+           day columns, how to read a cell, and the row show/hide toggles. -->
+      <div class="card matrix-config" id="threeWayMatrixConfig">
+        <div class="mc-head"><svg class="ic"><use href="#i-grid"/></svg>Matrix options</div>
+
+        <div class="mc-group mx-queue-group" id="twQueueGroup" hidden>
+          <div class="mc-label">Queue <span class="mx-queue-count" id="twQueueCount"></span></div>
+          <div class="mx-queue" id="twQueue"></div>
+          <div class="mx-queue-actions">
+            <button class="btn btn-subtle btn-small" id="btnTwQueueClear">
+              <svg class="ic"><use href="#i-trash"/></svg>Clear queued
+            </button>
+            <button class="btn btn-subtle btn-small" id="btnTwQueueStopAll">
+              <svg class="ic"><use href="#i-x"/></svg>Stop all
+            </button>
+          </div>
+        </div>
+
+        <div class="mc-group">
+          <div class="mc-label">Day columns</div>
+          <div class="dm-toolbar">
+            <span class="tb-select select-light"><select id="twMatrixAddDay"></select><svg class="ic"><use href="#i-chevron-down"/></svg></span>
+            <button class="btn btn-standard btn-small" id="btnTwAddDay">
+              <svg class="ic"><use href="#i-check"/></svg>Add day
+            </button>
+          </div>
+          <p class="hint" style="margin:6px 0 0">Add exported days as columns. Each cell
+            compares that day's export of the row's edition with the report's
+            <b>TSN</b> dataset and its <b>ArcGIS</b> build at once. A cell needs all
+            three: the export, the TSN dataset (Settings ▸ TSN reports) and the
+            ArcGIS build (ArcGIS reports).</p>
+        </div>
+
+        <div class="mc-group">
+          <div class="mc-label">Reading a cell</div>
+          <p class="hint" style="margin:0"><b>report ≠</b> — TSN and the layers agree,
+            the report doesn't: look here first. <b>expected</b> — the report follows
+            the layers and TSN is out of date. <b>ArcGIS ≠</b> — our layer build
+            disagrees with both. <b>missing</b> — a record TSN and the layers both
+            have that the report leaves out. The workbook lists every cell with the
+            ArcGIS layer and field it comes from.</p>
+        </div>
+
+        <div class="mc-group">
+          <div class="mc-label">Reports</div>
+          <div class="mx-toggles" id="twMatrixReportToggles"></div>
+        </div>
+      </div>
     </section>
   </main>
 
@@ -1590,6 +1701,7 @@
 <script src="ui-matrix.js"></script>
 <script src="ui-arcgis.js"></script>
 <script src="ui-arcgis-reports.js"></script>
+<script src="ui-arcgis-three-way.js"></script>
 <script src="ui-settings.js"></script>
 <script src="app.js"></script>
 <script>

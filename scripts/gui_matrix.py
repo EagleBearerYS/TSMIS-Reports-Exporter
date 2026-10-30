@@ -184,7 +184,8 @@ class GuiMatrixMixin:
                   fast=False, which="env", force=False, origin=None, asof=None,
                   layers=None, rows=None):
         # `which` ("env" = Everything matrix, "day" = Compare by-day matrix,
-        # "baseline" / "pdf_vs_excel" / "arcgis" the other by-day matrices) lets
+        # "baseline" / "pdf_vs_excel" / "arcgis" / "three_way" the other by-day
+        # matrices) lets
         # ONE queue serve every matrix; for day jobs `env` carries the date.
         # `force` rebuilds the persistent consolidated even when it looks fresh.
         # `origin` ("canonical"/"legacy") routes a tsn_consolidate job (CMP-AUD-010).
@@ -369,6 +370,8 @@ class GuiMatrixMixin:
             return self._dispatch_pve_compare_job(job)
         if job.get("which") == "arcgis":
             return self._dispatch_arcgis_compare_job(job)
+        if job.get("which") == "three_way":
+            return self._dispatch_three_way_compare_job(job)
         base = self._current_baseline()
         dest = settings.get_batch_dest()
         cells = self._resolve_compare_cells(job, base)

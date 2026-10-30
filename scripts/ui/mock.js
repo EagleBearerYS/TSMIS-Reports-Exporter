@@ -1059,6 +1059,89 @@ function makeMockApi() {
              available_days: mockAvail(source),
              available_day_reports: mockDayReports(MOCK_AG_DAY_REPORTS, source, false) };
   }
+  // ---- the ArcGIS tab: "Three-way" matrix (v0.51.0) ----
+  // The six Clean Road editions vs TSN vs their ArcGIS build. The preview shows
+  // the states a real day lands in: Highway and Intersection with many "report
+  // differs" cells (red), Ramp with a handful (amber), a Ramp print with none
+  // (green), a stale cell and one not built yet. Counts are the 2026-10-22
+  // dev-site export's real three-way results (layers of 2026-10-05).
+  const MOCK_TW_FAMILIES = ["clean_highway", "clean_intersection", "clean_ramp"];
+  const MOCK_TW_ROWS = MOCK_AG_ROWS.filter((r) => MOCK_TW_FAMILIES.indexOf(r.family) >= 0);
+  const MOCK_TW_DAY_REPORTS = {
+    "ssor-prod": { "2026-06-18": ["CR-HWY", "CR-HWY-PDF", "CR-INT", "CR-INT-PDF", "CR-RMP", "CR-RMP-PDF"],
+                   "2026-06-17": ["CR-HWY", "CR-INT", "CR-RMP"], "2026-06-11": [] },
+  };
+  const MOCK_TW_COUNTS = {
+    clean_highway: { report: 69394, arcgis: 74923, all: 17607, tsn: 49787, match: 1940514,
+                     undecided: 161, missing_from_report: 5862, only_in_report: 3410,
+                     records: { all: 46791 }, counted_columns: 46 },
+    clean_intersection: { report: 2867, arcgis: 1011, all: 14, tsn: 2688, match: 670544,
+                          undecided: 0, missing_from_report: 91, only_in_report: 0,
+                          records: { all: 16122 }, counted_columns: 42 },
+    clean_intersection_pdf: { report: 2867, arcgis: 1011, all: 14, tsn: 2688, match: 670544,
+                              undecided: 0, missing_from_report: 91, only_in_report: 0,
+                              records: { all: 16122 }, counted_columns: 42 },
+    clean_ramp: { report: 5, arcgis: 4, all: 9, tsn: 15976, match: 257678, undecided: 0,
+                  missing_from_report: 0, only_in_report: 0, records: { all: 15204 },
+                  counted_columns: 18 },
+    clean_ramp_pdf: { report: 0, arcgis: 0, all: 0, tsn: 15976, match: 257696, undecided: 0,
+                      missing_from_report: 0, only_in_report: 0, records: { all: 15204 },
+                      counted_columns: 18 },
+  };
+  function mockTwCmp(rk, i, exported, b) {
+    if (!exported) return { supported: true, built: false, stale: true, reason: "missing",
+                            missing_side: "export", missing_sides: ["export"] };
+    if (!b.built) return { supported: true, built: false, stale: true, reason: "missing",
+                           missing_side: "layers", missing_sides: ["layers"] };
+    const tw = MOCK_TW_COUNTS[rk];
+    if (i > 0 || !tw) return { supported: true, built: false, stale: true, reason: "missing",
+                               missing_side: null, missing_sides: [] };
+    return { supported: true, built: true, mtime: 1791300000, completion: "complete",
+             stale: rk === "clean_intersection_pdf", reason: rk === "clean_intersection_pdf"
+               ? "export_newer" : "fresh", missing_side: null, missing_sides: [], three_way: tw };
+  }
+  function mockTwSnapshot() {
+    const source = st.three_way_matrix_source || "ssor-prod dev-site";
+    const days = st.three_way_matrix_days || [];
+    const hidden = st.three_way_matrix_hidden || [];
+    const visible = MOCK_TW_ROWS.filter((r) => hidden.indexOf(r.key) < 0);
+    const byKey = {}; visible.forEach((r) => { byKey[r.key] = r; });
+    const shown = mockApplyOrder(visible.map((r) => r.key), st.three_way_matrix_row_order)
+      .map((k) => byKey[k]);
+    const builds = { ...mockAgBuilds };
+    ["clean_intersection", "clean_ramp"].forEach((k) => {
+      builds[k] = { ...mockAgBuilds[k], built: true, asof: "2026-10-05", completion: "complete",
+                    trusted: true, comparable_now: true, stale: false, stale_reason: "",
+                    drop_exported: MOCK_AG_DROP.exported, drop_current: true };
+    });
+    const dayReports = MOCK_TW_DAY_REPORTS[mockEnv(source)] || {};
+    const cells = {}, tsnMeta = {}, rowLabels = {}, rowFamily = {};
+    MOCK_TW_ROWS.forEach((r) => {
+      rowLabels[r.key] = r.label; rowFamily[r.key] = r.family;
+      tsnMeta[r.key] = { tsn_subdir: r.family, source_kind: "consolidated", ready: true,
+                         source_path: `C:\\Tools\\TSMIS Exporter\\tsn_library\\${r.family}\\consolidated\\tsn_${r.family}_normalized.xlsx` };
+    });
+    shown.forEach((r) => {
+      cells[r.key] = {};
+      days.forEach((d, i) => {
+        const exported = (dayReports[d] || []).indexOf(r.code) >= 0;
+        cells[r.key][d] = { export: { present: exported, mtime: 0,
+          age_seconds: exported ? (i + 7) * 86400 : null, subdir: r.key },
+          cmp: mockTwCmp(r.key, i, exported, builds[r.family]) };
+      });
+    });
+    return { source, sources: mockSourceOptions(),
+             day_hosts: mockDayHosts(source, days, mockAvail(source)),
+             ...mockSourceInfo(source), days, today: MOCK_TODAY,
+             rows: shown.map((r) => r.key), row_labels: rowLabels, row_family: rowFamily,
+             all_rows: MOCK_TW_ROWS.map((r) => ({ key: r.key, label: r.label, code: r.code,
+                                                   family: r.family })),
+             hidden, tsn_meta: tsnMeta, cells,
+             library: { drop: MOCK_AG_DROP, builds },
+             available_days: mockAvail(source),
+             available_day_reports: mockDayReports(MOCK_TW_DAY_REPORTS, source, false) };
+  }
+
   // v0.16.0 mock job queue — mirrors gui_api: enqueue, run one at a time, auto-
   // advance. `kind` drives the run-mode/icon; `total` feeds the compare progress.
   let mockJobSeq = 0;
@@ -2460,6 +2543,61 @@ function makeMockApi() {
     },
     open_arcgis_comparisons_folder: async () => {
       push({ t: "log", text: "(mock) open Reports-vs-ArcGIS comparisons folder" });
+      return { ok: true };
+    },
+    // ---- the ArcGIS tab: Three-way matrix (v0.51.0) ----
+    three_way_matrix_info: async () => mockTwSnapshot(),
+    set_three_way_matrix_source: async (s) => {
+      st.three_way_matrix_source = s; st.three_way_matrix_days = [];
+      pushState(); return { ok: true, source: s };
+    },
+    add_three_way_matrix_day: async (d) => {
+      const avail = mockAvail(st.three_way_matrix_source || "ssor-prod dev-site");
+      if (avail.indexOf(d) < 0) return { error: "That day has no export for this source." };
+      if ((st.three_way_matrix_days || []).indexOf(d) < 0)
+        st.three_way_matrix_days = [...(st.three_way_matrix_days || []), d];
+      pushState(); return { ok: true, days: st.three_way_matrix_days };
+    },
+    remove_three_way_matrix_day: async (d) => {
+      st.three_way_matrix_days = (st.three_way_matrix_days || []).filter((x) => x !== d);
+      pushState(); return { ok: true, days: st.three_way_matrix_days };
+    },
+    set_three_way_matrix_report: async (rk, visible) => {
+      const hidden = new Set(st.three_way_matrix_hidden || []);
+      if (visible) hidden.delete(rk); else hidden.add(rk);
+      if (hidden.size >= MOCK_TW_ROWS.length) return { error: "Keep at least one report on the matrix." };
+      st.three_way_matrix_hidden = [...hidden];
+      return { ok: true, hidden: st.three_way_matrix_hidden };
+    },
+    set_three_way_matrix_row_order: async (keys) => {
+      st.three_way_matrix_row_order = keys || [];
+      pushState(); return { ok: true, order: st.three_way_matrix_row_order };
+    },
+    set_three_way_matrix_day_order: async (days) => {
+      const cur = st.three_way_matrix_days || [];
+      const clean = (days || []).filter((d) => cur.includes(d));
+      st.three_way_matrix_days = [...clean, ...cur.filter((d) => !clean.includes(d))];
+      pushState(); return { ok: true, days: st.three_way_matrix_days };
+    },
+    build_three_way_matrix_cell: async (rk, d) =>
+      mockEnqueue("compare", "cell", `Three-way ${mockAgLabel(rk)} — ${d}`,
+                  { which: "three_way", total: 1 }),
+    rebuild_three_way_matrix: async (scope, row, date) => {
+      if (!(st.three_way_matrix_days || []).length) return { ok: true, nothing: true };
+      const n = row ? (st.three_way_matrix_days || []).length : date ? 6 : 6;
+      const label = row ? `Three-way ${mockAgLabel(row)} — all days`
+        : date ? `Three-way all reports — ${date}`
+        : scope === "all" ? "Rebuild all three-way comparisons"
+          : "Refresh stale three-way comparisons";
+      return mockEnqueue("compare", row ? "row" : date ? "column" : scope, label,
+                         { which: "three_way", total: n });
+    },
+    open_three_way_cell_comparison: async (rk, d) => {
+      push({ t: "log", text: `(mock) open three-way workbook: ${rk}_three_way ${d}.xlsx` });
+      return { ok: true };
+    },
+    open_three_way_comparisons_folder: async () => {
+      push({ t: "log", text: "(mock) open the three-way comparisons folder" });
       return { ok: true };
     },
     open_arcgis_reports_folder: async () => push({ t: "log", text: "(mock) would open the arcgis_reports builds folder" }),

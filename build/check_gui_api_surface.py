@@ -73,7 +73,18 @@ def _src(mod):
 #     carries buried in its library and only while that sub-tab renders) and the
 #     ONE-job refresh of several reports (build_arcgis_report queues one; it now
 #     delegates here).
+#   * the ArcGIS ▸ Three-way matrix (v0.51.0, gui_three_way_api) — the pve_*
+#     matrix shape minus the formulas toggle (the three-way workbook is values
+#     only): its snapshot, source / days / rows / orders, one cell, a scoped
+#     rebuild, and opening a cell or the store. It compares each export against
+#     TSN AND the report's ArcGIS build at once, a third side no existing
+#     matrix endpoint carries.
 FROZEN_API = {
+    "three_way_matrix_info", "set_three_way_matrix_source", "add_three_way_matrix_day",
+    "remove_three_way_matrix_day", "set_three_way_matrix_report",
+    "set_three_way_matrix_row_order", "set_three_way_matrix_day_order",
+    "build_three_way_matrix_cell", "rebuild_three_way_matrix",
+    "open_three_way_cell_comparison", "open_three_way_comparisons_folder",
     "arcgis_layers_info", "refresh_arcgis_layers", "check_arcgis_pro",
     "choose_arcgis_python", "clear_arcgis_python",
     "arcgis_reports_info", "refresh_arcgis_reports",
