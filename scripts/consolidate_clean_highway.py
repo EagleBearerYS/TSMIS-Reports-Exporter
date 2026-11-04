@@ -37,6 +37,7 @@ import logging
 import os
 import re
 import textwrap
+from bisect import bisect_right
 from collections import defaultdict
 from pathlib import Path
 
@@ -55,7 +56,7 @@ REPORT_NAME = "Clean Road Highway (ArcGIS)"
 SHEET_NAME = chc.ARC_SHEET
 MARKER_SHEET = chc.ARC_MARKER_SHEET
 MARKED_SHEET = chc.ARC_MARKED_SHEET
-BUILD_VERSION = 1
+BUILD_VERSION = 2
 FILENAME = "clean_highway_built.xlsx"
 OUT_DIR = paths.OUTPUT_ROOT / "arcgis_cleanroad"
 OUT_PATH = OUT_DIR / FILENAME
@@ -80,6 +81,12 @@ SKIP_REASON = ("as-of spans whose begin or end postmile is unreadable cannot "
 # the span's own odometer length for the split to be taken (PM units, 0.005 mi).
 _PREFIX_FIT = 500
 
+# A part of a cross-county span longer than this many times the whole span's
+# odometer length, plus the slack (PM units, 0.05 mi), cannot start at the
+# line's 0: that county's postmiles carry on across the line (`_too_long`).
+_PART_RATIO = 1.5
+_PART_SLACK = 5000
+
 # The 74-column THY header (clean_highway_columns is the shared contract).
 THY_HEADER = list(chc.ARC_HEADER)   # the TSN 74 + our build-only columns
 _COL = {name: i for i, name in enumerate(THY_HEADER)}
@@ -99,9 +106,9 @@ _SPAN_ID = ["District", "RouteNum", "RouteSuffix", "Alignment", "BeginCounty",
             "InventoryItemStartDate", "LRSFromDate", "LRSToDate", "RouteID"]
 _POINT_ID = ["RouteNum", "RouteSuffix", "Alignment", "County", "PMPrefix",
              "PMMeasure", "LRSFromDate", "LRSToDate"]
-# Read (as optional columns) only to enrich a skipped-span record (HF-01) —
-# the AR measures and LocError document what the unplaceable row DID have;
-# they are never used to place anything.
+# Read as optional columns: a skipped-span record (HF-01) documents what the
+# unplaceable row DID have (its AR measures, LocError) — never used to place
+# it; the AR measures of every placeable span also feed `_ArFill`.
 _SKIP_DETAIL_COLS = ["FromARMeasure", "ToARMeasure", "LocError"]
 
 # tag -> (layer name, attribute columns, family). Families: "whole" paints base
@@ -167,8 +174,10 @@ HIGHWAY_LAYERS = tuple(sorted(
     | {spec[0] for spec in POINT_LAYERS.values()}))
 REQUIRED_LAYERS = HIGHWAY_LAYERS
 
-# Roadbed blocks: the opposite independent row's block stays null (TSN nulls
-# the LT block on R rows and the RT block on L rows).
+# Roadbed blocks: an independent row carries the other roadbed's block too,
+# read off the other side's layers at the row's midpoint, as the site writes
+# it (see _build_cp). TSN nulls the LT block on R rows and the RT block on L
+# rows, so against TSN those cells are drift.
 
 _ROUTE_TOKEN_RE = re.compile(r"^(\d{3})([SU]?)$")
 
@@ -196,13 +205,15 @@ def _cancelled():
 # --------------------------------------------------------------------------- #
 # reading
 # --------------------------------------------------------------------------- #
-def _read_span_layer(lib, index, tag, *, asof, events, buckets, parked, skips):
+def _read_span_layer(lib, index, tag, *, asof, events, buckets, parked, skips,
+                     ar_fill=None):
     """Stream one span layer's as-of slices into `buckets[(route, align,
-    county, prefix)][tag]`; cross-county/prefix spans park for the split pass.
-    An as-of span with an unreadable begin or end postmile cannot be placed
-    (the contract keys on county + PM prefix + postmile and never guesses from
-    AR/odometer calibration) — it is RECORDED into `skips` (HF-01), never
-    silently dropped."""
+    county, prefix)][tag]`; cross-county/prefix spans park for the split pass,
+    and every span with AR measures also goes to `ar_fill` (`_ArFill`). An
+    as-of span with an unreadable begin or end postmile cannot be placed (the
+    contract keys on county + PM prefix + postmile and never guesses a span's
+    place from AR/odometer calibration) — it is RECORDED into `skips` (HF-01),
+    never silently dropped."""
     layer, attrs, family = SPAN_LAYERS[tag]
     entry = index.get(layer) or {}
     n_asof = n_cross = n_skip = 0
@@ -239,9 +250,16 @@ def _read_span_layer(lib, index, tag, *, asof, events, buckets, parked, skips):
         od_len = (od_e - od_b) if od_b is not None and od_e is not None else None
         span = _Span(b, e, tuple(r[a] for a in attrs), rank, item, od_b, od_len,
                      crl.norm_district(r["District"]))
-        if c1 == c2 and p1 == p2:
-            if e <= b:
-                continue                     # degenerate within one PM space
+        whole = c1 == c2 and p1 == p2
+        if whole and e <= b:
+            continue                         # degenerate within one PM space
+        if ar_fill is not None and isinstance(rid, str) and rid:
+            frm = crl.to_serial(r["FromARMeasure"])
+            to = crl.to_serial(r["ToARMeasure"])
+            if frm is not None and to is not None:
+                ar_fill.add(tag, route, align, (c1, p1), (c2, p2), b, e, rid,
+                            frm, to, span)
+        if whole:
             buckets[(route, align, c1, p1)][tag].append(span)
         else:
             # A cross-county/prefix span's end PM lives in the NEXT space, so
@@ -360,6 +378,106 @@ def _read_point_layer(lib, index, tag, *, asof, events, points):
     events.on_log(f"  {layer}: {n_asof:,} as-of points")
 
 
+# The layers a row reads at its AR where the postmile overlay leaves it blank:
+# every attribute layer but the row-making Highway Group, the network date and
+# the ADT interpolation source.
+_AR_FILL_TAGS = tuple(t for t in SPAN_LAYERS if t not in ("HG", "NET", "TVS"))
+
+
+class _ArFill:
+    """The site's AR lookup, for a cell the postmile overlay leaves blank (the
+    site reads every attribute at its segment's AR). A layer can record a
+    stretch under another prefix than the road's — SHS Population keeps 001
+    SLO's R34.716 → R37.079 as plain 32.634 → 37.19 — and a span that changes
+    prefix can be split short of a row (SHS Access Control's R48.852 → 52.736
+    on 001 MEN). The row's midpoint is translated to AR on its roadbed's
+    RouteID (`crl.PostmileToAr`, calibrated from the ends of every span read,
+    the pieces a recalibration split one into read as one) and the layer's
+    span there is read: never one of the row's own postmile space, which the
+    overlay has already ruled out; the highest rank wins, as in the overlay."""
+
+    __slots__ = ("_spans", "_pieces", "_calib", "_index")
+
+    def __init__(self):
+        self._spans = defaultdict(lambda: defaultdict(list))
+        self._pieces = defaultdict(list)
+        self._calib = None
+        self._index = {}
+
+    def add(self, tag, route, align, begin, finish, b, e, rid, frm, to, span):
+        """One as-of span of `tag` on `rid`: `begin` / `finish` are its (county,
+        prefix) at each end, `b` / `e` its postmile units, `frm` / `to` its AR
+        measures."""
+        home = (route, align, *begin) if begin == finish else None
+        self._spans[tag][rid].append((frm, to, span, home))
+        self._pieces[(route, begin, finish, b, e, rid, span.rank)].append((frm, to))
+
+    def _calibration(self):
+        if self._calib is None:
+            calib = crl.PostmileToAr()
+            for (route, begin, finish, b, e, rid, _rank), ars in self._pieces.items():
+                calib.add(route, begin, finish, (b / crl.PM_SCALE, e / crl.PM_SCALE),
+                          (min(frm for frm, _to in ars), max(to for _frm, to in ars)),
+                          rid, True)
+            self._calib = calib
+        return self._calib
+
+    def _layer(self, tag, rid):
+        """`tag`'s spans on `rid` sorted by AR begin, with their AR begins and
+        the longest one's length (how far back a covering span can start)."""
+        found = self._index.get((tag, rid))
+        if found is None:
+            spans = sorted(self._spans[tag].get(rid, ()), key=lambda sp: sp[0])
+            found = self._index[(tag, rid)] = (
+                [sp[0] for sp in spans], spans,
+                max((sp[1] - sp[0] for sp in spans), default=0.0))
+        return found
+
+    def span(self, tag, route, align, county, prefix, b, e):
+        """The `_Span` of `tag` at the AR of row [b, e) on `align`, or None."""
+        rid, ar = self._calibration().translate(
+            route, county, prefix, (b + e) / 2 / crl.PM_SCALE, align)
+        if rid is None:
+            return None
+        frms, spans, longest = self._layer(tag, rid)
+        own = (route, align, county, prefix)
+        best = None
+        i = bisect_right(frms, ar)
+        while i > 0:
+            i -= 1
+            frm, to, span, home = spans[i]
+            if frm < ar - longest:
+                break
+            if ar <= to and home != own and (best is None or span.rank > best.rank):
+                best = span
+        return best
+
+
+def _with_ar_fill(seg, ar_fill, route, county, prefix, b, e, kind):
+    """`seg` plus, for each attribute layer it lacks, that layer's span at the
+    row's AR (`_ArFill`): the right block on base/R rows, the left block on
+    base/L rows, a whole-road layer on the row's own alignment."""
+    filled = dict(seg)
+    for tag in _AR_FILL_TAGS:
+        if tag in filled:
+            continue
+        family = SPAN_LAYERS[tag][2]
+        if family == "left":
+            if kind == "R":
+                continue
+            align = "L"
+        elif family == "right":
+            if kind == "L":
+                continue
+            align = "R"
+        else:
+            align = "L" if kind == "L" else "R"
+        span = ar_fill.span(tag, route, align, county, prefix, b, e)
+        if span is not None:
+            filled[tag] = span
+    return filled
+
+
 def _split_parked(parked, buckets, warnings):
     """Split cross-county/prefix spans along the county CHAIN they traverse.
 
@@ -370,9 +488,13 @@ def _split_parked(parked, buckets, warnings):
     county whose HG odometer window falls inside the span's odometer range is
     covered WHOLLY (its full extent), and the last county takes [its origin →
     span end] (a continuation county's postmiles start at 0 — measured: MON
-    101.178 → SCR 0.043 covers SCR from 0.000). Odometers order and APPORTION
-    here, never join. A span with no other resolution drops with a warning —
-    never guessed."""
+    101.178 → SCR 0.043 covers SCR from 0.000). Where an end part would be
+    longer than the whole span, that county's postmiles carry on across the
+    line (`_too_long`, route 166): the span then covers both counties' road
+    between its begin and end postmiles (`_cover_between`), or, where its
+    postmiles run backwards, stays on each county's own visit (`_visit_end` /
+    `_visit_start`). Odometers order and APPORTION here, never join. A span
+    with no other resolution drops with a warning — never guessed."""
     extents = {}
     od_windows = {}
     for (route, _align, county, prefix), tags in buckets.items():
@@ -394,38 +516,66 @@ def _split_parked(parked, buckets, warnings):
     for route, county, prefix in spaces:
         prefixes[(route, county)].add(prefix)
 
+    outside = 0
     for tag, route, align, c1, p1, c2, p2, span in parked:
-        if c1 == c2 and _split_prefix_change(tag, route, align, c1, p1, p2,
-                                             span, buckets, spaces):
-            continue
         placed = False
-        if span.e == 0 and span.od_len is not None:
-            # The span ENDS exactly at the next space's origin — the second
-            # part is zero-length by definition, so the whole odometer length
-            # belongs to the first county.
-            hi1 = span.b + int(round(span.od_len * crl.PM_SCALE))
-            if span.b < hi1:
-                buckets[(route, align, c1, p1)][tag].append(
-                    _Span(span.b, hi1, span.vals, span.rank, span.item,
-                          span.od, span.od_len, span.district))
+        if c1 == c2:
+            # A prefix change inside one county never takes the county rule
+            # below: its second space does not start at 0 there, so [0 → end]
+            # painted the span over that whole space (a 1.1-mile Travel Way L
+            # span, R39.741 → 40.845 on 001 LA, read 33 ft over 3.6–5.0 where
+            # the layer says 25).
+            got = _split_prefix_change(tag, route, align, c1, p1, p2, span,
+                                       buckets, spaces)
+            if got is None:
+                warnings.append(
+                    f"{SPAN_LAYERS[tag][0]}: a span that changes postmile "
+                    f"prefix ({route} {c1} {p1 or '-'}{crl.pm_text(span.b)} → "
+                    f"{p2 or '-'}{crl.pm_text(span.e)}) has no usable odometer "
+                    "length, so its two parts cannot be bounded — skipped.")
                 continue
-        hi1 = (extents.get((route, c1, p1)) or (None, None))[1]
-        if hi1 is None and span.od_len is not None:
-            hi1 = span.b + max(int(round(span.od_len * crl.PM_SCALE))
-                               - span.e, 0)
-        if hi1 is not None and span.b < hi1:
-            buckets[(route, align, c1, p1)][tag].append(
-                _Span(span.b, hi1, span.vals, span.rank, span.item,
-                      span.od, (hi1 - span.b) / crl.PM_SCALE, span.district))
-            placed = True
-        if 0 < span.e:
-            buckets[(route, align, c2, p2)][tag].append(
-                _Span(0, span.e, span.vals, span.rank, span.item,
-                      (span.od + span.od_len - span.e / crl.PM_SCALE
-                       if span.od is not None and span.od_len is not None
-                       else None),
-                      span.e / crl.PM_SCALE, span.district))
-            placed = True
+            if got == "exact":
+                continue
+            placed = got
+        else:
+            if span.e == 0 and span.od_len is not None:
+                # The span ENDS exactly at the next space's origin — the second
+                # part is zero-length by definition, so the whole odometer
+                # length belongs to the first county.
+                hi1 = span.b + int(round(span.od_len * crl.PM_SCALE))
+                if span.b < hi1:
+                    buckets[(route, align, c1, p1)][tag].append(
+                        _Span(span.b, hi1, span.vals, span.rank, span.item,
+                              span.od, span.od_len, span.district))
+                    continue
+            hi1 = (extents.get((route, c1, p1)) or (None, None))[1]
+            if hi1 is None and span.od_len is not None:
+                hi1 = span.b + max(int(round(span.od_len * crl.PM_SCALE))
+                                   - span.e, 0)
+            long1 = hi1 is not None and _too_long(hi1 - span.b, span)
+            long2 = _too_long(span.e, span)
+            if (long1 or long2) and span.b < span.e:
+                placed = _cover_between(tag, route, align, ((c1, p1), (c2, p2)),
+                                        span, buckets, spaces)
+            else:
+                if long1:
+                    hi1 = _visit_end(spaces, (route, c1, p1), span)
+                if hi1 is not None and span.b < hi1:
+                    buckets[(route, align, c1, p1)][tag].append(
+                        _Span(span.b, hi1, span.vals, span.rank, span.item,
+                              span.od, (hi1 - span.b) / crl.PM_SCALE,
+                              span.district))
+                    placed = True
+                lo2 = _visit_start(spaces, (route, c2, p2), span) if long2 else 0
+                if lo2 < span.e:
+                    buckets[(route, align, c2, p2)][tag].append(
+                        _Span(lo2, span.e, span.vals, span.rank, span.item,
+                              (span.od + span.od_len
+                               - (span.e - lo2) / crl.PM_SCALE
+                               if span.od is not None and span.od_len is not None
+                               else None),
+                              (span.e - lo2) / crl.PM_SCALE, span.district))
+                    placed = True
         # Middle counties: chain cps whose odometer window sits inside the
         # span's odometer range get the span across their WHOLE extent.
         if span.od is not None and span.od_len is not None:
@@ -450,12 +600,19 @@ def _split_parked(parked, buckets, warnings):
                 tag, route, align, ((c1, p1), (c2, p2)), span, buckets,
                 spaces, prefixes, od_windows):
             placed = True
-        if not placed:
+        if not placed and c1 == c2:
+            outside += 1
+        elif not placed:
             warnings.append(
                 f"{SPAN_LAYERS[tag][0]}: a cross-county span "
                 f"({route} {c1}/{p1 or '-'} {crl.pm_text(span.b)} → {c2}/"
                 f"{p2 or '-'} {crl.pm_text(span.e)}) could not be split — "
                 "skipped.")
+    if outside:
+        warnings.append(
+            f"{outside} span(s) that change postmile prefix inside a county lie "
+            "outside the postmile coverage of both their prefixes — nothing to "
+            "place.")
 
 
 def _unparked_spaces(buckets):
@@ -477,6 +634,77 @@ def _align_windows(spaces, key, align):
     return _merge_windows([(s.b, s.e) for s in spans])
 
 
+def _road_windows(spaces, key):
+    """The merged postmile windows one space covers on either alignment — the
+    road's own extent there. One alignment alone can miss it: every left-side
+    layer may change prefix at the same point (001 SLO's Travel Way, Surface
+    and Shoulders L all run R60.261 → M61.15), so the Left alignment has no
+    other span saying where its first space ends."""
+    by_align = spaces.get(key) or {}
+    return _merge_windows([(s.b, s.e) for spans in by_align.values() for s in spans])
+
+
+def _too_long(units, span):
+    """Whether one part of a cross-county span would be longer than the whole
+    span's odometer length, with room for postmile drift. Then that county's
+    postmiles do not restart at the line: 166 runs along the SB / SLO line on
+    one continuous postmile (SB 0-8.927, SLO 8.927-22.893, SB 22.893-R34.987),
+    so the county rule painted Highway Group SLO 8.927 -> SB 23.537 over SB
+    0-23.537, rows and all, and Terrain SLO R50.76 -> SB R51.966 over the SB
+    R stretch the road had left 17 miles earlier."""
+    return (span.od_len is not None and span.od_len > 0
+            and units > _PART_RATIO * span.od_len * crl.PM_SCALE + _PART_SLACK)
+
+
+def _cover_between(tag, route, align, ends, span, buckets, spaces):
+    """Paint a cross-county span whose postmiles carry on across the line
+    (`_too_long`) over the road windows of both its counties between its
+    begin and end postmiles. 166 weaves along the SB / SLO line, so one span
+    can hold several stretches of each county: Highway Group SB R32.99 →
+    SLO R36.442 also covers SLO R33.834–R34.037 on the way. A stretch no
+    window covers gets nothing, so no row is invented there."""
+    placed = False
+    for county, prefix in ends:
+        for wb, we in _road_windows(spaces, (route, county, prefix)):
+            lo, hi = max(wb, span.b), min(we, span.e)
+            if lo < hi:
+                buckets[(route, align, county, prefix)][tag].append(
+                    _Span(lo, hi, span.vals, span.rank, span.item,
+                          (span.od + (lo - span.b) / crl.PM_SCALE
+                           if span.od is not None else None),
+                          (hi - lo) / crl.PM_SCALE, span.district))
+                placed = True
+    return placed
+
+
+def _visit_end(spaces, key, span):
+    """Where a cross-county span's first part ends when its county's
+    postmiles carry on past the line: the end of the road window holding the
+    span's begin, or the start of the next window, never further than the
+    span's own odometer length."""
+    hi = span.b + int(round(span.od_len * crl.PM_SCALE))
+    for wb, we in _road_windows(spaces, key):
+        if wb <= span.b < we:
+            return min(we, hi)
+        if span.b < wb:
+            return min(wb, hi)
+    return hi
+
+
+def _visit_start(spaces, key, span):
+    """Where a cross-county span's second part starts when its county's
+    postmiles do not restart at the line: the start of the road window
+    holding the span's end, or the end of the window before it, never more
+    than the span's own odometer length before its end."""
+    lo = max(span.e - int(round(span.od_len * crl.PM_SCALE)), 0)
+    for wb, we in reversed(_road_windows(spaces, key)):
+        if wb < span.e <= we:
+            return max(wb, lo)
+        if we < span.e:
+            return max(we, lo)
+    return lo
+
+
 def _split_prefix_change(tag, route, align, county, p1, p2, span, buckets,
                          spaces):
     """Split a span that changes postmile PREFIX inside one county (a
@@ -486,37 +714,57 @@ def _split_prefix_change(tag, route, align, county, p1, p2, span, buckets,
     span over that whole space (it put Divided over 0–40.769 of 001 LA, where
     the layer says Undivided from 18.29).
 
-    The split is taken only when it is unambiguous: the span begins inside a
+    The exact split is taken when it is unambiguous: the span begins inside a
     window of its first space and ends inside a window of its second, and the
     tail of the one plus the head of the other add up to the span's own
     odometer length. Then the first part runs to where the first space ends
-    and the second starts where the second space resumes. Anything else —
-    no odometer, an odometer jump, a third space in between — returns False
-    and keeps the county rule."""
+    and the second starts where the second space resumes ("exact").
+
+    Otherwise each part stays inside the window that holds its own endpoint
+    and is never longer than the span's odometer length: the first part runs
+    from the span's begin, the second ends at the span's end. A part whose
+    endpoint lies in no window of its space places nothing (True / False:
+    whether anything was placed). A span with no usable odometer length
+    cannot be bounded and returns None (skipped, never guessed). The windows
+    are the road's on either alignment (`_road_windows`)."""
     if span.od_len is None or span.od_len <= 0:
-        return False
-    w1 = next(((wb, we) for wb, we in _align_windows(spaces, (route, county, p1),
-                                                       align)
+        return None
+    w1 = next(((wb, we) for wb, we in _road_windows(spaces, (route, county, p1))
                if wb <= span.b <= we), None)
-    w2 = next(((wb, we) for wb, we in _align_windows(spaces, (route, county, p2),
-                                                       align)
+    w2 = next(((wb, we) for wb, we in _road_windows(spaces, (route, county, p2))
                if wb <= span.e <= we), None)
-    if w1 is None or w2 is None:
-        return False
-    first, second = w1[1] - span.b, span.e - w2[0]
-    if abs(first + second - span.od_len * crl.PM_SCALE) > _PREFIX_FIT:
-        return False
-    if first > 0:
-        buckets[(route, align, county, p1)][tag].append(
-            _Span(span.b, w1[1], span.vals, span.rank, span.item, span.od,
-                  first / crl.PM_SCALE, span.district))
-    if second > 0:
-        buckets[(route, align, county, p2)][tag].append(
-            _Span(w2[0], span.e, span.vals, span.rank, span.item,
-                  (span.od + first / crl.PM_SCALE
-                   if span.od is not None else None),
-                  second / crl.PM_SCALE, span.district))
-    return first > 0 or second > 0
+    if w1 is not None and w2 is not None:
+        first, second = w1[1] - span.b, span.e - w2[0]
+        if abs(first + second - span.od_len * crl.PM_SCALE) <= _PREFIX_FIT:
+            if first > 0:
+                buckets[(route, align, county, p1)][tag].append(
+                    _Span(span.b, w1[1], span.vals, span.rank, span.item, span.od,
+                          first / crl.PM_SCALE, span.district))
+            if second > 0:
+                buckets[(route, align, county, p2)][tag].append(
+                    _Span(w2[0], span.e, span.vals, span.rank, span.item,
+                          (span.od + first / crl.PM_SCALE
+                           if span.od is not None else None),
+                          second / crl.PM_SCALE, span.district))
+            return "exact" if first > 0 or second > 0 else False
+    length = int(round(span.od_len * crl.PM_SCALE))
+    placed = False
+    if w1 is not None:
+        hi = min(w1[1], span.b + length)
+        if hi > span.b:
+            buckets[(route, align, county, p1)][tag].append(
+                _Span(span.b, hi, span.vals, span.rank, span.item, span.od,
+                      (hi - span.b) / crl.PM_SCALE, span.district))
+            placed = True
+    if w2 is not None:
+        lo = max(w2[0], span.e - length)
+        if span.e > lo:
+            buckets[(route, align, county, p2)][tag].append(
+                _Span(lo, span.e, span.vals, span.rank, span.item,
+                      span.od + span.od_len - (span.e - lo) / crl.PM_SCALE,
+                      (span.e - lo) / crl.PM_SCALE, span.district))
+            placed = True
+    return placed
 
 
 def _window_od(spaces, key, align, window):
@@ -717,10 +965,45 @@ def _pick_landmark(values):
     return max(texts, key=len) if texts else None
 
 
+_BLOCK_COLUMNS = {
+    "R": (("THY_RT_SURF_TYPE_CODE", "SUR", None),
+          ("THY_RT_TRAV_WAY_WIDTH_AMT", "TWR", 0),
+          ("THY_RT_LANES_AMT", "TWR", 1),
+          ("THY_RT_SPEC_FEATURES_CODE", "SPR", None),
+          ("THY_RT_O_SHD_TOT_WIDTH_AMT", "OSR", 0),
+          ("THY_RT_O_SHD_TRT_WIDTH_AMT", "OSR", 1),
+          ("THY_RT_I_SHD_TOT_WIDTH_AMT", "ISR", 0),
+          ("THY_RT_I_SHD_TRT_WIDTH_AMT", "ISR", 1)),
+    "L": (("THY_LT_SURF_TYPE_CODE", "SUL", None),
+          ("THY_LT_TRAV_WAY_WIDTH_AMT", "TWL", 0),
+          ("THY_LT_LANES_AMT", "TWL", 1),
+          ("THY_LT_SPEC_FEATURES_CODE", "SPL", None),
+          ("THY_LT_O_SHD_TOT_WIDTH_AMT", "OSL", 0),
+          ("THY_LT_O_SHD_TRT_WIDTH_AMT", "OSL", 1),
+          ("THY_LT_I_SHD_TOT_WIDTH_AMT", "ISL", 0),
+          ("THY_LT_I_SHD_TRT_WIDTH_AMT", "ISL", 1)),
+}
+
+
+def _paint_block(row, seg, block, primary_eff=True):
+    """Write one roadbed block ('R' or 'L': its effective date and eight
+    values) into `row` from `seg`."""
+    tags = _RIGHT_TAGS if block == "R" else _LEFT_TAGS
+    row[_COL["THY_RIGHT_ROAD_EFF_DATE" if block == "R"
+             else "THY_LEFT_ROAD_EFF_DATE"]] = _block_eff_date(
+        seg, tags, BLOCK_PRIMARY[block] if primary_eff else None)
+    for name, tag, pos in _BLOCK_COLUMNS[block]:
+        row[_COL[name]] = (_seg_code(seg, tag) if pos is None
+                           else _seg_num(seg, tag, pos))
+
+
 def _paint_row(route, county, prefix, b, e, seg, kind, pts, asof_date,
-               primary_eff=True):
+               primary_eff=True, ar_fill=None):
     """One output row (a 74-slot list) for segment [b, e) of `kind` in
-    {'base', 'R', 'L'}. ADT/offsets/break-desc are finalized later."""
+    {'base', 'R', 'L'}; a layer the overlay left blank is read at the row's AR
+    when `ar_fill` is given. ADT/offsets/break-desc are finalized later."""
+    if ar_fill is not None:
+        seg = _with_ar_fill(seg, ar_fill, route, county, prefix, b, e, kind)
     m = _ROUTE_TOKEN_RE.match(route)
     row = [None] * len(THY_HEADER)
 
@@ -774,25 +1057,9 @@ def _paint_row(route, county, prefix, b, e, seg, kind, pts, asof_date,
         put("THY_SEG_ORDER_ID", _seg_num(seg, "NET", 1))
 
     if kind in ("base", "R"):
-        put("THY_RIGHT_ROAD_EFF_DATE", _eff("R", _RIGHT_TAGS))
-        put("THY_RT_SURF_TYPE_CODE", _seg_code(seg, "SUR"))
-        put("THY_RT_TRAV_WAY_WIDTH_AMT", _seg_num(seg, "TWR", 0))
-        put("THY_RT_LANES_AMT", _seg_num(seg, "TWR", 1))
-        put("THY_RT_SPEC_FEATURES_CODE", _seg_code(seg, "SPR"))
-        put("THY_RT_O_SHD_TOT_WIDTH_AMT", _seg_num(seg, "OSR", 0))
-        put("THY_RT_O_SHD_TRT_WIDTH_AMT", _seg_num(seg, "OSR", 1))
-        put("THY_RT_I_SHD_TOT_WIDTH_AMT", _seg_num(seg, "ISR", 0))
-        put("THY_RT_I_SHD_TRT_WIDTH_AMT", _seg_num(seg, "ISR", 1))
+        _paint_block(row, seg, "R", primary_eff)
     if kind in ("base", "L"):
-        put("THY_LEFT_ROAD_EFF_DATE", _eff("L", _LEFT_TAGS))
-        put("THY_LT_SURF_TYPE_CODE", _seg_code(seg, "SUL"))
-        put("THY_LT_TRAV_WAY_WIDTH_AMT", _seg_num(seg, "TWL", 0))
-        put("THY_LT_LANES_AMT", _seg_num(seg, "TWL", 1))
-        put("THY_LT_SPEC_FEATURES_CODE", _seg_code(seg, "SPL"))
-        put("THY_LT_O_SHD_TOT_WIDTH_AMT", _seg_num(seg, "OSL", 0))
-        put("THY_LT_O_SHD_TRT_WIDTH_AMT", _seg_num(seg, "OSL", 1))
-        put("THY_LT_I_SHD_TOT_WIDTH_AMT", _seg_num(seg, "ISL", 0))
-        put("THY_LT_I_SHD_TRT_WIDTH_AMT", _seg_num(seg, "ISL", 1))
+        _paint_block(row, seg, "L", primary_eff)
 
     lmk = _pick_landmark(pts.get("LMK", {}).get(b, ()))
     if lmk is not None:
@@ -912,7 +1179,7 @@ def _overlap_len(window, intervals):
 
 
 def _build_cp(route, county, prefix, rbucket, lbucket, pts, asof_date,
-              primary_eff=True):
+              primary_eff=True, ar_fill=None):
     """All rows for one (route, county, prefix): base rows outside the
     independent windows, R/L rows inside them. HG coverage GAPS yield NO row
     at all — measured on the ORA 001 unconstructed gap, TSN skips the PM
@@ -942,7 +1209,7 @@ def _build_cp(route, county, prefix, rbucket, lbucket, pts, asof_date,
             continue
         kind = "R" if crl.code_of(hg.vals[0]) == "R" else "base"
         rows.append(_paint_row(route, county, prefix, b, e, seg, kind, pts,
-                               asof_date, primary_eff))
+                               asof_date, primary_eff, ar_fill))
 
     # The L universe: the L-alignment whole-road spans exist only on the
     # independent stretches; left-side layers clipped INTO those windows.
@@ -957,8 +1224,41 @@ def _build_cp(route, county, prefix, rbucket, lbucket, pts, asof_date,
         if hg is None or crl.code_of(hg.vals[0]) != "L":
             continue
         rows.append(_paint_row(route, county, prefix, b, e, seg, "L", pts,
-                               asof_date, primary_eff))
+                               asof_date, primary_eff, ar_fill))
+
+    # An independent row carries the other roadbed's block too — its values
+    # and its effective date (001 MON R81.505R carries the Left roadbed's
+    # 1973-06-08 and its lanes), as the site writes it: an R row reads it off
+    # the left-side layers inside the L windows, an L row off the right-side
+    # layers, at the row's midpoint. TSN keeps only the date.
+    other = {"R": ("L", {t: _clip_spans(lbucket.get(t, []), win_l, inside=True)
+                         for t in _LEFT_TAGS}),
+             "L": ("R", {t: rbucket.get(t, []) for t in _RIGHT_TAGS})}
+    for rec in rows:
+        if rec["kind"] not in other:
+            continue
+        block, spans = other[rec["kind"]]
+        seg = _block_at(spans, rec["b"], rec["e"], ar_fill, route, county, prefix,
+                        block)
+        _paint_block(rec["row"], seg, block, primary_eff)
     return rows
+
+
+def _block_at(spans, b, e, ar_fill, route, county, prefix, align):
+    """{tag: the highest-ranked span covering the midpoint of [b, e)} over
+    `spans` = {tag: [_Span]}, a tag none covers read at the row's AR."""
+    mid = (b + e) / 2
+    seg = {}
+    for tag, candidates in spans.items():
+        best = None
+        for s in candidates:
+            if s.b <= mid < s.e and (best is None or s.rank > best.rank):
+                best = s
+        if best is None and ar_fill is not None:
+            best = ar_fill.span(tag, route, align, county, prefix, b, e)
+        if best is not None:
+            seg[tag] = best
+    return seg
 
 
 _BREAK_PRIORITY = ("BEG", "END", "D-C", "CNTY", "DIST", "R-BR", "U-BR",
@@ -1029,7 +1329,8 @@ def _finalize_route(recs):
             put(rec, "THY_BREAK_DESC", best)
 
 
-def _build_route(route, buckets, points, asof_date, primary_eff=True):
+def _build_route(route, buckets, points, asof_date, primary_eff=True,
+                 ar_fill=None):
     """Every output row for one route token, ordered along the route (county
     groups by odometer — ordering only, never a value — then PM)."""
     keys = [k for k in buckets if k[0] == route]
@@ -1053,7 +1354,7 @@ def _build_route(route, buckets, points, asof_date, primary_eff=True):
         lbucket = buckets.get((route, "L", county, prefix), {})
         pts = points.get((route, county, prefix), {})
         cp_rows = _build_cp(route, county, prefix, rbucket, lbucket, pts,
-                            asof_date, primary_eff)
+                            asof_date, primary_eff, ar_fill)
         cp_rows.sort(key=lambda r: (r["b"], {"base": 0, "R": 1,
                                              "L": 2}[r["kind"]]))
         _apply_adt(cp_rows)
@@ -1714,6 +2015,7 @@ def _consolidate(events, confirm_overwrite, *, asof, lib_root, out_path, routes,
 
     buckets = defaultdict(lambda: defaultdict(list))
     points = defaultdict(dict)
+    ar_fill = _ArFill()
     parked, warnings, skips = [], [], []
     tags = tuple(span_tags) if span_tags else tuple(SPAN_LAYERS)
     unknown = [t for t in tags if t not in SPAN_LAYERS]
@@ -1723,7 +2025,8 @@ def _consolidate(events, confirm_overwrite, *, asof, lib_root, out_path, routes,
         if events.is_cancelled():
             return _cancelled(events)
         _read_span_layer(lib, index, tag, asof=asof_serial, events=events,
-                         buckets=buckets, parked=parked, skips=skips)
+                         buckets=buckets, parked=parked, skips=skips,
+                         ar_fill=ar_fill)
     for tag in POINT_LAYERS:
         if events.is_cancelled():
             return _cancelled(events)
@@ -1747,7 +2050,7 @@ def _consolidate(events, confirm_overwrite, *, asof, lib_root, out_path, routes,
         if events.is_cancelled():
             return _cancelled(events)
         rows.extend(_build_route(route, buckets, points, asof_date,
-                                 primary_eff))
+                                 primary_eff, ar_fill))
         if i % 25 == 0 or i == len(all_routes):
             events.on_log(f"  built {i}/{len(all_routes)} routes "
                           f"({len(rows):,} rows)")

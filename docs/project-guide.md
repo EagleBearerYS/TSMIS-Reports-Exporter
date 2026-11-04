@@ -621,7 +621,8 @@ scripts/                     the engine (console-free) + console & GUI drivers +
 build/                       build.ps1, app.spec, prune_bundle.ps1, full_smoke.py, check_*.py
   gen_release_notes.py release_notes_header.md backfill_release_notes.ps1   per-version release notes
 CHANGELOG.md                 user-facing changelog (one section per version; source of release bodies)
-tools/                       dev utilities (not shipped) — screenshots.py regenerates the site/README shots
+tools/                       dev utilities (not shipped) — screenshots.py regenerates the site/README shots;
+                             clean_road_layer_check.py checks a Clean Road build or comparison against the raw layers (v0.51.1)
 docs/                        the knowledge library (start at docs/INDEX.md)
 output/                      generated data (git-ignored except .gitkeep stubs)
 tsn_library/ arcgis_layers/   source libraries (git-ignored, local-only; tsn_library is stocked by hand, arcgis_layers by the Layers tab;

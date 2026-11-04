@@ -1331,7 +1331,13 @@ comparisons can never key a record differently; only format reconciliations appl
   onto the site's 74 columns, keeps the build's unplaceable-span anchors NON-ASSERTING
   (HF-01), and uses the site-vs-TSN context set. The site cuts a segment at every event
   point of its Highway Log engine and the build at every layer breakpoint, so one-sided
-  rows are mostly the two segmentations.
+  rows are mostly the two segmentations. One vocabulary is read across (v0.51.1):
+  `THY_BREAK_DESC`, where the site writes only SHS Route Break's points (`Route Resume` as
+  BEG, `Route Break` as END — `clean_highway.js`) and the build the TSN extract's markers.
+  The build's U-BR / R-BR read as BEG / END. Its structural markers (a route's BEG / END,
+  CNTY, D-C, DIST, BEGL, ENDR) have no source on the site, and TSN puts them on sliver rows
+  of its own, so they read as blank. Without that, 1,232 of the column's 1,247 build-only
+  cells were vocabulary.
 - **Intersection** (`arcgis_report_clean_intersection`) follows the SITE's pipeline
   (`intd_queryIntersections`, 9.1 capture), not the older Intersection Detail build
   (§9l): the universe is the IM rows not retired with the geometry live at the as-of; a
@@ -1339,10 +1345,17 @@ comparisons can never key a record differently; only format reconciliations appl
   INTERSECTION_IDs); legs are picked by ROUTE_ID — the leg on the file's route is the
   mainline, any other the cross street, Increasing then `_P` then the lowest
   APPROACH_ID — because LEG_TYPE is a road-class flag (every leg of a state x state
-  intersection is Major). Highway Group / City / Population come from the span layers at
-  the postmile on the intersection's roadbed (`PostmileOverlay`: Left spans first for a
-  left-roadbed point; a span that changes county or prefix part-way also covers its end
-  space). INX_MAIN_BEGIN_DATE / INX_CROSS_BEGIN_DATE are the layer's Main_Begin_Date /
+  intersection is Major). Highway Group / City / Population come from the span layers the
+  way the site's AR lookup lands on them (`arcgis_clean_road_build.PointLayer`, v0.51.1):
+  the layer's own span in the intersection's county + prefix space where one contains it
+  (Left alignment first for a left-roadbed point), else any other span of the layer at
+  the intersection's AR — never one of its own space, so a point in a gap stays blank.
+  The AR comes from `clean_road_layers.PostmileToAr`, the site's PM → AR translate
+  calibrated from the ends of every span read. It interpolates between the nearest ends
+  on either side, the current calibration first, and the pieces a recalibration split a
+  span into count as one. A whole span whose AR length is not within half to twice its
+  postmile length gives no ends, because its postmiles are stale. A postmile no end reaches
+  is read along its containing span. INX_MAIN_BEGIN_DATE / INX_CROSS_BEGIN_DATE are the layer's Main_Begin_Date /
   Cross_Begin_Date ON PURPOSE: the site writes the geometry begin date into both, and that
   is a finding this comparison is meant to show.
 - **Ramp** (`arcgis_report_clean_ramp`) follows `clean_ramp.js`: SHS Ramp Pt rows live at
@@ -1355,11 +1368,16 @@ comparisons can never key a record differently; only format reconciliations appl
   ('D- Diamond Type Ramp'), blank for a code outside the domain. RAM_BEGIN_OFFSET_AMT is
   written from ODMeasure (the business requirements ask for the odometer) and shown as
   context, since the site leaves it blank.
-- **Bound result** (the 2026-10-22 dev-site export vs the 2026-10-05 layers): Intersection
-  16,382 paired, 93 / 3 one-sided, 4,079 differing cells
-  (2,548 of them the two begin dates); Ramp 15,214 paired, 0 / 0
-  one-sided, 20 cells; Highway 47,557 paired, 9,590 / 4,078 one-sided,
-  169,817 cells.
+- **Bound result** (the 2026-10-22 dev-site export vs the 2026-10-05 layers, after the
+  2026-11-03 build audit; v0.51.0's numbers in brackets): Intersection 16,382 paired,
+  93 / 3 one-sided, 3,075 differing cells [4,079], 2,548 of them the two begin dates;
+  Ramp 15,214 paired, 0 / 0 one-sided, 20 cells [20], every one a layer edit made after
+  the library (the 2026-10-02 export: 0 cells); Highway 47,441 paired, 9,511 / 4,194
+  one-sided, 93,071 cells [47,557 · 9,590 / 4,078 · 169,817]. Through the app's matrix
+  against the 2026-10-30 layers, the four export days 2026-10-02 / 10-22 / 10-30 / 11-03:
+  Highway 47,658 · 9,204 / 4,077 · 85,032, 47,439 · 9,423 / 4,196 · 83,796, 47,082 ·
+  9,780 / 4,056 · 83,035 and 47,644 · 9,218 / 3,992 · 87,877; Intersection 3,314 /
+  3,075 / 3,071 / 3,073 cells; Ramp 20 / 0 / 0 / 18 (§12e has the three-way reading).
 - **A site row with no postmile** (385 Highway rows on 001 / 003 in the 2026-10-22
   export) keys on its odometer as `no postmile @ odometer …` in every Clean Road
   comparison (`compare_clean_road_tsn.UNPLACED`) and the Notes sheet counts them by
@@ -1461,6 +1479,122 @@ or as TSN. `compare_clean_road_tsn` now refuses both markers (red→green in
 | Ramp | 15,204 | 0 | 5 | 4 | 9 | 15,976 | 257,678 |
 | Intersection | 16,122 | 91 | 2,867 | 1,011 | 14 | 2,688 | 670,544 |
 | Highway | 46,791 | 5,862 | 69,394 | 74,923 | 17,607 | 49,787 | 1,940,514 |
+
+After the first six build fixes of the 2026-11-03 audit (THY_BREAK_DESC read in the site's
+vocabulary — §9n, [planning/cleanroad-highways.md](planning/cleanroad-highways.md)), the
+same inputs read (the seventh fix, the other roadbed on independent rows, came after this
+table was measured; its reading on the 2026-10-30 layers follows):
+
+| | records on all three | missing from report | report differs | ArcGIS differs | all differ | TSN differs | agree |
+|---|---|---|---|---|---|---|---|
+| Ramp | 15,204 | 0 | 5 | 4 | 9 | 15,976 | 257,678 |
+| Intersection | 16,122 | 91 | 2,859 | 33 | 11 | 2,699 | 671,522 |
+| Highway | 46,837 | 5,891 | 76,649 | 6,555 | 7,239 | 54,178 | 2,009,701 |
+
+ArcGIS differs is down 91% on Highway and 97% on Intersection. Report differs went UP on
+Highway, by about 7,300: those are cells where the build now agrees with TSN and the
+site's export does not. With the seventh fix, through the app's matrix and the builds
+refreshed from the 2026-10-30 layers (delivered 2026-11-03), the same 2026-10-22 export
+reads:
+
+| | records on all three | missing from report | report differs | ArcGIS differs | all differ | TSN differs | agree |
+|---|---|---|---|---|---|---|---|
+| Ramp | 15,204 | 0 | 0 | 0 | 0 | 15,990 | 257,682 |
+| Intersection | 16,122 | 91 | 2,859 | 33 | 11 | 2,699 | 671,522 |
+| Highway | 46,836 | 5,804 | 66,307 | 6,801 | 8,290 | 63,465 | 2,009,413 |
+
+On Highway the fix moved the other-roadbed cells the site fills and TSN blanks out of
+report differs (down about 10,300) into TSN differs (up about 9,300); the Reports vs
+ArcGIS comparison lost 9,000 to 9,300 differing cells on each of the four days. All
+differ rose by about 1,050: other-roadbed cells where the build's value and the export's
+differ, most of which the raw-layer check reads as real. ArcGIS differs rose by about
+250: independent rows where the export leaves the other roadbed blank though the layer
+has a span there (252 of the 286 such cells on route 101 — HUM, SBT, MON, SF, DN — the
+rest on 125 SD, 260 ALA and 099 BUT); TSN blanks them by convention, so the three-way
+files them as the build's, and the raw-layer check reads them as real. The four export
+days read alike — Highway's ArcGIS differs 2026-10-02 6,812 · 10-22 6,801 · 10-30 6,581 ·
+11-03 6,771; Intersection 267 / 33 / 33 / 33 (the 10-02 export predates October's edits
+to the layers; against the 2026-10-05 layers it reads 33); Ramp 5 / 0 / 0 / 1, the build
+equal to the 10-22 and 10-30 exports cell for cell. The 11-03 Highway export carries
+about 5,000 more differing cells than 10-30 because the site changed between the two
+exports (route 096 SIS / HUM re-inventoried on about 240 rows, 005 SIS 234 new rows, 001
+and 003 re-cut), with the same build file on both days. What remains in ArcGIS differs,
+and why (Highway's 6,555 after the first six fixes, each cell counted once, in this
+order; the seventh fix adds the 250 above):
+
+- **Highway's segmentation** (3,269: END PM 1,646, LENGTH 1,623): the build cuts at every
+  span boundary, the site and TSN where their own engines do. Merging cuts where no value
+  changes was measured and rejected (it lost rows both of them have).
+- **Special Features** (488, 450 of them blank in the build where the site and TSN print
+  `Z`): the layer has no span there. The site reads a span's end point as inside it (001
+  LA 3.453 reads the span ending there), and TSN writes `Z` for none (roadmap TW7).
+- **`THY_TOLL_FOREST_CODE`** (254): toll roads where the site writes no toll and TSN is
+  out of date (TW8). **`THY_EQUATE_CODE`** (206): equations the site derives from LRS
+  calibration points the library does not export (TW10). **Route 036's left roadbed**
+  (345, 322 of them lanes and width blank on 162 rows): SHS Travel Way L has no span past
+  HUM 20.422 in the library (TW9).
+- **Retired inventory** (497): on 099 KER 22.092–28.055, 099 MAD R7.408–10.001 and 101
+  SB 2.052–4.589 the export prints the inventory the library retired when a project's
+  replaced it at a 2025 recalibration, and TSN, older, agrees (TW11).
+- **Sliver rows** (268): rows under 0.01 mi, where one side's cut sits a few thousandths
+  off the other's.
+- **The rest** (1,228) is spread over 207 route-counties, none over 76 (005 SHA). It has
+  not been traced cell by cell.
+
+**What the comparison's "ArcGIS" side is, and the check that is independent of it.**
+The ArcGIS side of every Reports vs ArcGIS comparison is the app's RECONSTRUCTION of the
+file from the layers (§9j: span placement, the county and prefix splits, the overlay, the
+AR fill), not a lookup in the layer. A misplaced span therefore shows a true layer value
+at the wrong postmiles, a value that is on neither the report nor the layer at that
+place, and the comparison counts it as a difference. The three-way's ArcGIS-differs class
+is the only in-app measure of that, and it is a release blocker above the explained
+residual, never a residual.
+
+The check that does not go through the build is a direct read of the raw layer file:
+for a row, the current span (LRSFromDate ≤ as-of < LRSToDate) of its route whose begin
+and end county and prefix are both the row's, on the row's side, whose postmiles contain
+the row's midpoint. It covers the 28 span-layer columns (roadbed values, median, access,
+terrain, design speed, population, the four block dates); it cannot judge a cell whose
+space has no plain span (a layer that files a stretch under another prefix, a crossing
+span) and says so. Run on 2026-11-03 over the v0.51.0 Highway workbook for 2026-10-22,
+it judged 109,648 of the 141,308 flagged cells in those columns: 59,433 (54%) false (the
+layer agrees with TSMIS, the build was wrong), 42,633 real, 7,582 all three apart; of
+54,370 agreeing cells sampled, 168 false. The v0.51.0 build differs from its own layers
+on 5.6% of judged cells, the fixed build on 0.03% (458 of 1,455,850 on the 2026-10-30
+layers; roadmap TW12 lists them); the 10-22, 10-30 and 11-03 exports on 5.0%, 5.0% and
+5.4%, which is the finding the comparison is meant to carry. The fixed build's
+comparisons through the app's matrix (the 2026-10-30 layers), judged the same way —
+flagged cells judged, false: 2026-10-02 53,467 / 837 (1.6%), 10-22 52,490 / 846 (1.6%),
+10-30 52,376 / 882 (1.7%), 11-03 56,248 / 827 (1.5%). On 11-03, 734 of the 827 are rows
+paired at a span boundary: the export's row runs past the build's, whose next row
+carries the layer's value, and the same row's END PM cell shows it (405 LA 26.351 runs
+to 26.45 in the export and to 26.356 in the build, where SHS Travel Way R goes from 6
+lanes to 7); 12 are slivers; 5 are other-roadbed cells the Left window blanks (004 CC
+4.659, 005 SD 31.17); 76 (0.14% of judged) are cells where the build's value is wrong
+inside the span, in no cluster larger than 12 (190 INY, 246 SB, 116 SON; 005 LA R
+69.52–69.68 carries a 1991 median block where the layer's span holds 1970's). The 10-22
+workbook reads 753 / 12 / 5 / 76. 160 of 60,235 agreeing cells sampled on 11-03 (0.3%)
+are agreements the layer contradicts. A random
+draw of 25 differing + 15 agreeing cells, each printed beside the raw layer rows
+(OBJECTID, postmiles, LRS dates) and the raw per-route export row, is the spot check a
+person can repeat; the delivered workbook's draw read 9 false, 7 real, 2 all-apart, 9
+undeterminable and 13 of 15 agreements confirmed. Before the seventh fix the fixed
+workbooks' draws read 19 real, 1 false and 17 real, 2 false, their three false cells
+all independent right-roadbed rows on route 008 (SD, IMP) where the site prints the
+left roadbed's value and the build blanked it — the class the seventh fix removed.
+After it: 2026-10-30 (seed 2) 22 real, 1 false (the 405 LA boundary pairing above), 2
+undeterminable, 13 of 15 agreements confirmed, 1 undeterminable, 1 an anchor the build
+marks unavailable on both sides (036 HUM 27.435, where the layer has no Travel Way L
+span; the `spot` command names that marker); 2026-11-03 (seed 3) 22 real, 0 false, 3
+undeterminable, 13 of 15 confirmed, 2 undeterminable.
+- **Intersection** (33): 12 are the begin dates kept on purpose. 19 are Highway Group,
+  City, Population and seg order lookups where the layers' own calibration disagrees
+  with the site's translate. Past 8.076, 245 TUL has no span end to calibrate from;
+  what covers it is the network's 0 → 33.035, kept over 7.06 AR miles, and Highway
+  Group's span across the county line. The fallback prefers the whole span, so 30.01
+  lands in Woodlake, where the site and TSN have no city. The last 2 are cross-route seg
+  order IDs past a route's end that TSMIS and TSN leave blank.
+- **Ramp** (4): edits made on the site after the 2026-10-05 library (TW9).
 
 What the report-differs cells are, checked against the consolidated exports:
 

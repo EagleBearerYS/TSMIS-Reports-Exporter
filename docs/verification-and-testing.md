@@ -543,6 +543,28 @@ before it is marked done; record the result + the report's approved counts in
 independent oracle, before/after workbook harness, and installed-Excel tier. Use an opt-in
 `CompareSchema` field for report-specific behavior; fix shared defects in the shared engine.
 
+## Clean Road builds: the raw-layer check (v0.51.1)
+
+The "ArcGIS" side of a Reports vs ArcGIS comparison is the app's reconstruction of
+the file from the layers, so the golden checks (synthetic layers) and the vs-TSN
+canary cannot tell a misplaced span from a real difference. Before a Clean Road
+comparison workbook is delivered, run `tools/clean_road_layer_check.py` against the
+library it was built from: `workbook` judges every flagged cell by a direct read of
+the raw layer (false = the layer says what TSMIS says, so the build was wrong), `file`
+judges a whole export or build, and `spot` prints random differing and agreeing cells
+beside the raw layer rows and the raw per-route export row for a person to read. A
+false-difference share above a few percent, or a build that differs from its own
+layers on more than a fraction of a percent of judged cells, blocks the delivery. The
+three-way's "ArcGIS differs" count is the in-app signal of the same thing and is a
+release blocker above the explained residual ([comparison-engine.md](comparison-engine.md)
+§9o). The check judges every span-layer column on every paired row, the other
+roadbed's columns on an independent R or L row included (the site reads them off the
+other side's layer; TSN blanks them): nothing is skipped as a convention, because its
+first version skipped exactly that class and hid about 8,000 false cells a day. On
+2026-11-03 the check found that 54% of the delivered 2026-10-22 Highway differences
+were the build's own, before that class was counted; the fixed build differs from its
+layers on 0.03%.
+
 ## `#mock` GUI preview (verify `scripts/ui/` without the app)
 
 Verify `scripts/ui/` changes without launching the real app, via a preview HTTP
