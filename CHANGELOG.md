@@ -3,6 +3,112 @@
 All notable changes to TSMIS Reports Exporter, newest first. Each GitHub
 release shows only its own section (see `build/gen_release_notes.py`).
 
+## v0.51.2 — 2026-11-04
+
+The Clean Road Highway build is taken to the raw layers' own values. Of the 1.46 million
+cells the raw-layer check can judge, the v0.51.1 build differed from its layers on 458;
+this build differs on 2. Five placement rules changed, each traced from those cells to
+the layer rows behind them.
+
+- **A span's part stays off another visit of the same postmiles.** A postmile space can
+  be visited twice: 155 KER's R0.039 → 0.427 runs odometer 0.402–0.829 while R0.0 →
+  R26.564 starts at 0.829; 680 SOL's independent right roadbed R0.0 → M1.496 precedes
+  the divided road's R0.627 → R2.216; 190 INY's R63.7 → 68.274 and 116 SON's R41.906 →
+  44.557 begin where the plain space's road ends; 580 ALA's R35.048 → L39.992 ends where
+  its R39.828 → R42.477 begins. The part of such a span landed on the other visit's
+  postmiles and outranked that visit's own spans: 155 KER read design speed 35 for 60,
+  190 INY a 1971 surface for 1970's, 116 SON 2012's shoulders for 1972's, 580 ALA 1965
+  dates for 1964's, 680 SOL's divided rows vanished under its ramp roadbed. A part is now
+  kept off the postmiles of any plain span of its own layer whose odometers overlap less
+  than half of the postmile overlap, as the site, reading by AR, keeps that visit's own
+  span. Traffic Volume Segments stay out of it: its vintages overlap one road by design.
+- **Every layer's span takes the odometer the Highway Group layer says at its AR.** SHS
+  Design Speed's R23.134 → M25.307 on 084 ALA carries odometer 48.366 → 50.539 where its
+  AR, and Highway Group, say 52.056 → 54.229, so the rule below painted its 50 over plain
+  18.976 → 21.109, whose odometer that is. 005 LA's .16.871 → G16.901 carries 663 miles
+  of odometer for 0.028 of AR and painted its Highway Group and Median over every county
+  north of it, surfacing wherever the plain spans left a gap (a Divided row with a
+  retaining-wall median at R65.364 → R65.434). The Highway Group spans, the layer the
+  rows and their offsets come from, now calibrate odometer against AR per RouteID, and
+  every other layer's span reads its odometer there; a span's own odometer length is
+  trusted only within a factor of two of its AR length. 16 spans the splitter could not
+  bound before are placed; 3 Traffic Volume spans with a blank begin county and a
+  postmile of −1 are skipped with a note.
+- **A prefix change can run through a third space of its county.** 246 SB's SHS
+  Population M24.21 → R34.601 runs through plain 26.104 → 33.332 (odometer 17.4–24.6 of
+  its 15.5–25.9). The chain walk covered only whole middle counties, and where a space of
+  the span's own county had Highway Group odometers it painted the span over the space's
+  whole extent: Population B over 246's plain 8.302 → 12.466, odometer 0–4. Such a
+  stretch now takes the span window by window, where the window's odometers lie mostly
+  inside the span's, for prefix changes and county crossings alike; a space of the span's
+  own counties is never painted whole. Rows appear where the layers had them and the
+  build did not: 198 TUL's plain space (39 rows), 035 SM's (26), 080 SAC's R space (21),
+  133 ORA's M (18), 058 KER's M (16), 090 LA's plain (16), 680 SOL's N (4); the export has
+  rows in each.
+- **The Left block of a divided row, and of an R row, is read off the Left layers at the
+  row's postmile whatever the Highway Group windows say**, as the site reads it at the
+  row's AR on that alignment. 125 SD's divided 9.161 → 9.251 lies inside the Left
+  roadbed's window and carries its 24 ft / 2 lanes; 004 CC's R rows past the Left
+  roadbed's end at R4.629 read the divided road's left side; 580 ALA's divided 0.808 →
+  0.927 reads 36 ft / 3 lanes. 170 cells were blank where a Left span exists.
+- **A cell read at the row's AR translates on the other alignment where its own has no
+  calibration.** 005 SHA's M29.303 → M30.199 exists only on the Left alignment, so its
+  Left rows lost their Right block (Surface C, no special features, 35 ft) once the
+  whole-extent painting that had supplied it was gone; the row's AR is now taken on the
+  Left alignment and the right-side layer read on the Right RouteID at it, as the site
+  does. And **a part that stops within 0.005 mi of its window's edge reaches it** (005
+  LA's Median .16.619 → G16.901 runs 0.278 of AR for 0.282 of postmile).
+- **Measured on four export days through the app's matrix** (ArcGIS ▸ Reports vs
+  ArcGIS, the Highway build refreshed from the 2026-10-30 layers; v0.51.1 in brackets).
+  Paired rows · rows only the build has / only the export has · differing cells:
+  - 2026-10-02: 47,803 · 9,517 / 3,932 · 84,366 [47,658 · 9,204 / 4,077 · 85,032].
+  - 2026-10-22: 47,584 · 9,736 / 4,051 · 83,126 [47,439 · 9,423 / 4,196 · 83,796].
+  - 2026-10-30: 47,230 · 10,090 / 3,908 · 82,560 [47,082 · 9,780 / 4,056 · 83,035].
+  - 2026-11-03: 47,789 · 9,531 / 3,847 · 87,204 [47,644 · 9,218 / 3,992 · 87,877].
+
+  About 145 more export rows pair on each day and 660 to 670 fewer cells differ. The
+  build has about 315 more rows the export keys differently: the third-space rows
+  above, cut where the layers cut, and 680 SOL's ramp roadbed, whose export rows carry
+  prefixes N and M that no layer records. The raw-layer check over the four workbooks
+  (flagged cells judged, false): 2026-10-02 53,326 / 702 (1.3%), 10-22 52,349 / 713
+  (1.4%), 10-30 52,241 / 755 (1.4%), 11-03 56,105 / 692 (1.2%) [v0.51.1: 1.6 / 1.6 /
+  1.7 / 1.5%]. Of the 692 on 11-03, 688 are rows paired at a span boundary (the export's
+  row runs past the build's, whose next row carries the layer's value), 1 a sliver, 1 the
+  build's own (004 SJ 19.84 above) and 2 the export's: its rows at 210U SBD 21.275–21.506
+  drop the U route suffix, so the check read route 210's layer there; the build's outer
+  shoulder L of 4 is 210U's own span. The
+  three-way's cells where only the build disagrees: 11-03 6,390 [6,771], 10-22 6,426
+  [6,801]; 293 of them are independent rows where the export leaves the other roadbed
+  blank though the layer has a span there (route 101's HUM, SBT, MON, SF and DN, 125 SD,
+  260 ALA, 099 BUT). Two random draws of 25 differing + 15 agreeing cells, each printed
+  beside the raw layer rows and the raw per-route export row: 2026-11-03 (seed 5) 18
+  real, 1 false (015 SBD 55.642, a boundary pairing), 1 all three apart, 5 not judgeable
+  by a plain span; 15 of 15 agreements confirmed. 2026-10-30 (seed 6) 22 real, 0 false,
+  2 all three apart, 1 not judgeable; 13 of 15 confirmed, 2 not judgeable.
+- **Checked the other way, against the export.** On the rows keyed the same in the
+  v0.51.1 build, this build and the 2026-11-03 export, 476 changed cells moved to the
+  export's value and 25 away from it: 15 on one 0.001-mi sliver at 005 LA 16.9 where two
+  spans' ranks tie; gaps in a layer the site bridges by reading a span's end point as
+  inside it or snapping to the nearest span within 0.005 mi (005 TEH 33.34, 005 LA
+  28.939, 038 SBD 4.252, 005 SJ 24.637); a layer whose postmiles sit 0.035 mi off its AR
+  (070 BUT 21.321: the site reads the span before, the postmiles say the span after);
+  and 004 CC's R rows reading the left special-feature span where the site's snap reads
+  the Left roadbed's blank. None is a value the layer holds elsewhere.
+- **The two cells left** of 1,459,913 judged: 001 SB 12.504 → 12.505 carries the median
+  date of the span that begins 11.7 miles earlier, where the site's tie-break (the span
+  whose AR begins nearest) takes the 0.001-mi span's; 004 SJ 19.84 → 19.867 has no
+  Special Feature L span at its midpoint (the layer's .19.99 → .19.84 runs backwards, and
+  the site snaps to .19.867 → .19.877). Both on the roadmap (TW12).
+- **Checks** (`build/check_clean_road.py`, 178 checks): the other-visit clip on 155 KER's
+  and 680 SOL's shapes, the third space inside one county on 246 SB's, the odometer by AR
+  on 084 ALA's and 005 LA's spans, the divided row inside the Left window on 125 SD's.
+
+Highway Detail's build from the layers runs the same consolidation and changes the same
+way; there is still no Highway Detail export since the layers were refreshed to measure
+it against. The `CRH-SW` canary against the TSN extract still needs its re-bless, and the
+work PC still has to refresh the three builds (ArcGIS ▸ ArcGIS reports ▸ Refresh all
+reports) and rebuild the matrices before any Clean Road comparison goes out.
+
 ## v0.51.1 — 2026-11-04
 
 The three Clean Road builds from the ArcGIS layers were audited cell by cell against

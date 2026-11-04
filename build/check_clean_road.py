@@ -1269,6 +1269,162 @@ def test_independent_row_dates():
           by_kind.get("base") is None or by_kind["base"][col["THY_RT_LANES_AMT"]] == 3)
 
 
+def test_other_visit_clip():
+    """A postmile space can be visited twice: 155 KER's R0.039 -> 0.427 runs
+    odometer 0.402-0.829 while R0.0 -> R26.564 starts at 0.829. A part of a
+    cross-prefix or cross-county span is kept off the postmiles of a plain
+    span of its own layer whose odometers say it is another visit
+    (v0.51.2)."""
+    print("a parked span's part stays off another visit of its postmiles:")
+    from collections import defaultdict
+
+    u = crl.pm_units
+
+    def sp(b, e, value, od, od_len):
+        return cch._Span(u(b), u(e), (value,), (1.0, 1.0), 1.0, od, od_len)
+
+    def spans_of(bk, key, tag):
+        return sorted((crl.pm_float(s.b), crl.pm_float(s.e), s.vals[0])
+                      for s in bk[key][tag])
+
+    check("overlapping postmiles on disjoint odometers are another visit",
+          cch._other_visit(sp(0.039, 0.466, "X", 0.402, 0.427),
+                           sp(0.0, 26.564, "U", 0.829, 26.564))
+          and not cch._other_visit(sp(0.039, 0.466, "X", 0.402, 0.427),
+                                   sp(0.0, 26.564, "U", 0.37, 26.564))
+          and not cch._other_visit(sp(0.039, 0.466, "X", None, None),
+                                   sp(0.0, 26.564, "U", 0.829, 26.564)))
+    buckets = defaultdict(lambda: defaultdict(list))
+    buckets[("155", "R", "KER", "R")]["HG"] += [sp(0.0, 26.564, "U", 0.829, 26.564)]
+    buckets[("155", "R", "KER", "R")]["OSR"] += [sp(0.018, 0.62, 10, 0.847, 0.602)]
+    buckets[("155", "R", "KER", "")]["OSR"] += [sp(0.388, 0.427, 2, 0.79, 0.039)]
+    warnings = []
+    cch._split_parked([("HG", "155", "R", "KER", "R", "KER", "",
+                        cch._Span(u(0.039), u(0.427), ("X",), (2.0, 2.0), 2.0, 0.402,
+                                  0.427))], buckets, warnings)
+    check("the part on the other visit's postmiles is dropped (R0.039-0.466 is the "
+          "third visit's road)",
+          spans_of(buckets, ("155", "R", "KER", "R"), "HG") == [(0.0, 26.564, "U")])
+    check("... and the part in the space the span ends in stays",
+          spans_of(buckets, ("155", "R", "KER", ""), "HG") == [(0.388, 0.427, "X")]
+          and warnings == [])
+
+    # 680 SOL: the independent right roadbed R0.0 -> M1.496 (odometer 57.22 ->
+    # 58.716) precedes the divided road's R0.627 -> R2.216 (58.716 on).
+    buckets = defaultdict(lambda: defaultdict(list))
+    buckets[("680", "R", "SOL", "R")]["HG"] += [sp(0.627, 1.002, "D", 58.716, 0.375),
+                                                 sp(1.002, 2.216, "D", 59.091, 1.214)]
+    buckets[("680", "R", "SOL", "R")]["TWR"] += [sp(0.0, 0.682, 60, 57.22, 1.551)]
+    buckets[("680", "R", "SOL", "M")]["TWR"] += [sp(0.923, 1.496, 60, 58.143, 0.573)]
+    cch._split_parked([("HG", "680", "R", "SOL", "R", "SOL", "M",
+                        cch._Span(u(0.0), u(1.496), ("R",), (2.0, 2.0), 2.0, 57.22,
+                                  1.496))], buckets, [])
+    check("an independent roadbed that precedes the divided road on the same "
+          "postmiles ends where the road's own spans begin",
+          spans_of(buckets, ("680", "R", "SOL", "R"), "HG")
+          == [(0.0, 0.627, "R"), (0.627, 1.002, "D"), (1.002, 2.216, "D")])
+
+
+def test_third_space_inside_one_county():
+    """A span that changes prefix inside a county can run through a third
+    space of that county on the way: 246 SB's SHS Population M24.21 -> R34.601
+    runs through plain 26.104-33.332 (odometer 17.4-24.6 of its 15.5-25.9).
+    That stretch gets the span, window by window; the plain stretch at
+    odometer 0-4 (8.302-12.466) never does, where the chain walk had painted
+    the space whole (v0.51.2)."""
+    print("a prefix change runs through a third space of its county:")
+    from collections import defaultdict
+
+    u = crl.pm_units
+
+    def sp(b, e, value, od, od_len):
+        return cch._Span(u(b), u(e), (value,), (1.0, 1.0), 1.0, od, od_len)
+
+    def spans_of(bk, key, tag):
+        return sorted((crl.pm_float(s.b), crl.pm_float(s.e), s.vals[0])
+                      for s in bk[key][tag])
+
+    plain, r_space = ("246", "R", "SB", ""), ("246", "R", "SB", "R")
+    m_space = ("246", "R", "SB", "M")
+    buckets = defaultdict(lambda: defaultdict(list))
+    buckets[plain]["HG"] += [sp(8.302, 12.466, "U", 0.0, 4.164),
+                             sp(26.104, 33.332, "U", 17.406, 7.228)]
+    buckets[plain]["POP"] += [sp(8.302, 12.466, "U", 0.0, 4.164)]
+    buckets[r_space]["HG"] += [sp(22.512, 24.753, "D", 13.83, 2.241),
+                               sp(33.332, 34.601, "U", 24.634, 1.269)]
+    buckets[m_space]["POP"] += [sp(23.388, 24.21, "R", 14.706, 0.822)]
+    warnings = []
+    cch._split_parked([("POP", "246", "R", "SB", "M", "SB", "R",
+                        cch._Span(u(24.21), u(34.601), ("B",), (2.0, 2.0), 2.0, 15.528,
+                                  10.375))], buckets, warnings)
+    check("the third space's stretch inside the span's odometers takes the span",
+          (26.104, 33.332, "B") in spans_of(buckets, plain, "POP"))
+    check("... and its stretch outside them never does",
+          not any(v == "B" and b < 26.0 for b, _e, v in spans_of(buckets, plain, "POP")))
+    check("the end space gets the part the odometer length allows",
+          spans_of(buckets, r_space, "POP") == [(33.332, 34.601, "B")] and warnings == [])
+
+
+def test_odometer_by_ar():
+    """Every layer's span takes the odometer the Highway Group layer says at
+    its AR: SHS Design Speed's R23.134 -> M25.307 on 084 ALA carries odometer
+    48.366-50.539 where its AR, and Highway Group, say 52.056-54.229, so the
+    third-space rule painted its 50 over plain 18.976-21.109. A span's own
+    odometer length is trusted only within a factor of two of its AR length
+    (005 LA's .16.871 -> G16.901: 663 miles of odometer for 0.028 of AR)
+    (v0.51.2)."""
+    print("a span's odometer comes from the Highway Group layer at its AR:")
+    rid = "SHS_084._P"
+    cal = cch._OdByAr()
+    cal.add(rid, 46.539077, 48.5630555, 50.031, 2.025)
+    cal.add(rid, 48.5630555, 50.7389509, 52.056, 2.173)
+    ob, ol = cal.odometer(rid, 48.5630556, 50.7389509, 48.366, 2.173)
+    check("a stale odometer is replaced by the Highway Group's at the span's AR",
+          abs(ob - 52.056) < 1e-6 and abs(ol - 2.173) < 1e-6)
+    check("... interpolated inside a Highway Group span",
+          abs(cal._at(rid, 47.55106625) - 51.0435) < 1e-3)
+    check("an AR the Highway Group does not reach keeps the span's own odometer",
+          cal.odometer(rid, 60.0, 61.0, 70.0, 1.0) == (70.0, 1.0)
+          and cal.odometer("SHS_084._S", 47.0, 48.0, 70.0, 1.0) == (70.0, 1.0)
+          and cal.odometer(rid, None, 48.0, 70.0, 1.0) == (70.0, 1.0))
+    check("an odometer length far from the AR length is the AR length",
+          abs(cch._odometer_length(133.322, 796.696, 133.2555614, 133.2840516)
+              - 0.0284902) < 1e-6
+          and cch._odometer_length(0.0, 5.0, 0.0, 5.1) == 5.0
+          and cch._odometer_length(796.696, 133.322, 133.284, 133.29) == 133.322 - 796.696
+          and cch._odometer_length(None, 5.0, 0.0, 5.0) is None)
+
+
+def test_base_row_left_block():
+    """A divided row inside the Left roadbed's window reads the Left block
+    off the Left layers at its postmile, as the site does at its AR: 125 SD's
+    plain 9.161-9.251 lies inside the Left window 8.467-9.251 and carries
+    the Left roadbed's 24 ft / 2 lanes (v0.51.2)."""
+    print("a base row inside the Left window carries the Left block:")
+    from datetime import date
+
+    u = crl.pm_units
+
+    def span(b, e, value, lanes=2):
+        return cch._Span(u(b), u(e), (value, lanes), (1.0, 1.0),
+                         crl.to_serial(date(2007, 11, 19)), None, None)
+
+    rbucket = {"HG": [span(9.161, 9.587, "D- Divided Highway")],
+               "TWR": [span(9.161, 9.587, 24)]}
+    lbucket = {"HG": [span(8.467, 9.251, "L- Independent Alignment - Left")],
+               "TWL": [span(8.467, 9.251, 24), span(9.251, 9.585, 48, 4)]}
+    rows = cch._build_cp("125", "SD", "", rbucket, lbucket, {}, date(2026, 10, 30), True)
+    col = cch._COL
+    base = {(crl.pm_float(r["b"]), crl.pm_float(r["e"])): r["row"]
+            for r in rows if r["kind"] == "base"}
+    check("the divided row inside the Left window reads the Left roadbed's travel way",
+          base[(9.161, 9.251)][col["THY_LT_TRAV_WAY_WIDTH_AMT"]] == 24
+          and base[(9.161, 9.251)][col["THY_LT_LANES_AMT"]] == 2)
+    check("... and the one past it reads the divided road's left side",
+          base[(9.251, 9.585)][col["THY_LT_TRAV_WAY_WIDTH_AMT"]] == 48
+          and base[(9.251, 9.585)][col["THY_LT_LANES_AMT"]] == 4)
+
+
 def test_postmile_to_ar():
     """The PM -> AR calibration the AR lookups use (v0.51.1): between the
     nearest span ends, a stale span ignored, the containing span last."""
@@ -1313,6 +1469,10 @@ def main():
     test_county_line_without_reset()
     test_ar_fill()
     test_independent_row_dates()
+    test_other_visit_clip()
+    test_third_space_inside_one_county()
+    test_odometer_by_ar()
+    test_base_row_left_block()
     test_postmile_to_ar()
     print()
     if _fail:

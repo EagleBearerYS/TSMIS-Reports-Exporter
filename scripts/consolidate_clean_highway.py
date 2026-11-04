@@ -87,6 +87,11 @@ _PREFIX_FIT = 500
 _PART_RATIO = 1.5
 _PART_SLACK = 5000
 
+# A span's odometer length is trusted only within a factor of two of its AR
+# length, plus this slack (miles): a span that changes prefix can carry each
+# space's own odometer at its ends.
+_OD_SLACK = 0.05
+
 # The 74-column THY header (clean_highway_columns is the shared contract).
 THY_HEADER = list(chc.ARC_HEADER)   # the TSN 74 + our build-only columns
 _COL = {name: i for i, name in enumerate(THY_HEADER)}
@@ -206,14 +211,16 @@ def _cancelled():
 # reading
 # --------------------------------------------------------------------------- #
 def _read_span_layer(lib, index, tag, *, asof, events, buckets, parked, skips,
-                     ar_fill=None):
+                     ar_fill=None, od_by_ar=None):
     """Stream one span layer's as-of slices into `buckets[(route, align,
     county, prefix)][tag]`; cross-county/prefix spans park for the split pass,
-    and every span with AR measures also goes to `ar_fill` (`_ArFill`). An
-    as-of span with an unreadable begin or end postmile cannot be placed (the
-    contract keys on county + PM prefix + postmile and never guesses a span's
-    place from AR/odometer calibration) — it is RECORDED into `skips` (HF-01),
-    never silently dropped."""
+    and every span with AR measures also goes to `ar_fill` (`_ArFill`). With
+    `od_by_ar` (`_OdByAr`), the Highway Group layer calibrates the odometer
+    against AR and every later layer's span takes the odometer its AR says.
+    An as-of span with an unreadable begin or end postmile cannot be placed
+    (the contract keys on county + PM prefix + postmile and never guesses a
+    span's place from AR/odometer calibration) — it is RECORDED into `skips`
+    (HF-01), never silently dropped."""
     layer, attrs, family = SPAN_LAYERS[tag]
     entry = index.get(layer) or {}
     n_asof = n_cross = n_skip = 0
@@ -228,6 +235,16 @@ def _read_span_layer(lib, index, tag, *, asof, events, buckets, parked, skips,
         if not crl.is_asof(crl.to_serial(r["LRSFromDate"]),
                            crl.to_serial(r["LRSToDate"]), asof):
             continue
+        od_b = crl.to_serial(r["BeginODMeasure"])
+        od_e = crl.to_serial(r["EndODMeasure"])
+        frm = crl.to_serial(r["FromARMeasure"])
+        to = crl.to_serial(r["ToARMeasure"])
+        od_len = _odometer_length(od_b, od_e, frm, to)
+        if od_by_ar is not None:
+            if tag == "HG":
+                od_by_ar.add(rid, frm, to, od_b, od_len)
+            else:
+                od_b, od_len = od_by_ar.odometer(rid, frm, to, od_b, od_len)
         b, e = crl.pm_units(r["BeginPMMeasure"]), crl.pm_units(r["EndPMMeasure"])
         if b is None or e is None:
             n_skip += 1
@@ -245,17 +262,12 @@ def _read_span_layer(lib, index, tag, *, asof, events, buckets, parked, skips,
                     crl.to_serial(r["LRSFromDate"]) or 0.0)
         else:
             rank = (crl.to_serial(r["LRSFromDate"]) or 0.0, item or 0.0)
-        od_b = crl.to_serial(r["BeginODMeasure"])
-        od_e = crl.to_serial(r["EndODMeasure"])
-        od_len = (od_e - od_b) if od_b is not None and od_e is not None else None
         span = _Span(b, e, tuple(r[a] for a in attrs), rank, item, od_b, od_len,
                      crl.norm_district(r["District"]))
         whole = c1 == c2 and p1 == p2
         if whole and e <= b:
             continue                         # degenerate within one PM space
         if ar_fill is not None and isinstance(rid, str) and rid:
-            frm = crl.to_serial(r["FromARMeasure"])
-            to = crl.to_serial(r["ToARMeasure"])
             if frm is not None and to is not None:
                 ar_fill.add(tag, route, align, (c1, p1), (c2, p2), b, e, rid,
                             frm, to, span)
@@ -270,6 +282,78 @@ def _read_span_layer(lib, index, tag, *, asof, events, buckets, parked, skips,
                   + (f" ({n_cross} cross-county)" if n_cross else "")
                   + (f" ({n_skip} skipped: unreadable postmile)"
                      if n_skip else ""))
+
+
+class _OdByAr:
+    """The odometer as a function of AR on each RouteID, calibrated from the
+    Highway Group spans — the layer the rows and their offsets come from.
+    Every other layer's span takes the odometer its AR says there, so a span
+    whose own odometer is stale never lands on another stretch of the road:
+    SHS Design Speed's R23.134 → M25.307 on 084 ALA carries 48.366 → 50.539
+    where its AR, and Highway Group, say 52.056 → 54.229, and the third-space
+    rule painted its 50 over plain 18.976 → 21.109, whose odometer that is. A
+    span whose AR lies outside the Highway Group's keeps its own odometer."""
+
+    __slots__ = ("_points", "_index")
+
+    def __init__(self):
+        self._points = defaultdict(set)
+        self._index = {}
+
+    def add(self, rid, ar_b, ar_e, od_b, od_len):
+        if (None in (rid, ar_b, ar_e, od_b, od_len) or ar_e <= ar_b
+                or od_len <= 0):
+            return
+        self._points[rid].add((ar_b, od_b))
+        self._points[rid].add((ar_e, od_b + od_len))
+        self._index.pop(rid, None)
+
+    def _at(self, rid, ar):
+        if rid not in self._points:
+            return None
+        found = self._index.get(rid)
+        if found is None:
+            pts = sorted(self._points[rid])
+            found = self._index[rid] = ([a for a, _o in pts], [o for _a, o in pts])
+        ars, ods = found
+        i = bisect_right(ars, ar)
+        if i == 0 or i == len(ars):
+            j = 0 if i == 0 else len(ars) - 1
+            return ods[j] if abs(ar - ars[j]) <= _OD_SLACK else None
+        a0, a1 = ars[i - 1], ars[i]
+        o0, o1 = ods[i - 1], ods[i]
+        if a1 <= a0:
+            return o0
+        return o0 + (o1 - o0) * (ar - a0) / (a1 - a0)
+
+    def odometer(self, rid, ar_b, ar_e, od_b, od_len):
+        """(odometer begin, length) for a span whose AR runs ar_b → ar_e: the
+        Highway Group's where it covers both ends, else the span's own."""
+        if ar_b is None or ar_e is None:
+            return od_b, od_len
+        ob, oe = self._at(rid, ar_b), self._at(rid, ar_e)
+        if ob is None or oe is None or oe <= ob:
+            return od_b, od_len
+        return ob, oe - ob
+
+
+def _odometer_length(od_b, od_e, ar_b, ar_e):
+    """A span's odometer length, or its AR length where the odometers
+    disagree with it by more than a factor of two. A span that changes prefix
+    can carry each space's own odometer at its ends: 005 LA's .16.871 →
+    G16.901 runs odometer 133.322 → 796.696, 663 miles for a span whose AR
+    runs 0.028, and the chain walk painted its Highway Group and Median over
+    every county north of it, surfacing wherever the plain spans left a gap
+    (a Divided row with a retaining-wall median at R65.364 → R65.434). An
+    odometer length of zero or less stays as it is: such a span is skipped
+    with a note, never placed."""
+    od = (od_e - od_b) if od_b is not None and od_e is not None else None
+    ar = (ar_e - ar_b) if ar_b is not None and ar_e is not None else None
+    if od is None or od <= 0 or ar is None or ar <= 0:
+        return od
+    if od > 2 * ar + _OD_SLACK or od < 0.5 * ar - _OD_SLACK:
+        return ar
+    return od
 
 
 def _skipped_span_record(tag, r, b, e):
@@ -434,11 +518,19 @@ class _ArFill:
         return found
 
     def span(self, tag, route, align, county, prefix, b, e):
-        """The `_Span` of `tag` at the AR of row [b, e) on `align`, or None."""
-        rid, ar = self._calibration().translate(
-            route, county, prefix, (b + e) / 2 / crl.PM_SCALE, align)
+        """The `_Span` of `tag` at the AR of row [b, e) on `align`, or None.
+        A postmile space with no calibration on `align` (005 SHA's M29.303 →
+        M30.199 exists only on the Left alignment) translates on the other
+        alignment, and the layer is read on `align`'s RouteID at that AR —
+        as the site reads a right-side layer at a Left row's own AR."""
+        pm = (b + e) / 2 / crl.PM_SCALE
+        rid, ar = self._calibration().translate(route, county, prefix, pm, align)
         if rid is None:
-            return None
+            other, ar = self._calibration().translate(
+                route, county, prefix, pm, "L" if align == "R" else "R")
+            if other is None:
+                return None
+            rid = _sibling_rid(other, align)
         frms, spans, longest = self._layer(tag, rid)
         own = (route, align, county, prefix)
         best = None
@@ -451,6 +543,17 @@ class _ArFill:
             if ar <= to and home != own and (best is None or span.rank > best.rank):
                 best = span
         return best
+
+
+def _sibling_rid(rid, align):
+    """The RouteID of `align`'s alignment for a route whose other alignment
+    is `rid`: the site's `_P` (right) and `_S` (left) pair."""
+    for suffix_r, suffix_l in (("._P", "._S"), ("_P", "_S")):
+        if align == "L" and rid.endswith(suffix_r):
+            return rid[:-len(suffix_r)] + suffix_l
+        if align == "R" and rid.endswith(suffix_l):
+            return rid[:-len(suffix_l)] + suffix_r
+    return rid
 
 
 def _with_ar_fill(seg, ar_fill, route, county, prefix, b, e, kind):
@@ -512,6 +615,8 @@ def _split_parked(parked, buckets, warnings):
                         if s.od is not None and s.od_len is not None)
     od_windows = {k: _merge_windows(v) for k, v in od_windows.items()}
     spaces = _unparked_spaces(buckets)
+    plain = {key: {tag: list(spans) for tag, spans in tags.items()}
+             for key, tags in buckets.items()}
     prefixes = defaultdict(set)
     for route, county, prefix in spaces:
         prefixes[(route, county)].add(prefix)
@@ -581,7 +686,7 @@ def _split_parked(parked, buckets, warnings):
         if span.od is not None and span.od_len is not None:
             od_lo, od_hi = span.od, span.od + span.od_len
             for (rt, county, prefix), wins in od_windows.items():
-                if rt != route or (county, prefix) in ((c1, p1), (c2, p2)):
+                if rt != route or county in (c1, c2):
                     continue
                 total = sum(we - wb for wb, we in wins)
                 if total <= 0:
@@ -596,9 +701,8 @@ def _split_parked(parked, buckets, warnings):
                     _Span(lo, hi, span.vals, span.rank, span.item,
                           wins[0][0], (hi - lo) / crl.PM_SCALE, span.district))
                 placed = True
-        if c1 != c2 and _cover_end_county_spaces(
-                tag, route, align, ((c1, p1), (c2, p2)), span, buckets,
-                spaces, prefixes, od_windows):
+        if _cover_end_county_spaces(tag, route, align, ((c1, p1), (c2, p2)),
+                                    span, buckets, spaces, prefixes):
             placed = True
         if not placed and c1 == c2:
             outside += 1
@@ -613,6 +717,75 @@ def _split_parked(parked, buckets, warnings):
             f"{outside} span(s) that change postmile prefix inside a county lie "
             "outside the postmile coverage of both their prefixes — nothing to "
             "place.")
+    _clip_other_visits(buckets, plain)
+
+
+def _other_visit(part, plain):
+    """Whether `plain`, an unparked span of the same layer and bucket, is
+    another visit of the postmiles `part` covers: the two overlap in postmile
+    while their odometers overlap less than half of that. A part of a
+    cross-county or cross-prefix span is bounded by the span's odometer
+    length, but a postmile space can be visited twice — 155 KER's R0.039 →
+    0.427 runs odometer 0.402–0.829 while R0.0 → R26.564 starts at 0.829, and
+    680 SOL's independent roadbed R0.0 → M1.496 precedes the divided road's
+    R0.627 → R2.216 — and the part then lands on the other visit's
+    postmiles, where the site, reading by AR, keeps that visit's own span."""
+    if None in (part.od, part.od_len, plain.od, plain.od_len):
+        return False
+    if part.od_len <= 0 or plain.od_len <= 0:
+        return False
+    pm = (min(part.e, plain.e) - max(part.b, plain.b)) / crl.PM_SCALE
+    if pm <= 0:
+        return False
+    od = (min(part.od + part.od_len, plain.od + plain.od_len)
+          - max(part.od, plain.od))
+    return od < 0.5 * pm
+
+
+def _piece(span, b, e):
+    """`span` cut to [b, e), its odometer moved along with it."""
+    if (b, e) == (span.b, span.e):
+        return span
+    od = (span.od + (b - span.b) / crl.PM_SCALE) if span.od is not None else None
+    return _Span(b, e, span.vals, span.rank, span.item, od,
+                 (e - b) / crl.PM_SCALE, span.district)
+
+
+def _clip_other_visits(buckets, plain):
+    """Keep every part a parked span was placed as off the postmiles of the
+    plain spans of its own layer and bucket that are another visit
+    (`_other_visit`). `plain` is the per-bucket, per-layer snapshot taken
+    before the split, so parts are never clipped against each other. Traffic
+    Volume Segments stay out of it: its vintages overlap one road by design
+    and `_reduce_tvs` chooses among them."""
+    for key, tags in buckets.items():
+        own_tags = plain.get(key) or {}
+        for tag, spans in list(tags.items()):
+            own = own_tags.get(tag) or []
+            if tag == "TVS" or not own or len(spans) == len(own):
+                continue
+            own_ids = {id(s) for s in own}
+            kept = list(own)
+            for part in spans:
+                if id(part) in own_ids:
+                    continue
+                windows = _merge_windows([(p.b, p.e) for p in own
+                                          if _other_visit(part, p)])
+                if not windows:
+                    kept.append(part)
+                    continue
+                cur = part.b
+                for wb, we in windows:
+                    if we <= cur:
+                        continue
+                    if wb >= part.e:
+                        break
+                    if cur < wb:
+                        kept.append(_piece(part, cur, min(wb, part.e)))
+                    cur = max(cur, we)
+                if cur < part.e:
+                    kept.append(_piece(part, cur, part.e))
+            tags[tag] = kept
 
 
 def _unparked_spaces(buckets):
@@ -722,7 +895,10 @@ def _split_prefix_change(tag, route, align, county, p1, p2, span, buckets,
 
     Otherwise each part stays inside the window that holds its own endpoint
     and is never longer than the span's odometer length: the first part runs
-    from the span's begin, the second ends at the span's end. A part whose
+    from the span's begin, the second ends at the span's end, and a part that
+    stops within the fit of the window's edge reaches it (005 LA's Median
+    .16.619 → G16.901 runs 0.278 of AR for 0.282 of postmile, and the last
+    0.004 took the next span's values). A part whose
     endpoint lies in no window of its space places nothing (True / False:
     whether anything was placed). A span with no usable odometer length
     cannot be bounded and returns None (skipped, never guessed). The windows
@@ -751,6 +927,8 @@ def _split_prefix_change(tag, route, align, county, p1, p2, span, buckets,
     placed = False
     if w1 is not None:
         hi = min(w1[1], span.b + length)
+        if w1[1] - hi <= _PREFIX_FIT:
+            hi = w1[1]
         if hi > span.b:
             buckets[(route, align, county, p1)][tag].append(
                 _Span(span.b, hi, span.vals, span.rank, span.item, span.od,
@@ -758,6 +936,8 @@ def _split_prefix_change(tag, route, align, county, p1, p2, span, buckets,
             placed = True
     if w2 is not None:
         lo = max(w2[0], span.e - length)
+        if lo - w2[0] <= _PREFIX_FIT:
+            lo = w2[0]
         if span.e > lo:
             buckets[(route, align, county, p2)][tag].append(
                 _Span(lo, span.e, span.vals, span.rank, span.item,
@@ -784,23 +964,26 @@ def _window_od(spaces, key, align, window):
 
 
 def _cover_end_county_spaces(tag, route, align, ends, span, buckets, spaces,
-                             prefixes, od_windows):
-    """A cross-county span can also change prefix inside its first or last
-    county (128: SON L4.971 → NAP 4.55 runs through SON's plain 4.87–24.761
-    between the two). The chain walk covers only the spaces whose HIGHWAY
-    GROUP odometers it knows, so such a stretch had no span at all. Here every
-    other space of the first and last county gets the span over each of its
-    windows whose odometer range lies mostly inside the span's — that window
-    only, never the space's whole extent."""
+                             prefixes):
+    """A span can run through a third postmile space of a county it begins or
+    ends in: 128's SON L4.971 → NAP 4.55 runs through SON's plain 4.87–24.761,
+    and 246's M24.21 → R34.601, inside SB, through plain 26.104–33.332. The
+    chain walk covers only whole middle counties, so such a stretch had no
+    span at all — or, when the space had Highway Group odometers, the span
+    over the space's whole extent (SHS Population's B painted 246's plain
+    8.302–12.466, odometer 0–4, from a span whose odometers run 15.5–25.9).
+    Here every other space of the first and last county gets the span over
+    each of its windows whose odometer range lies mostly inside the span's —
+    that window only, never the space's whole extent."""
     od_lo, od_hi = (span.od, span.od + span.od_len) if (
         span.od is not None and span.od_len is not None) else (None, None)
     if od_lo is None or od_hi <= od_lo:
         return False
     placed = False
-    for county, own in ends:
+    for county in sorted({county for county, _own in ends}):
         for prefix in sorted(prefixes.get((route, county), ())):
             key = (route, county, prefix)
-            if (county, prefix) in ends or key in od_windows:
+            if (county, prefix) in ends:
                 continue
             for window in _align_windows(spaces, key, align):
                 rng = _window_od(spaces, key, align, window)
@@ -1226,17 +1409,18 @@ def _build_cp(route, county, prefix, rbucket, lbucket, pts, asof_date,
         rows.append(_paint_row(route, county, prefix, b, e, seg, "L", pts,
                                asof_date, primary_eff, ar_fill))
 
-    # An independent row carries the other roadbed's block too — its values
-    # and its effective date (001 MON R81.505R carries the Left roadbed's
-    # 1973-06-08 and its lanes), as the site writes it: an R row reads it off
-    # the left-side layers inside the L windows, an L row off the right-side
-    # layers, at the row's midpoint. TSN keeps only the date.
-    other = {"R": ("L", {t: _clip_spans(lbucket.get(t, []), win_l, inside=True)
-                         for t in _LEFT_TAGS}),
+    # The Left block of a base or R row, and the Right block of an L row, are
+    # read off the other alignment's layers at the row's midpoint, whatever
+    # the Highway Group windows say — as the site reads them, at the row's AR
+    # on that alignment: 001 MON R81.505R carries the Left roadbed's
+    # 1973-06-08 and its lanes; 004 CC's R rows past the Left roadbed's end at
+    # R4.629 read the divided road's left side; 125 SD's divided rows inside
+    # the Left window read the Left roadbed. TSN blanks the other roadbed's
+    # values on independent rows and keeps only the date.
+    left = {t: lbucket.get(t, []) for t in _LEFT_TAGS}
+    other = {"base": ("L", left), "R": ("L", left),
              "L": ("R", {t: rbucket.get(t, []) for t in _RIGHT_TAGS})}
     for rec in rows:
-        if rec["kind"] not in other:
-            continue
         block, spans = other[rec["kind"]]
         seg = _block_at(spans, rec["b"], rec["e"], ar_fill, route, county, prefix,
                         block)
@@ -2016,6 +2200,7 @@ def _consolidate(events, confirm_overwrite, *, asof, lib_root, out_path, routes,
     buckets = defaultdict(lambda: defaultdict(list))
     points = defaultdict(dict)
     ar_fill = _ArFill()
+    od_by_ar = _OdByAr()
     parked, warnings, skips = [], [], []
     tags = tuple(span_tags) if span_tags else tuple(SPAN_LAYERS)
     unknown = [t for t in tags if t not in SPAN_LAYERS]
@@ -2026,7 +2211,7 @@ def _consolidate(events, confirm_overwrite, *, asof, lib_root, out_path, routes,
             return _cancelled(events)
         _read_span_layer(lib, index, tag, asof=asof_serial, events=events,
                          buckets=buckets, parked=parked, skips=skips,
-                         ar_fill=ar_fill)
+                         ar_fill=ar_fill, od_by_ar=od_by_ar)
     for tag in POINT_LAYERS:
         if events.is_cancelled():
             return _cancelled(events)

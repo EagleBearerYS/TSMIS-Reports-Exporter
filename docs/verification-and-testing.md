@@ -562,8 +562,8 @@ roadbed's columns on an independent R or L row included (the site reads them off
 other side's layer; TSN blanks them): nothing is skipped as a convention, because its
 first version skipped exactly that class and hid about 8,000 false cells a day. On
 2026-11-03 the check found that 54% of the delivered 2026-10-22 Highway differences
-were the build's own, before that class was counted; the fixed build differs from its
-layers on 0.03%.
+were the build's own, before that class was counted; the v0.51.1 build differed from
+its layers on 0.03% (458 cells), the v0.51.2 build on 2 cells of 1.46 million.
 
 ## `#mock` GUI preview (verify `scripts/ui/` without the app)
 
