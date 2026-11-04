@@ -134,11 +134,16 @@ def county_code(name):
     return COUNTY_CODES.get(str(name or "").strip().upper())
 
 
+def route_number(value):
+    """The route's number from a route name with or without its suffix ('005', '005S')."""
+    m = re.match(r"\s*(\d+)", str(value or ""))
+    return int(m.group(1)) if m else None
+
+
 def row_query(route_name, route_suffix, county, prefix, begin, end, pm_suffix):
     """The lookup key of a Clean Road row from its own cells, or None."""
-    try:
-        route = int(str(route_name).strip())
-    except (TypeError, ValueError):
+    route = route_number(route_name)
+    if route is None:
         return None
     kind = str(pm_suffix or "").strip().upper()
     kind = kind if kind in ("R", "L") else "base"
@@ -209,12 +214,8 @@ def lookup(idx, col, route, suffix, county, prefix, kind, b, e):
     tag, vkind, pos = COLS[col]
     fam = LAYERS[tag][2]
     if fam == "left":
-        if kind == "R":
-            return ("skip",)
         align = "L"
     elif fam == "right":
-        if kind == "L":
-            return ("skip",)
         align = "R"
     else:
         align = "L" if kind == "L" else "R"
@@ -413,7 +414,7 @@ def cmd_spot(cmp_path, lib, asof, raw_dir, n_diff, n_agree, seed, out_path):
         f"{min(n_diff, len(diff_pool))} + {min(n_agree, len(agree_pool))} drawn at random (seed {seed}).")
     say(f"# Layers: {lib} as of {asof}. Raw TSMIS rows: {raw_dir}")
 
-    routes = {int(k["route"]) for k, *_ in picks}
+    routes = {route_number(k["route"]) for k, *_ in picks}
     layer_rows = {}
     for tag in {COLS[c][0] for _k, c, *_ in picks}:
         stem, attrs, _fam = LAYERS[tag]
@@ -457,7 +458,7 @@ def cmd_spot(cmp_path, lib, asof, raw_dir, n_diff, n_agree, seed, out_path):
 
     tally = collections.Counter()
     for i, (key, c, a, b) in enumerate(picks, start=1):
-        route, suffix = int(key["route"]), key["THY_ROUTE_SUFFIX_CODE"][1]
+        route, suffix = route_number(key["route"]), key["THY_ROUTE_SUFFIX_CODE"][1]
         county, prefix = key["THY_COUNTY_CODE"][1], key["THY_PM_PREFIX_CODE"][1]
         begin, end = pm_of(key["begin"]), pm_of(key["THY_END_PM_AMT"][1])
         kind = key["THY_PM_SUFFIX_CODE"][1]
@@ -521,7 +522,10 @@ def cmd_spot(cmp_path, lib, asof, raw_dir, n_diff, n_agree, seed, out_path):
                 truth.append(norm(vkind, val))
         truth = sorted(set(truth))
         na, nb = norm(vkind, a), norm(vkind, b)
-        if tsmis_raw is not None and tsmis_raw != nb:
+        if str(a).startswith("(unavailable:") or str(b).startswith("(unavailable:"):
+            verdict = ("UNAVAILABLE: the build could not place this span and marks the cell "
+                       "on both sides (its ArcGIS Build sheet lists the skipped span)")
+        elif tsmis_raw is not None and tsmis_raw != nb:
             verdict = f"COMPARISON MISREAD TSMIS (raw {tsmis_raw!r} vs shown {nb!r})"
         elif not truth:
             verdict = "UNDETERMINED by a plain layer row (a span of another county/prefix or none covers it)"
@@ -567,6 +571,8 @@ def main(argv=None):
     s.add_argument("--seed", type=int, default=1)
     s.add_argument("--out")
     a = p.parse_args(argv)
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")
     if a.cmd == "index":
         idx = build_index(a.lib_root, a.asof, cache=a.cache)
         print("spaces per layer:", {t: len(s) for t, s in idx.items()})

@@ -174,8 +174,10 @@ HIGHWAY_LAYERS = tuple(sorted(
     | {spec[0] for spec in POINT_LAYERS.values()}))
 REQUIRED_LAYERS = HIGHWAY_LAYERS
 
-# Roadbed blocks: the opposite independent row's block stays null (TSN nulls
-# the LT block on R rows and the RT block on L rows).
+# Roadbed blocks: an independent row carries the other roadbed's block too,
+# read off the other side's layers at the row's midpoint, as the site writes
+# it (see _build_cp). TSN nulls the LT block on R rows and the RT block on L
+# rows, so against TSN those cells are drift.
 
 _ROUTE_TOKEN_RE = re.compile(r"^(\d{3})([SU]?)$")
 
@@ -963,6 +965,38 @@ def _pick_landmark(values):
     return max(texts, key=len) if texts else None
 
 
+_BLOCK_COLUMNS = {
+    "R": (("THY_RT_SURF_TYPE_CODE", "SUR", None),
+          ("THY_RT_TRAV_WAY_WIDTH_AMT", "TWR", 0),
+          ("THY_RT_LANES_AMT", "TWR", 1),
+          ("THY_RT_SPEC_FEATURES_CODE", "SPR", None),
+          ("THY_RT_O_SHD_TOT_WIDTH_AMT", "OSR", 0),
+          ("THY_RT_O_SHD_TRT_WIDTH_AMT", "OSR", 1),
+          ("THY_RT_I_SHD_TOT_WIDTH_AMT", "ISR", 0),
+          ("THY_RT_I_SHD_TRT_WIDTH_AMT", "ISR", 1)),
+    "L": (("THY_LT_SURF_TYPE_CODE", "SUL", None),
+          ("THY_LT_TRAV_WAY_WIDTH_AMT", "TWL", 0),
+          ("THY_LT_LANES_AMT", "TWL", 1),
+          ("THY_LT_SPEC_FEATURES_CODE", "SPL", None),
+          ("THY_LT_O_SHD_TOT_WIDTH_AMT", "OSL", 0),
+          ("THY_LT_O_SHD_TRT_WIDTH_AMT", "OSL", 1),
+          ("THY_LT_I_SHD_TOT_WIDTH_AMT", "ISL", 0),
+          ("THY_LT_I_SHD_TRT_WIDTH_AMT", "ISL", 1)),
+}
+
+
+def _paint_block(row, seg, block, primary_eff=True):
+    """Write one roadbed block ('R' or 'L': its effective date and eight
+    values) into `row` from `seg`."""
+    tags = _RIGHT_TAGS if block == "R" else _LEFT_TAGS
+    row[_COL["THY_RIGHT_ROAD_EFF_DATE" if block == "R"
+             else "THY_LEFT_ROAD_EFF_DATE"]] = _block_eff_date(
+        seg, tags, BLOCK_PRIMARY[block] if primary_eff else None)
+    for name, tag, pos in _BLOCK_COLUMNS[block]:
+        row[_COL[name]] = (_seg_code(seg, tag) if pos is None
+                           else _seg_num(seg, tag, pos))
+
+
 def _paint_row(route, county, prefix, b, e, seg, kind, pts, asof_date,
                primary_eff=True, ar_fill=None):
     """One output row (a 74-slot list) for segment [b, e) of `kind` in
@@ -1023,25 +1057,9 @@ def _paint_row(route, county, prefix, b, e, seg, kind, pts, asof_date,
         put("THY_SEG_ORDER_ID", _seg_num(seg, "NET", 1))
 
     if kind in ("base", "R"):
-        put("THY_RIGHT_ROAD_EFF_DATE", _eff("R", _RIGHT_TAGS))
-        put("THY_RT_SURF_TYPE_CODE", _seg_code(seg, "SUR"))
-        put("THY_RT_TRAV_WAY_WIDTH_AMT", _seg_num(seg, "TWR", 0))
-        put("THY_RT_LANES_AMT", _seg_num(seg, "TWR", 1))
-        put("THY_RT_SPEC_FEATURES_CODE", _seg_code(seg, "SPR"))
-        put("THY_RT_O_SHD_TOT_WIDTH_AMT", _seg_num(seg, "OSR", 0))
-        put("THY_RT_O_SHD_TRT_WIDTH_AMT", _seg_num(seg, "OSR", 1))
-        put("THY_RT_I_SHD_TOT_WIDTH_AMT", _seg_num(seg, "ISR", 0))
-        put("THY_RT_I_SHD_TRT_WIDTH_AMT", _seg_num(seg, "ISR", 1))
+        _paint_block(row, seg, "R", primary_eff)
     if kind in ("base", "L"):
-        put("THY_LEFT_ROAD_EFF_DATE", _eff("L", _LEFT_TAGS))
-        put("THY_LT_SURF_TYPE_CODE", _seg_code(seg, "SUL"))
-        put("THY_LT_TRAV_WAY_WIDTH_AMT", _seg_num(seg, "TWL", 0))
-        put("THY_LT_LANES_AMT", _seg_num(seg, "TWL", 1))
-        put("THY_LT_SPEC_FEATURES_CODE", _seg_code(seg, "SPL"))
-        put("THY_LT_O_SHD_TOT_WIDTH_AMT", _seg_num(seg, "OSL", 0))
-        put("THY_LT_O_SHD_TRT_WIDTH_AMT", _seg_num(seg, "OSL", 1))
-        put("THY_LT_I_SHD_TOT_WIDTH_AMT", _seg_num(seg, "ISL", 0))
-        put("THY_LT_I_SHD_TRT_WIDTH_AMT", _seg_num(seg, "ISL", 1))
+        _paint_block(row, seg, "L", primary_eff)
 
     lmk = _pick_landmark(pts.get("LMK", {}).get(b, ()))
     if lmk is not None:
@@ -1208,10 +1226,11 @@ def _build_cp(route, county, prefix, rbucket, lbucket, pts, asof_date,
         rows.append(_paint_row(route, county, prefix, b, e, seg, "L", pts,
                                asof_date, primary_eff, ar_fill))
 
-    # TSN nulls the other roadbed's block on an independent row but keeps that
-    # block's effective date (001 MON R81.505R carries the Left roadbed's
-    # 1973-06-08): an R row reads it off the left-side layers inside the L
-    # windows, an L row off the right-side layers, at the row's midpoint.
+    # An independent row carries the other roadbed's block too — its values
+    # and its effective date (001 MON R81.505R carries the Left roadbed's
+    # 1973-06-08 and its lanes), as the site writes it: an R row reads it off
+    # the left-side layers inside the L windows, an L row off the right-side
+    # layers, at the row's midpoint. TSN keeps only the date.
     other = {"R": ("L", {t: _clip_spans(lbucket.get(t, []), win_l, inside=True)
                          for t in _LEFT_TAGS}),
              "L": ("R", {t: rbucket.get(t, []) for t in _RIGHT_TAGS})}
@@ -1221,9 +1240,7 @@ def _build_cp(route, county, prefix, rbucket, lbucket, pts, asof_date,
         block, spans = other[rec["kind"]]
         seg = _block_at(spans, rec["b"], rec["e"], ar_fill, route, county, prefix,
                         block)
-        rec["row"][_COL["THY_LEFT_ROAD_EFF_DATE" if block == "L"
-                        else "THY_RIGHT_ROAD_EFF_DATE"]] = _block_eff_date(
-            seg, tuple(spans), BLOCK_PRIMARY[block] if primary_eff else None)
+        _paint_block(rec["row"], seg, block, primary_eff)
     return rows
 
 

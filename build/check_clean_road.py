@@ -440,12 +440,12 @@ def test_consolidator_end_to_end():
         r_rows = rows_where(THY_PM_SUFFIX_CODE="R")
         l_rows = rows_where(THY_PM_SUFFIX_CODE="L")
         check("independent pair rows exist", r_rows and l_rows)
-        check("R row nulls the LT block",
-              r_rows[0][col["THY_LT_SURF_TYPE_CODE"]] is None
-              and r_rows[0][col["THY_RT_SURF_TYPE_CODE"]] == "H")
-        check("L row nulls the RT block",
-              l_rows[0][col["THY_RT_SURF_TYPE_CODE"]] is None
-              and l_rows[0][col["THY_LT_SURF_TYPE_CODE"]] == "H")
+        check("R row carries its own RT block and the LT block off the left layers",
+              r_rows[0][col["THY_RT_SURF_TYPE_CODE"]] == "H"
+              and r_rows[0][col["THY_LT_SURF_TYPE_CODE"]] == "H")
+        check("L row carries its own LT block and the RT block off the right layers",
+              l_rows[0][col["THY_LT_SURF_TYPE_CODE"]] == "H"
+              and l_rows[0][col["THY_RT_SURF_TYPE_CODE"]] == "H")
         check("L row spans its own alignment PMs",
               l_rows[0][col["THY_BEGIN_PM_AMT"]] == 2.0
               and l_rows[-1][col["THY_END_PM_AMT"]] == 2.6)
@@ -1235,10 +1235,11 @@ def test_ar_fill():
 
 
 def test_independent_row_dates():
-    """An independent row nulls the other roadbed's block but keeps its
-    effective date, as TSN and the site do (001 MON R81.505R carries the Left
-    roadbed's 1973-06-08) (v0.51.1)."""
-    print("an independent row carries the other roadbed's effective date:")
+    """An independent row carries the other roadbed's block — its values and
+    its effective date — read off the other side's layers at the row's
+    postmile, as the site does (001 MON R81.505R carries the Left roadbed's
+    1973-06-08 and its 3 lanes); TSN keeps only the date (v0.51.1)."""
+    print("an independent row carries the other roadbed's block:")
     from datetime import date
 
     u = crl.pm_units
@@ -1256,12 +1257,16 @@ def test_independent_row_dates():
     rows = cch._build_cp("001", "MON", "R", rbucket, lbucket, {}, date(2026, 10, 5), True)
     col = cch._COL
     by_kind = {r["kind"]: r["row"] for r in rows}
-    check("the R row carries the Left roadbed's date and still no Left values",
+    check("the R row carries the Left roadbed's date and its values",
           by_kind["R"][col["THY_LEFT_ROAD_EFF_DATE"]] == date(1973, 6, 8)
-          and by_kind["R"][col["THY_LT_LANES_AMT"]] is None)
-    check("the L row carries the Right roadbed's date and still no Right values",
+          and by_kind["R"][col["THY_LT_LANES_AMT"]] == 3
+          and by_kind["R"][col["THY_LT_TRAV_WAY_WIDTH_AMT"]] == 12)
+    check("the L row carries the Right roadbed's date and its values",
           by_kind["L"][col["THY_RIGHT_ROAD_EFF_DATE"]] == date(1980, 1, 1)
-          and by_kind["L"][col["THY_RT_LANES_AMT"]] is None)
+          and by_kind["L"][col["THY_RT_LANES_AMT"]] == 3
+          and by_kind["L"][col["THY_RT_TRAV_WAY_WIDTH_AMT"]] == 12)
+    check("the base row still carries both roadbeds",
+          by_kind.get("base") is None or by_kind["base"][col["THY_RT_LANES_AMT"]] == 3)
 
 
 def test_postmile_to_ar():
