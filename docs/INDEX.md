@@ -12,14 +12,21 @@ touching.
 
 ## Current status and work
 
-**Current release: v0.51.0 (2026-10-29)** — a three-way comparison puts each Clean
-Road file beside TSN and the ArcGIS build at once and sorts every cell by who
-disagrees, so the cells where TSN and the layers agree and the report does not stand
-apart from the drift; every column traces to its ArcGIS layer, and the ArcGIS tab
-gains a Three-way matrix ([comparison-engine.md](comparison-engine.md) §9o, §12e).
-Since v0.50.0 the Clean Road files compare against the ArcGIS layers and every run
-folder records which TSMIS site it came from; since v0.48.0 every edition of every
-report consolidates and compares (22 rows). The comparison-audit ledger records 246
+**Current release: v0.51.1 (2026-11-04)** — the Clean Road builds from the ArcGIS
+layers were checked cell by cell against the site's export, TSN and the raw layer
+files: seven build defects fixed (a prefix change painted from 0, a county line
+where the postmiles carry on, a left-roadbed split dropped, cells a layer files under
+another prefix, the other roadbed blanked on independent rows, independent-row dates,
+intersection lookups by AR), and the Highway comparison reads the site's route-break
+vocabulary. 54% of the differences in the
+delivered 2026-10-22 Highway comparison were the build's own; `tools/clean_road_layer_check.py`
+is the raw-layer check that runs before any delivery ([comparison-engine.md](comparison-engine.md)
+§9o, [verification-and-testing.md](verification-and-testing.md)). Since v0.51.0 a
+three-way comparison puts each Clean Road file beside TSN and the ArcGIS build at once
+([comparison-engine.md](comparison-engine.md) §9o, §12e); since v0.50.0 the Clean Road
+files compare against the ArcGIS layers and every run folder records which TSMIS site
+it came from; since v0.48.0 every edition of every report consolidates and compares
+(22 rows). The comparison-audit ledger records 246
 closed findings. Confirm release state in `version.py` and `CHANGELOG.md`;
 the roadmap tracks remaining acceptance, follow-ups, and feature work.
 

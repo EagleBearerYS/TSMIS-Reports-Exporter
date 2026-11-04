@@ -357,6 +357,66 @@ five probe rounds — these supersede the open items above):**
   middle counties WHOLLY, the continuation county from 0 (measured: MON
   101.178 → SCR 0.043 covers SCR from 0.000). Odometers order and apportion,
   never join.
+- **A county line where the postmiles carry on** (v0.51.1). Some routes keep one
+  postmile across a county line: 166 weaves along the SB / SLO line (SB 0–8.927,
+  SLO 8.927–22.893, SB 22.893–R34.987, …), and 080, 062, 120, 132, 180, 035 and
+  020 have stretches like it. The county rule painted Highway Group SLO 8.927 → SB
+  23.537 over SB 0–23.537 and gave 166 rows where the road is in the other county.
+  A part longer than the whole span's odometer length (× 1.5, plus 0.05 mi) marks
+  such a line (`_too_long`). The span then covers the road windows of both counties
+  between its two postmiles (`_cover_between`), never a stretch no window covers;
+  where its postmiles run backwards (16 of 472 such spans), each part stays on its
+  own county's visit. On the 2026-10-22 export: 1,007 fewer build-only cells, 41
+  fewer build-only rows, 31 more export rows without a build row (24 on 166, where
+  the export lists stretches of a few hundred feet under SLO that Highway Group puts
+  in SB). Route 009's Traffic Volume layer flips between SCR and SM along the
+  ridge with postmiles 0.006 mi off the other layers', which now leaves 8 sliver
+  rows.
+- **A span that changes postmile prefix inside ONE county** never takes the
+  county rule (v0.51.1). The second prefix space does not start at 0 there: the
+  rule painted 001 LA's Travel Way L R39.741 → 40.845 (33 ft) over plain 0–40.845,
+  where the layer says 25 from 3.728. The span splits where its two spaces' road
+  coverage puts it, each part within the span's odometer length of its own
+  endpoint. The coverage is the road's on EITHER alignment. Every left-side layer
+  of 001 SLO changes prefix at the same R60.261 → M61.15, so the Left alignment
+  alone had no other span saying where its R space ends.
+- **A cell the postmile overlay leaves blank is read at the row's AR** (v0.51.1),
+  as the site reads every attribute. A layer can file a stretch under another
+  prefix than the road's (SHS Population keeps 001 SLO's R34.716–R37.079 as plain
+  32.634–37.19), or a prefix-changing span can split short of a row. The row's
+  midpoint is translated to AR on its roadbed (`clean_road_layers.PostmileToAr`,
+  from the ends of every span read), and the layer's span there fills the cell,
+  never one of the row's own postmile space. On the 2026-10-22 export it brought
+  5,848 cells into agreement with the site. Of the 118 it moved away from the
+  site, TSN agrees with the build on 77 (routes 101 and 099, whose export leaves
+  those blocks blank), 39 have no TSN row, and 2 are worse. This is not the
+  odometer trap above: the calibration is each space's own span ends, and it
+  only fills a blank.
+- **An independent row carries the other roadbed's block — values and date**
+  (v0.51.1). An R row reads the left-side layers inside the L windows at its
+  midpoint, an L row the right-side layers (001 MON R81.505R carries the left
+  roadbed's 1973-06-08 and its lanes). The site writes the block wherever the
+  other side's layer has a span there (1,817 of 1,880 independent rows on the
+  2026-11-03 export); TSN nulls the values and keeps only the date, so against
+  TSN those cells are drift. Blanking them as TSN does cost 8,093 false
+  differences on one day's comparison, and the raw-layer check had been skipping
+  that class instead of judging it.
+- **The build is checked against the raw layers, not only against TSN and the site**
+  (v0.51.1). `tools/clean_road_layer_check.py` reads, for a row, the current plain
+  span of its route, county, prefix and side that contains its midpoint, straight
+  from the layer file, with none of this module's placement logic. It judged the
+  v0.51.0 build as differing from its own layers on 5.6% of the cells it can judge
+  and 54% of the differences in the delivered 2026-10-22 comparison as the build's
+  own; the fixed build differs on 0.03%. A build that differs from its layers on more
+  than a fraction of a percent of judged cells does not ship, and the three-way's
+  "ArcGIS differs" count above the explained residual is a blocker, not a residual.
+- **Rows are NOT merged where no value changes (measured 2026-11-03, rejected).**
+  2,235 of the 3,658 rows only our build has repeat the previous row's values.
+  Fusing every such cut fixed about 730 END PM / LENGTH cells against the site.
+  It also lost 148 rows the site has and about 730 TSN has (136 of them both): both
+  cut at points where the layers show no change, even inside one network segment.
+  The build keeps cutting at every span boundary. A segmentation-insensitive
+  comparison, not a merge rule, is what would close this.
 - **The ADT family**: reduce the Traffic Volume spans to the WINNING vintage
   (latest AADT_YEAR, then newest slice) BEFORE the overlay — every vintage's
   edges would otherwise fabricate cuts. The value at a span's BEGIN is its

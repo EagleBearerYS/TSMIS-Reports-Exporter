@@ -3,6 +3,164 @@
 All notable changes to TSMIS Reports Exporter, newest first. Each GitHub
 release shows only its own section (see `build/gen_release_notes.py`).
 
+## v0.51.1 — 2026-11-04
+
+The three Clean Road builds from the ArcGIS layers were audited cell by cell against
+the site's export and TSN. The large groups of cells where TSN and the site agreed and
+our build did not were traced to the layers. Seven build defects are fixed, and the
+Highway comparison now reads the site's route-break vocabulary.
+
+- **Highway: a span that changes postmile prefix inside a county no longer paints the
+  second prefix space from 0.** It took the county-line rule, but a prefix space does
+  not start at 0 where a realignment rejoins it. 001 LA's Travel Way L R39.741 → 40.845
+  (33 ft) was painted over plain 0–40.845, where the layer says 25 from 3.728. That is
+  the reported Travel Way L cell reading 33 where the export and the layer both say 25.
+  Each part now stays within the span's odometer length of its own endpoint, inside its
+  space's road coverage. 74 slivers with no usable odometer length are skipped, with a
+  note on the build's ArcGIS Build sheet.
+- **Highway: a left-roadbed span that changes prefix is bounded by the road.** Every
+  left-side layer of 001 SLO changes prefix at the same point (R60.261 → M61.15), so
+  the left alignment alone had no other span to bound it and the first part was
+  dropped. That blanked the left roadbed on about 560 rows.
+- **Highway: a span crossing a county line where the postmiles carry on covers each
+  county's own road.** Some routes keep one postmile across a county line. 166 weaves
+  along the SB / SLO line (SB 0–8.927, SLO 8.927–22.893, SB 22.893–R34.987, …), and
+  080, 062, 120, 132, 180, 035 and 020 have stretches like it. The county rule started
+  the second county's part at 0 and ran the first county's part to that county's last
+  postmile. So Highway Group SLO 8.927 → SB 23.537 covered SB 0–23.537, and 166 had
+  rows like SB R34.987–51.09, where the road is in SLO, painted with Terrain and Access
+  from 17 miles away (rolling, conventional, 1980, where the site and TSN say
+  mountainous expressway, 1969). A part longer than the whole span's odometer length
+  now marks such a line, and the span covers the road of both counties between its two
+  postmiles. On the 10-22 export: 1,007 fewer cells where only the build disagrees and
+  41 fewer rows only the build has. 31 export rows lost the build row they paired with,
+  24 of them on 166: stretches of a few hundred feet that the export lists under SLO
+  and Highway Group, which decides where the build has rows, puts in SB. They paired
+  before only because the old rule painted the whole SLO space.
+- **Highway: a cell the postmile lookup leaves blank is read at the row's AR**, as the
+  site reads every attribute. A layer can file a stretch under another prefix than the
+  road's: SHS Population keeps 001 SLO's R34.716–R37.079 as plain 32.634–37.19. The
+  row's midpoint is translated to AR from the ends of every span read. On the 10-22
+  export this brought 5,848 cells into agreement with the site. Of the 118 it moved
+  away, TSN agrees with the build on 77 (routes 101 and 099, whose export leaves those
+  blocks blank); 2 are worse.
+- **Highway: an independent R or L row carries the other roadbed's block — its values
+  and its effective date** — read off the other side's layers at the row's postmile,
+  as the site writes it (on the 2026-11-03 export the site fills the other roadbed on
+  1,817 of the 1,880 independent rows). The build used to blank those values the way
+  TSN does, which the raw-layer check had been excluding as "blanked by convention":
+  on the 2026-11-03 comparison 8,093 cells on 1,280 rows were false differences of
+  that one shape (the other side's span holds exactly what the export prints), and
+  the three-way had been filing them as the report's. Against TSN those cells are
+  now drift, as the site's own are.
+- **Intersection: Highway Group, City, Population and the seg order IDs are read at
+  the intersection's AR**, the way the site reads them, with the postmile translated
+  from the ends of the layers' own spans. The postmile lookup stretched a partial span
+  over a whole space (Saratoga over 009 SCL 0–9.5) and left a point blank where its
+  space had no span of the layer.
+- **Reports vs ArcGIS, Highway: THY_BREAK_DESC reads the site's vocabulary.** The site
+  writes only route breaks ('Route Resume' as BEG, 'Route Break' as END). The build's
+  U-BR / R-BR now read as BEG / END. Its TASAS structural markers (a route's BEG / END,
+  CNTY, D-C, DIST, BEGL, ENDR) read as blank, because the site never writes them and TSN
+  puts them on sliver rows of its own. 1,232 of the column's 1,247 build-only cells
+  were vocabulary.
+- **Measured after the first six fixes** on the 2026-10-22 dev-site export against the
+  2026-10-05 layers, Excel and PDF alike (v0.51.0 in brackets; the seventh fix's
+  numbers, on the 2026-10-30 layers, are in the next bullet). Cells where only our
+  build disagrees, from the three-way:
+  - **Highway:** 6,555 [74,923]. Reports vs ArcGIS: 93,071 differing cells [169,817].
+  - **Intersection:** 33 [1,011]. 12 of them are the begin dates kept on purpose.
+    Reports vs ArcGIS: 3,075 [4,079].
+  - **Ramp:** 4 [4]. Reports vs ArcGIS: 20 [20]. All 20 are edits the site made after
+    the layers were exported; the 2026-10-02 export matches the build exactly.
+
+  The 2026-10-02 export reads the same way: Highway 6,584 build-only cells and 94,359
+  vs ArcGIS [171,632]; Intersection 33 and 3,081 [4,092]; Ramp 0 and 0.
+- **Verified on four export days through the app's own matrix** (ArcGIS ▸ Reports vs
+  ArcGIS, the three builds refreshed from the 2026-10-30 layers delivered 2026-11-03;
+  the 2026-10-30 and 2026-11-03 dev-site exports are new). Highway, per day: paired
+  rows · rows only the build has / only the export has · differing cells; then the
+  cells where only the build disagrees in the three-way, and the share of the
+  comparison's differences the raw-layer check reads as false:
+  - 2026-10-02: 47,658 · 9,204 / 4,077 · 85,032; build-only 6,812; false 1.6%.
+  - 2026-10-22: 47,439 · 9,423 / 4,196 · 83,796; build-only 6,801; false 1.6%.
+  - 2026-10-30: 47,082 · 9,780 / 4,056 · 83,035; build-only 6,581; false 1.7%.
+  - 2026-11-03: 47,644 · 9,218 / 3,992 · 87,877; build-only 6,771; false 1.5%.
+
+  Intersection: 3,314 / 3,075 / 3,071 / 3,073 differing cells, 33 build-only on every
+  day but 10-02 (267 there: the layers changed after that export, and against the
+  2026-10-05 layers it reads 33). Ramp: 20 / 0 / 0 / 18; the build equals the 10-22 and
+  10-30 exports cell for cell, and the 18 on 11-03 are 16 site edits made after the
+  layers, one ramp the site added, one build cell. The 11-03 export's extra Highway
+  cells are the site's own change between the two exports: route 096 SIS / HUM
+  re-inventoried (about 240 rows, every attribute), 005 SIS with 234 new rows, 001 and
+  003 re-cut (674 more rows overall); the build is the same file on both days.
+- **Checked against the raw layers directly, not through the build.** The "ArcGIS"
+  side of a Reports vs ArcGIS comparison is the app's reconstruction of the file from
+  the layers, so a misplaced span shows a true layer value at the wrong postmiles, a
+  value that is on neither the report nor the layer there. An independent read was
+  therefore run over the v0.51.0 Highway workbook for 2026-10-22: for each cell, the
+  current span of the row's route, county, postmile prefix and side that contains
+  the row's midpoint, taken from the layer file itself, with none of the build's
+  placement logic (28 columns: the roadbed, median, access, terrain, design speed and
+  population values and the four block dates). Of the 109,648 flagged cells it could
+  judge, **59,433 (54%) were false**: the layer said what TSMIS said and the build was
+  wrong, on 128 routes. 42,633 were real differences and 7,582 had all three apart;
+  the rest fall where the row's own space has no plain span (20,207), or in the other
+  roadbed of an independent row (10,937), a class the check skipped at the time as
+  "blanked by convention" and judges since the fix above (on the fixed 2026-11-03
+  comparison 8,093 of 11,135 such cells were false). Of 54,370 agreeing cells sampled,
+  168 (0.3%) were agreements the layer contradicts. Whole files, by the same read:
+  the v0.51.0 build differs from its own layers on 5.6% of the cells it can judge
+  (80,592 of 1,439,028); the fixed build on 0.03% (458 of 1,455,850 on the 2026-10-30
+  layers: 227 on base rows, 61 on 680 SOL's independent rows, 170 other-roadbed cells
+  on independent rows the build leaves blank where the Left road's span runs past the
+  Left window — 680 SOL, 004 CC, 005 SHA, 160 CC); the 10-22 export on 5.0% (45,607
+  of 912,594), the 10-30 export on 5.0%, the 11-03 export on 5.4%. The export's own
+  rate is the finding the comparison is meant to carry; the build's used to be larger
+  than it. The fixed build's comparisons through the app, judged the same way
+  (flagged cells judged, false): 2026-10-02 53,467 / 837 (1.6%), 10-22 52,490 / 846
+  (1.6%), 10-30 52,376 / 882 (1.7%), 11-03 56,248 / 827 (1.5%). Of the 827 on 11-03,
+  734 are rows paired at a span boundary (the export's row runs past the build's,
+  whose next row carries the layer's value; the END PM cell of the same row shows
+  it), 12 are slivers, 5 are other-roadbed cells blanked by the window (004 CC, 005
+  SD) and 76 (0.14% of judged) are the build's own inside a plain span, in no cluster
+  larger than 12 (190 INY, 246 SB, 116 SON, 005 LA's median at 69.52–69.68; roadmap
+  TW12). The 10-22 workbook reads the same (599 / 154 / 12 / 5 / 76). Two random
+  draws from the fixed workbooks, each cell printed beside the raw layer rows and the
+  raw per-route export row: 2026-10-30 (25 differing + 15 agreeing cells) 22 real, 1
+  false (405 LA 26.351: the export's row runs to 26.45, the build's to 26.356, and the
+  build's next row carries the 7 lanes), 2 not judgeable by a plain span; 13 of 15
+  agreements confirmed, 1 not judgeable, 1 an anchor the build marks unavailable on
+  both sides. 2026-11-03: 22 real, 0 false, 3 not judgeable; 13 of 15 confirmed, 2 not
+  judgeable. The other-roadbed fix also raised the three-way's build-only cells by
+  about 214 a day (6,598 → 6,812 on 10-02): independent rows where the export leaves
+  the other roadbed blank though the layer has a span there (252 of the 286 such cells
+  on route 101 — HUM, SBT, MON, SF, DN — the rest 125 SD, 260 ALA, 099 BUT); TSN blanks
+  them by convention, so the three-way files them as the build's, and the raw-layer
+  check reads them as real.
+- **`tools/clean_road_layer_check.py`** is that read as a standing tool: `index` a
+  layer library, `file` an export or build, `workbook` a Reports vs ArcGIS Highway
+  workbook (the share of its differences that are false), `spot` random cells printed
+  beside the raw layer rows and the raw per-route export row. It runs before a Clean
+  Road comparison is delivered ([docs/verification-and-testing.md](docs/verification-and-testing.md)).
+- **Found in the export and the layers**, now on the roadmap (TW7–TW11):
+  - the site reads a span's end point as inside it, so a segment starting at a gap
+    shows the previous span's value;
+  - THY_TOLL_FOREST_CODE carries Forest HWY's raw `1` where TASAS codes a forest
+    highway 2, and the site never writes a toll;
+  - a few things changed in the site's layers after the 2026-10-05 library;
+  - the site marks equations from LRS calibration points the library does not export;
+  - where a project's inventory replaced the old at a 2025 recalibration (099 in Kern
+    and Madera, 101 in Santa Barbara), the export still prints the old inventory, which
+    the library retired that day, and TSN, older, agrees with it.
+
+The CA HIGHWAYS build's rows changed, so the `CRH-SW` canary against the TSN extract
+needs a re-bless. The app's own Clean Road builds pick up these fixes when they are
+rebuilt (ArcGIS ▸ ArcGIS reports ▸ Refresh all reports). Highway Detail's build from
+the layers runs the same consolidation and changes the same way; there is no Highway
+Detail export since the layers were refreshed to measure that against.
+
 ## v0.51.0 — 2026-10-29
 
 A new comparison puts each Clean Road file beside TSN and the app's ArcGIS build at
