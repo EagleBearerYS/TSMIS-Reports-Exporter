@@ -12,14 +12,15 @@ touching.
 
 ## Current status and work
 
-**Current release: v0.51.1 (2026-11-04)** — the Clean Road builds from the ArcGIS
-layers were checked cell by cell against the site's export, TSN and the raw layer
-files: seven build defects fixed (a prefix change painted from 0, a county line
-where the postmiles carry on, a left-roadbed split dropped, cells a layer files under
-another prefix, the other roadbed blanked on independent rows, independent-row dates,
-intersection lookups by AR), and the Highway comparison reads the site's route-break
-vocabulary. 54% of the differences in the
-delivered 2026-10-22 Highway comparison were the build's own; `tools/clean_road_layer_check.py`
+**Current release: v0.51.2 (2026-11-04)** — the Clean Road Highway build from the
+ArcGIS layers now differs from its own layers on 2 cells of the 1.46 million the
+raw-layer check can judge (458 in v0.51.1): a span's part stays off another visit of
+the same postmiles, every layer's odometer comes from Highway Group at its AR, a
+prefix change runs through a third space of its county window by window, and the Left
+block of a divided row is read off the Left layers whatever the windows say. v0.51.1
+had fixed seven build defects found by checking the builds cell by cell against the
+site's export, TSN and the raw layer files; 54% of the differences in the delivered
+2026-10-22 Highway comparison were the build's own. `tools/clean_road_layer_check.py`
 is the raw-layer check that runs before any delivery ([comparison-engine.md](comparison-engine.md)
 §9o, [verification-and-testing.md](verification-and-testing.md)). Since v0.51.0 a
 three-way comparison puts each Clean Road file beside TSN and the ArcGIS build at once

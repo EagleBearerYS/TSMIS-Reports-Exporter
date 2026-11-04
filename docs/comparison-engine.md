@@ -1587,6 +1587,38 @@ undeterminable, 13 of 15 agreements confirmed, 1 undeterminable, 1 an anchor the
 marks unavailable on both sides (036 HUM 27.435, where the layer has no Travel Way L
 span; the `spot` command names that marker); 2026-11-03 (seed 3) 22 real, 0 false, 3
 undeterminable, 13 of 15 confirmed, 2 undeterminable.
+
+**v0.51.2 took the build to its layers' own values.** The 458 cells were traced to the
+raw layer rows and to the site's export at each spot, and five placement rules changed
+([planning/cleanroad-highways.md](planning/cleanroad-highways.md): a span's part stays
+off another visit of the same postmiles; every layer's span takes the odometer the
+Highway Group layer says at its AR, since odometers go stale too; a prefix change runs
+through a third space of its county window by window; the Left block of a divided row
+is read off the Left layers whatever the windows say; a cell read at the row's AR
+translates on the other alignment where its own has no calibration). The build now
+differs from its own layers on 2 cells of 1,459,913 judged (001 SB 12.504's median date,
+a tie the site breaks the other way; 004 SJ 19.84's special feature L, where the site
+snaps to a span 0.0007 mi away). Through the app's matrix on the same four days: paired
+rows · build-only / export-only rows · differing cells 2026-10-02 47,803 · 9,517 /
+3,932 · 84,366; 10-22 47,584 · 9,736 / 4,051 · 83,126; 10-30 47,230 · 10,090 / 3,908 ·
+82,560; 11-03 47,789 · 9,531 / 3,847 · 87,204 — about 145 more export rows paired and
+660–670 fewer differing cells per day, and about 315 more build-only rows (the
+third-space rows, cut where the layers cut, and 680 SOL's ramp roadbed, whose export rows
+carry prefixes the layers do not). The raw-layer check over the four workbooks reads
+false 1.3 / 1.4 / 1.4 / 1.2% of judged flagged cells (702 / 713 / 755 / 692); on 11-03,
+688 of the 692 are rows paired at a span boundary, 1 a sliver, 1 the build's own (004 SJ
+19.84) and 2 the export's (its rows at 210U SBD 21.275–21.506 drop the U route suffix,
+so the check read route 210's layer; the build's 4 is 210U's own span). The
+three-way's ArcGIS differs: 11-03 6,390, 10-22 6,426, 293 of them the other-roadbed
+cells the export leaves blank. On the rows keyed the same in the v0.51.1 build, the
+v0.51.2 build and the 2026-11-03 export, 476 changed cells moved to the export's value
+and 25 away from it, each of the 25 a layer gap the site bridges (a span's end point
+read as inside it, a snap to the nearest span within 0.005 mi), a layer whose postmiles
+sit off its AR (070 BUT's inner shoulder L, 0.035 mi), or a 0.001-mi sliver where two
+spans' ranks tie (005 LA 16.9). Draws: 2026-11-03 (seed 5) 18 real, 1 false (015 SBD
+55.642, a boundary pairing), 1 all three apart, 5 undeterminable, 15 of 15 agreements
+confirmed; 2026-10-30 (seed 6) 22 real, 0 false, 2 all three apart, 1 undeterminable,
+13 of 15 confirmed, 2 undeterminable.
 - **Intersection** (33): 12 are the begin dates kept on purpose. 19 are Highway Group,
   City, Population and seg order lookups where the layers' own calibration disagrees
   with the site's translate. Past 8.076, 245 TUL has no span end to calibrate from;

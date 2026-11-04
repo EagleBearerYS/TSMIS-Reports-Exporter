@@ -393,23 +393,77 @@ five probe rounds — these supersede the open items above):**
   odometer trap above: the calibration is each space's own span ends, and it
   only fills a blank.
 - **An independent row carries the other roadbed's block — values and date**
-  (v0.51.1). An R row reads the left-side layers inside the L windows at its
-  midpoint, an L row the right-side layers (001 MON R81.505R carries the left
-  roadbed's 1973-06-08 and its lanes). The site writes the block wherever the
-  other side's layer has a span there (1,817 of 1,880 independent rows on the
-  2026-11-03 export); TSN nulls the values and keeps only the date, so against
-  TSN those cells are drift. Blanking them as TSN does cost 8,093 false
-  differences on one day's comparison, and the raw-layer check had been skipping
-  that class instead of judging it.
+  (v0.51.1). An R row reads the left-side layers at its midpoint, an L row the
+  right-side layers (001 MON R81.505R carries the left roadbed's 1973-06-08 and
+  its lanes). The site writes the block wherever the other side's layer has a span
+  there (1,817 of 1,880 independent rows on the 2026-11-03 export); TSN nulls the
+  values and keeps only the date, so against TSN those cells are drift. Blanking
+  them as TSN does cost 8,093 false differences on one day's comparison, and the
+  raw-layer check had been skipping that class instead of judging it. Since
+  v0.51.2 the Left block of a divided row is read the same way, off the Left
+  layers at the row's postmile whatever the Highway Group windows say — the site
+  reads it at the row's AR on that alignment: 125 SD's divided 9.161–9.251 inside
+  the Left roadbed's window carries its 24 ft / 2 lanes, 004 CC's R rows past the
+  Left roadbed's end at R4.629 read the divided road's left side. Clipping the
+  Left layers to the Left windows had left 170 cells blank where a span exists.
+- **A span's part stays off another visit of the same postmiles** (v0.51.2). A
+  postmile space can be visited twice: 155 KER's R0.039 → 0.427 runs odometer
+  0.402–0.829 while R0.0 → R26.564 starts at 0.829; 680 SOL's independent right
+  roadbed R0.0 → M1.496 precedes the divided road's R0.627 → R2.216; 190 INY's
+  R63.7 → 68.274 and 116 SON's R41.906 → 44.557 begin where the plain space's road
+  ends. The part of such a span landed on the other visit's postmiles and outranked
+  that visit's own spans (design speed 35 for 60, a 1971 surface for 1970's,
+  680 SOL's divided rows gone under its ramp roadbed). After the split, each part is
+  kept off the postmiles of any plain span of its own layer and bucket whose
+  odometers overlap less than half of the postmile overlap (`_other_visit`,
+  `_clip_other_visits`) — the site, reading by AR, keeps that visit's own span.
+  Traffic Volume Segments stay out of it: its vintages overlap one road by design
+  and the ADT reduction chooses among them.
+- **Every layer's span takes the odometer the Highway Group layer says at its AR**
+  (v0.51.2, `_OdByAr`). Odometers go stale too: SHS Design Speed's R23.134 → M25.307
+  on 084 ALA carries 48.366 → 50.539 where its AR, and Highway Group, say 52.056 →
+  54.229, and the third-space rule below painted its 50 over plain 18.976 → 21.109,
+  whose odometer that is; 005 LA's .16.871 → G16.901 carries 663 miles of odometer
+  for 0.028 of AR (each prefix space's own odometer at its ends) and painted its
+  Highway Group and Median over every county north of it, surfacing in every gap.
+  Highway Group, the layer the rows and the offsets come from, calibrates odometer
+  against AR per RouteID as it is read, and every later layer's span reads its
+  odometer there; a span's own odometer length is trusted only within a factor of
+  two of its AR length (`_odometer_length`). A span whose AR the Highway Group does
+  not reach keeps its own.
+- **A prefix change can run through a third space of its county** (v0.51.2). 246
+  SB's SHS Population M24.21 → R34.601 runs through plain 26.104–33.332 (odometer
+  17.4–24.6 of its 15.5–25.9). The chain walk covers only whole middle counties, and
+  where a space of the span's own county had Highway Group odometers it painted the
+  span over the space's whole extent (Population B over 246's plain 8.302–12.466,
+  odometer 0–4). Such a stretch now takes the span window by window, where the
+  window's odometers lie mostly inside the span's (`_cover_end_county_spaces`, for
+  prefix changes and county crossings alike); a space of the span's own counties is
+  never painted whole. Rows appear where the layers had them and the build did not
+  (198 TUL's plain space, 035 SM's, 080 SAC's R, 133 ORA's M, 058 KER's M, 090 LA's,
+  680 SOL's N); the export has rows in each.
+- **A cell read at the row's AR translates on the other alignment where its own
+  has no calibration** (v0.51.2). 005 SHA's M29.303 → M30.199 exists only on the
+  Left alignment; its Left rows' Right block is read on the Right RouteID at the
+  row's own AR, as the site reads a right-side layer at a Left row's AR
+  (`_ArFill.span`, `_sibling_rid`). A part of a prefix-changing span that stops
+  within 0.005 mi of its window's edge reaches it (005 LA's Median .16.619 →
+  G16.901 runs 0.278 of AR for 0.282 of postmile).
 - **The build is checked against the raw layers, not only against TSN and the site**
   (v0.51.1). `tools/clean_road_layer_check.py` reads, for a row, the current plain
   span of its route, county, prefix and side that contains its midpoint, straight
   from the layer file, with none of this module's placement logic. It judged the
   v0.51.0 build as differing from its own layers on 5.6% of the cells it can judge
   and 54% of the differences in the delivered 2026-10-22 comparison as the build's
-  own; the fixed build differs on 0.03%. A build that differs from its layers on more
-  than a fraction of a percent of judged cells does not ship, and the three-way's
-  "ArcGIS differs" count above the explained residual is a blocker, not a residual.
+  own; the v0.51.1 build differed on 0.03% (458 cells), the v0.51.2 build on 2 cells
+  of 1,459,913 (a tie-break on a 0.001-mi span at 001 SB 12.504, a backwards span
+  at 004 SJ 19.84). A build that differs from its layers on more than a fraction of
+  a percent of judged cells does not ship, and the three-way's "ArcGIS differs"
+  count above the explained residual is a blocker, not a residual. What the check
+  cannot settle is the site's own reading of a layer gap: it reads a span's end
+  point as inside it and snaps to the nearest span within 0.005 mi (005 TEH 33.34,
+  038 SBD 4.252), and a layer whose postmiles sit off its AR (070 BUT's inner
+  shoulder L, 0.035 mi) reads one span by postmile and the other by AR.
 - **Rows are NOT merged where no value changes (measured 2026-11-03, rejected).**
   2,235 of the 3,658 rows only our build has repeat the previous row's values.
   Fusing every such cut fixed about 730 END PM / LENGTH cells against the site.
