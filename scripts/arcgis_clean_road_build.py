@@ -109,6 +109,8 @@ class MeasureOverlay:
     """
 
     __slots__ = ("_by_route",)
+    _FWD = 0.00001
+    _SNAP = 0.005
 
     def __init__(self):
         self._by_route = defaultdict(list)
@@ -121,6 +123,34 @@ class MeasureOverlay:
                 if best is None or rank > best[0]:
                     best = (rank, value)
         return "" if best is None else best[1]
+
+    def site_value(self, route_id, measure, *, snap=False):
+        """The site's `queryRangeLayer` pick for one point. A secondary-
+        alignment point ('…_S') matches its own route first, then the primary
+        one. With `snap` (the intersection lookups pass it) a point at the end
+        of its span also pulls in the span that begins within 0.00001 after it
+        (the layers store consecutive spans a hair apart), and a point just past
+        every span reads the nearest one within 0.005. Then the current
+        calibration, then the span starting highest."""
+        if measure is None or not route_id:
+            return ""
+        own = self._by_route.get(route_id, ()) if route_id.endswith("_S") else ()
+        primary = self._by_route.get(primary_route_id(route_id), ())
+        matches = ([sp for sp in own if sp[0] <= measure <= sp[1]]
+                   or [sp for sp in primary if sp[0] <= measure <= sp[1]])
+        if snap and matches:
+            matches += [sp for sp in (*primary, *own)
+                        if measure < sp[0] <= measure + self._FWD and sp not in matches]
+        if snap and not matches:
+            best = None
+            for sp in own or primary:
+                dist = sp[0] - measure if measure < sp[0] else max(measure - sp[1], 0)
+                if dist <= self._SNAP and (best is None or dist < best[0]):
+                    best = (dist, sp)
+            matches = [best[1]] if best is not None else []
+        if not matches:
+            return ""
+        return max(matches, key=lambda sp: (sp[2], sp[0]))[3]
 
     @classmethod
     def read(cls, path, layer, attr, *, asof, expected_rows=None,
@@ -155,62 +185,80 @@ class MeasureOverlay:
         return ov
 
 
-class PostmileOverlay:
-    """One span layer looked up by POSTMILE — for a point that carries no LRS
-    measure (an intersection). The site translates the point's postmile to an
-    AR measure on its own roadbed and looks the layer up there; in postmile
-    space the same answer needs two things the Intersection Detail build's
-    overlay does not do:
+class PointLayer:
+    """One span layer read for a point that carries no LRS measure (an
+    intersection), the way the site's AR lookup lands on it. Roadbed first, as
+    the site matches every `_S` span before any `_P` one: a left-roadbed point
+    (postmile suffix L) tries the Left alignment, then the Right one. On each:
 
-      * the ROADBED: a left-roadbed point (postmile suffix L) reads the Left
-        alignment's spans first, then the Right ones — the site's `_S` then
-        `_P` order;
-      * the span's END: a span that changes county or postmile prefix part-way
-        covers points in its end county / prefix too (from that space's start
-        up to its end postmile), not only in the space it begins in.
+      * a span of the layer in the point's own county + postmile-prefix space
+        that contains it — exact at the span's own boundaries, where the site's
+        pick of the span STARTING there applies (current calibration, then the
+        highest begin);
+      * else any other span of the layer at the point's AR
+        (`clean_road_layers.PostmileToAr`):
+        one that changes county or prefix part-way, which postmile space cannot
+        express (014 KER L16.146 lies inside SHS Population's R6.116 → 20.2;
+        101 DN's left roadbed reads Highway Group 'L' off a span the layer ends
+        in prefix L), or one the layer records under another prefix (SHS
+        Population still has 120 SJ R16.748's stretch as plain 15.86 → 18.7).
+        Never a span of the point's own space: postmile space has said none of
+        those contains it, so a point in a gap between two of them stays blank
+        (009 SCL 6.372, between two Saratoga spans).
 
-    A span whose two ends share county and prefix wins over such a partial one;
-    then the current calibration; then the span starting highest. A point just
-    past every span by calibration noise snaps to the nearest one within 0.005
-    mi (the site's snap). Same as-of filter as `MeasureOverlay`."""
+    A point just past every span snaps to the nearest one within 0.005 mi in
+    its space (the site's snap), the Left alignment's when it has any."""
 
-    __slots__ = ("_by_key",)
+    __slots__ = ("_by_pm", "_by_ar")
     _SNAP = 0.005
 
     def __init__(self):
-        self._by_key = defaultdict(list)
+        self._by_pm = defaultdict(list)
+        self._by_ar = defaultdict(list)
 
-    def value_at(self, route, county, prefix, pm, left=False):
-        if pm is None:
-            return ""
-        for align in (("L", "R") if left else ("R",)):
-            spans = self._by_key.get((route, county, prefix, align), ())
+    def value(self, route, county, prefix, pm, align, rid, ar, *, snap=True):
+        sides = ("L", "R") if align == "L" else ("R",)
+        for side in sides:
+            space = (route, county, prefix, side)
             best = None
-            for b, e, exact, current, value in spans:
-                if b <= pm <= e:
-                    rank = (exact, current, b)
-                    if best is None or rank > best[0]:
-                        best = (rank, value)
+            if pm is not None:
+                for b, e, current, value in self._by_pm.get(space, ()):
+                    if b <= pm <= e and (best is None or (current, b) > best[0]):
+                        best = ((current, b), value)
+            if best is None and rid and ar is not None:
+                side_rid = rid if side == "L" else primary_route_id(rid)
+                for frm, to, current, value, home in self._by_ar.get(side_rid, ()):
+                    if home != space and frm <= ar <= to and (
+                            best is None or (current, frm) > best[0]):
+                        best = ((current, frm), value)
             if best is not None:
                 return best[1]
-            near = None
-            for b, e, exact, current, value in spans:
-                if exact:
-                    dist = b - pm if pm < b else pm - e
-                    if dist <= self._SNAP and (near is None or dist < near[0]):
+        if snap and pm is not None:
+            for side in sides:
+                spans = self._by_pm.get((route, county, prefix, side), ())
+                if not spans:
+                    continue
+                near = None
+                for b, e, _current, value in spans:
+                    dist = b - pm if pm < b else max(pm - e, 0)
+                    if dist <= self._SNAP + 1e-9 and (near is None or dist < near[0]):
                         near = (dist, value)
-            if near is not None:
-                return near[1]
+                return near[1] if near is not None else ""
         return ""
 
     @classmethod
     def read(cls, path, layer, attr, *, asof, expected_rows=None,
-             start="InventoryItemStartDate", end="InventoryItemEndDate"):
-        cols = ["RouteNum", "RouteSuffix", "Alignment", "BeginCounty",
+             start="InventoryItemStartDate", end="InventoryItemEndDate",
+             calibration=None):
+        """Both indexes in one pass, the spans live at `asof` by the site's
+        date filter (as `MeasureOverlay.read`, retired copies dropped the same
+        way). With `calibration` (a `crl.PostmileToAr`) every span read also
+        calibrates it, the pieces one recalibration split it into as one."""
+        cols = ["RouteID", "RouteNum", "RouteSuffix", "Alignment", "BeginCounty",
                 "EndCounty", "BeginPMPrefix", "EndPMPrefix", "BeginPMMeasure",
-                "EndPMMeasure", start, end, "LRSFromDate", "LRSToDate", attr]
-        ov = cls()
-        inf = float("inf")
+                "EndPMMeasure", "FromARMeasure", "ToARMeasure", start, end,
+                "LRSFromDate", "LRSToDate", attr]
+        groups = defaultdict(list)
         for r in crl.stream_layer(path, cols, layer_name=layer,
                                   expected_rows=expected_rows):
             first, last = crl.to_serial(r[start]), crl.to_serial(r[end])
@@ -220,21 +268,36 @@ class PostmileOverlay:
             if lrs_from is not None and lrs_from > asof:
                 continue
             lrs_to = crl.to_serial(r["LRSToDate"])
-            current = lrs_to is None or lrs_to > asof
-            b, e = _dec(r["BeginPMMeasure"]), _dec(r["EndPMMeasure"])
-            if b is None or e is None:
-                continue
-            b, e = float(b), float(e)
-            route = route_token(r["RouteNum"], r["RouteSuffix"])
-            align = crl.norm_alignment(r["Alignment"]) or "R"
-            bc, ec = crl.norm_county(r["BeginCounty"]), crl.norm_county(r["EndCounty"])
-            bp, ep = pfx(r["BeginPMPrefix"]), pfx(r["EndPMPrefix"])
-            value = s(r[attr])
-            if bc == ec and bp == ep and e >= b:
-                ov._by_key[(route, bc, bp, align)].append((b, e, True, current, value))
-                continue
-            ov._by_key[(route, bc, bp, align)].append((b, inf, False, current, value))
-            ov._by_key[(route, ec, ep, align)].append((-inf, e, False, current, value))
+            measures = [_dec(r[k]) for k in ("BeginPMMeasure", "EndPMMeasure",
+                                              "FromARMeasure", "ToARMeasure")]
+            key = (s(r["RouteID"]), s(r["BeginPMMeasure"]), s(r["EndPMMeasure"]), first)
+            groups[key].append((
+                lrs_to is None or lrs_to > asof, lrs_from, s(r[attr]),
+                route_token(r["RouteNum"], r["RouteSuffix"]),
+                crl.norm_alignment(r["Alignment"]) or "R",
+                (crl.norm_county(r["BeginCounty"]), pfx(r["BeginPMPrefix"])),
+                (crl.norm_county(r["EndCounty"]), pfx(r["EndPMPrefix"])),
+                [None if v is None else float(v) for v in measures]))
+        ov = cls()
+        for (rid, _b, _e, _first), spans in groups.items():
+            if any(sp[0] for sp in spans):
+                spans = [sp for sp in spans if sp[0]]
+            pieces = defaultdict(list)
+            for current, lrs_from, value, route, align, begin, finish, (b, e, frm, to) in spans:
+                home = None
+                if b is not None and e is not None and begin == finish and e >= b:
+                    home = (route, *begin, align)
+                    ov._by_pm[home].append((b, e, current, value))
+                if rid and frm is not None and to is not None:
+                    ov._by_ar[rid].append((frm, to, current, value, home))
+                    if b is not None and e is not None:
+                        pieces[(lrs_from, current, route, begin, finish, b, e)].append(
+                            (frm, to))
+            if calibration is not None:
+                for (_lrs_from, current, route, begin, finish, b, e), ars in pieces.items():
+                    calibration.add(route, begin, finish, (b, e),
+                                    (min(frm for frm, _to in ars), max(to for _frm, to in ars)),
+                                    rid, current)
         return ov
 
 

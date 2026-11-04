@@ -211,7 +211,8 @@ def test_intersection(tmp):
     hg = ari.OVERLAY_LAYERS["HG"]
     city = ari.OVERLAY_LAYERS["CITY"]
     span_cols = ari._SPAN_ID + _AR_COLS
-    pop_spans = [dict(_span(0, 3, pop[1], "U- Urban", county="San Bernardino"),
+    pop_spans = [dict(_span(0, 3, pop[1], "U- Urban", county="San Bernardino",
+                            ar=(0, 4.0)),
                       EndCounty="Riverside", EndPMPrefix="R", EndPMMeasure=0.5)]
     _library(lib, [(acri.INX_LAYER, acri._INX_COLS, inx),
                    (acri.SEG_LAYER, acri._SEG_COLS, segs),
@@ -262,8 +263,8 @@ def test_intersection(tmp):
             [(r["INX_SEG_ORDER_ID"] or "", r["INX_X_SEG_ORDER_ID"] or "") for r in rows]
             == [("150", "9001"), ("151", ""), ("9001", "150")],
             [(r["INX_SEG_ORDER_ID"], r["INX_X_SEG_ORDER_ID"]) for r in rows])
-    c.check("overlays at the postmile; City ends at its span; a span that crosses into "
-            "another county still covers its start county",
+    c.check("overlays at the intersection's AR; City ends at its span; a span that "
+            "crosses into another county covers its start county up to its own AR end",
             a["INX_HIGHWAY_GROUP"] == "D" and a["INX_POPULATION_GROUP"] == "U"
             and b["INX_POPULATION_GROUP"] == "U" and a["INX_CITY_CODE"]
             and not b["INX_CITY_CODE"], (a["INX_CITY_CODE"], b["INX_POPULATION_GROUP"]))
@@ -298,6 +299,75 @@ def test_intersection(tmp):
                      ["Notes"].iter_rows(values_only=True) for v in row if v)
     c.check("a real workbook names the build's as-of date and the export's day",
             written.status == "ok" and ASOF in notes and "2026-10-22" in notes, notes[:200])
+
+
+
+def test_intersection_by_ar(tmp):
+    """v0.51.0: the intersection's layers are read at its AR, as the site reads
+    them (its postmile translated on the network layer), not by postmile."""
+    print("Clean Road Intersection: Highway Group / City / Population at the AR:")
+    lib = tmp / "inx_ar_layers"
+    kern = dict(county="Kern", route="014")
+
+    def net(b, e, frm, to, seg, prefix=".", rid="SHS_014._P", suffix="."):
+        return dict(_span(b, e, "SegOrderId", seg, ar=(frm, to), **kern),
+                    BeginPMPrefix=prefix, EndPMPrefix=prefix, RouteID=rid,
+                    BeginPMSuffix=suffix, EndPMSuffix=suffix,
+                    Alignment="Left" if rid.endswith("_S") else "Right")
+
+    def ranged(attr, value, b, e, frm, to, prefix=".", prefix2=None, rid="SHS_014._P"):
+        return dict(_span(b, e, attr, value, ar=(frm, to), **kern),
+                    BeginPMPrefix=prefix, EndPMPrefix=prefix2 or prefix, RouteID=rid,
+                    Alignment="Left" if rid.endswith("_S") else "Right")
+
+    # 014 KER: plain 0-16.07, then an L-prefix stretch L16.07-L17.384, then plain
+    # again; a left roadbed (_S) runs beside plain 20-25.
+    network = [net(0, 16.07, 52.0, 68.07, 100), net(16.07, 17.384, 68.07, 69.384, 200, "L"),
+               net(17.384, 30.0, 69.384, 82.0, 300),
+               net(20.0, 25.0, 71.9, 76.9, 400, rid="SHS_014._S", suffix="L")]
+    hg, city, pop = (ari.OVERLAY_LAYERS[k] for k in ("HG", "CITY", "POP"))
+    hg_rows = [ranged(hg[1], "D- Divided", 0, 30, 52.0, 82.0),
+               ranged(hg[1], "U- Undivided", 20, 25, 71.9, 76.9, rid="SHS_014._S")]
+    # Population: ONE span that changes prefix part-way (R6.116 -> 20.2) — no span
+    # of its own in the L-prefix space; City: Saratoga R7.4 -> 9.523, which a
+    # postmile lookup stretched over the plain space from 0.
+    pop_rows = [ranged(pop[1], "R- Rural", 6.116, 20.2, 58.18, 72.2, "R", ".")]
+    city_rows = [ranged(city[1], "SARATOGA", 7.4, 9.523, 59.4, 61.52, "R", ".")]
+    inx = [_inx_row(1, 16.146, County_Code="Kern", Main_RouteNum="014", Main_PMPrefix="L"),
+           _inx_row(2, 1.0, County_Code="Kern", Main_RouteNum="014"),
+           _inx_row(3, 22.0, County_Code="Kern", Main_RouteNum="014", Main_PMSuffix="L"),
+           _inx_row(4, 22.0, County_Code="Kern", Main_RouteNum="014")]
+    span_cols = ari._SPAN_ID + _AR_COLS
+    _library(lib, [(acri.INX_LAYER, acri._INX_COLS, inx),
+                   (acri.SEG_LAYER, acri._SEG_COLS, []),
+                   (acri.APP_LAYER, acri._APP_COLS, []),
+                   (hg[0], span_cols + [hg[1]], hg_rows),
+                   (city[0], span_cols + [city[1]], city_rows),
+                   (pop[0], span_cols + [pop[1]], pop_rows),
+                   ("SHS Inv Network Date",
+                    ari._SPAN_ID + ["FromARMeasure", "ToARMeasure", "Network_Start_Date",
+                                    "Network_End_Date", "SegOrderId"], network)])
+    out = tmp / "inx_ar.xlsx"
+    res = acri.consolidate(events=_Quiet(), confirm_overwrite=lambda p: True,
+                           out_path=out, asof=ASOF, lib_root=lib)
+    c.check("the build runs", res.status == "ok", res.message)
+    rows = {(r["INX_PM_PREFIX_CODE"] or "", r["INX_BEGIN_PM_AMT"], r["INX_PM_SUFFIX_CODE"] or ""): r
+            for r in _read_build(out, crc.INTERSECTION)}
+    l_stretch = rows.get(("L", "16.146", ""), {})
+    c.check("a point in a prefix space with no span of its own reads the span whose AR "
+            "covers it (014 KER L16.146 inside Population's R6.116 -> 20.2)",
+            l_stretch.get("INX_POPULATION_GROUP") == "R"
+            and l_stretch.get("INX_SEG_ORDER_ID") == "200", l_stretch)
+    plain = rows.get(("", "1", ""), {})
+    c.check("a span that changes prefix part-way never reaches a point outside its AR "
+            "(no Saratoga at plain 1.0)",
+            not plain.get("INX_CITY_CODE") and plain.get("INX_HIGHWAY_GROUP") == "D", plain)
+    left = rows.get(("", "22", "L"), {})
+    right = rows.get(("", "22", ""), {})
+    c.check("a left-roadbed point reads its _S route first (Undivided), its seg order on "
+            "the primary roadbed; the right one reads _P",
+            left.get("INX_HIGHWAY_GROUP") == "U" and right.get("INX_HIGHWAY_GROUP") == "D"
+            and left.get("INX_SEG_ORDER_ID") == "300", (left, right))
 
 
 # --------------------------------------------------------------------------- #
@@ -452,6 +522,23 @@ def test_highway(tmp):
     res = cmp_hwy.compare(str(site), str(build), str(tmp / "h2.xlsx"), **_q())
     c.check("swapped sides are refused", res.status == "error", res.status)
 
+    site_fmt = dict(THY_COUNTY_CODE="SD.", THY_LEFT_ROAD_EFF_DATE="07/13/1973")
+    build = tmp / "clean_highway_breaks.xlsx"
+    _arc_build(build, [_thy("0", "0.305", THY_BREAK_DESC="BEG"),
+                       _thy("0.305", "0.9", THY_BREAK_DESC="U-BR"),
+                       _thy("0.9", "1.2", THY_BREAK_DESC="CNTY"),
+                       _thy("1.2", "1.5", THY_BREAK_DESC="R-BR")])
+    site = _site_export(tmp / "hwy_breaks", crc.HIGHWAY, "005",
+                        [_thy("0", "0.305", **site_fmt),
+                         _thy("0.305", "0.9", THY_BREAK_DESC="BEG", **site_fmt),
+                         _thy("0.9", "1.2", **site_fmt),
+                         _thy("1.2", "1.5", **site_fmt)])
+    got = _counts(cmp_hwy.compare(str(build), str(site), str(tmp / "h3.xlsx"), **_q()))
+    c.check("THY_BREAK_DESC reads the build's U-BR as the site's BEG and its markers "
+            "the site never writes as blank; a break the site lacks still counts",
+            got == {"paired_rows": 4, "side_a_only_rows": 0, "side_b_only_rows": 0,
+                    "differing_cells": 1}, got)
+
 
 def main():
     print("the registry:")
@@ -472,6 +559,7 @@ def main():
     with temp_dir("tsmis_agcr_") as tmp:
         tmp = Path(tmp)
         test_intersection(tmp)
+        test_intersection_by_ar(tmp)
         test_ramp(tmp)
         test_highway(tmp)
     return c.summary()

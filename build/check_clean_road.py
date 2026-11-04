@@ -1045,6 +1045,258 @@ def test_prefix_change_split():
           and (0.0, 4.55, "U") in spans_of(buckets, ("128", "R", "NAP", ""), "HG")
           and warnings == [])
 
+    # 001 LA Travel Way L (v0.51.0): R39.741 -> 40.845, 1.099 odometer miles,
+    # where the plain space is covered without a break, so the two halves do
+    # not add up to the odometer length. The county rule painted its 33 ft
+    # over plain 0-40.845; the layer says 25 from 3.728.
+    def la_buckets():
+        bk = defaultdict(lambda: defaultdict(list))
+        bk[("001", "L", "LA", "")]["TWL"] += [sp(3.613, 3.728, 36, 32.426, 0.115),
+                                              sp(3.728, 6.961, 25, 32.541, 3.233)]
+        bk[("001", "L", "LA", "")]["MED"] += [sp(0.0, 62.0, "H", 28.813, 62.0)]
+        bk[("001", "L", "LA", "R")]["MED"] += [sp(39.741, 40.7, "H", 68.325, 0.959)]
+        return bk
+
+    buckets = la_buckets()
+    warnings = []
+    cch._split_parked([("TWL", "001", "L", "LA", "R", "LA", "",
+                        cch._Span(u(39.741), u(40.845), (33,), (2.0, 2.0), 2.0,
+                                  68.325, 1.099))], buckets, warnings)
+    plain = spans_of(buckets, ("001", "L", "LA", ""), "TWL")
+    check("a prefix change whose halves don't fit its odometer never paints the plain "
+          "space from 0",
+          not any(v == 33 and b < 39.7 for b, _e, v in plain))
+    check("... each part stays within the span's own odometer length of its endpoint",
+          (39.746, 40.845, 33) in plain
+          and spans_of(buckets, ("001", "L", "LA", "R"), "TWL") == [(39.741, 40.7, 33)]
+          and warnings == [])
+    check("... and the in-county spans keep their own values (25 from 3.728)",
+          [v for b, e, v in plain if b <= 3.728 < e] == [25])
+
+    buckets = la_buckets()
+    warnings = []
+    cch._split_parked([("TWL", "001", "L", "LA", "R", "LA", "",
+                        cch._Span(u(39.741), u(40.845), (33,), (2.0, 2.0), 2.0,
+                                  68.325, -663.2))], buckets, warnings)
+    check("a prefix change with no usable odometer length is skipped with a note",
+          not any(v == 33 for _b, _e, v in spans_of(buckets, ("001", "L", "LA", ""), "TWL"))
+          and len(warnings) == 1 and "no usable odometer" in warnings[0])
+
+    buckets = la_buckets()
+    warnings = []
+    cch._split_parked([("TWL", "001", "L", "LA", "R", "LA", "",
+                        cch._Span(u(70.1), u(70.4), (33,), (2.0, 2.0), 2.0,
+                                  98.9, 0.3))], buckets, warnings)
+    check("one outside both prefixes' coverage places nothing and is counted in one note",
+          not any(v == 33 for _b, _e, v in spans_of(buckets, ("001", "L", "LA", ""), "TWL"))
+          and len(warnings) == 1 and "nothing to place" in warnings[0])
+
+    # 001 SLO: every left-side layer runs R60.261 -> M61.15, so the Left
+    # alignment has no other span covering R60.261; the road (Right alignment)
+    # covers R59.441-R60.661 and M60.661-M61.15.
+    buckets = defaultdict(lambda: defaultdict(list))
+    buckets[("001", "R", "SLO", "R")]["HG"] += [sp(59.441, 60.661, "U", 224.521, 1.22)]
+    buckets[("001", "R", "SLO", "M")]["HG"] += [sp(60.661, 61.15, "U", 225.741, 0.489)]
+    buckets[("001", "L", "SLO", "R")]["TWL"] += [sp(59.905, 60.145, 1, 224.985, 0.24)]
+    warnings = []
+    cch._split_parked([("TWL", "001", "L", "SLO", "R", "SLO", "M",
+                        cch._Span(u(60.261), u(61.15), (1,), (2.0, 2.0), 2.0,
+                                  225.341, 0.889))], buckets, warnings)
+    check("a left-side span changing prefix is bounded by the road, not its own alignment",
+          (60.261, 60.661, 1) in spans_of(buckets, ("001", "L", "SLO", "R"), "TWL")
+          and spans_of(buckets, ("001", "L", "SLO", "M"), "TWL") == [(60.661, 61.15, 1)]
+          and warnings == [])
+
+
+def test_county_line_without_reset():
+    """Route 166 runs along the SB / SLO line on one continuous postmile (SB
+    0-8.927, SLO 8.927-22.893, SB 22.893-R34.987, ...), so a span crossing
+    that line does not restart at 0 in the next county. The county rule
+    painted Highway Group SLO 8.927 -> SB 23.537 over SB 0-23.537, and SLO's
+    first part ran to the end of SLO's last visit (v0.51.0)."""
+    print("a county line where the postmiles do not restart:")
+    from collections import defaultdict
+
+    u = crl.pm_units
+
+    def sp(b, e, value, od, od_len):
+        return cch._Span(u(b), u(e), (value,), (1.0, 1.0), 1.0, od, od_len)
+
+    def spans_of(bk, key, tag):
+        return sorted((crl.pm_float(s.b), crl.pm_float(s.e), s.vals[0])
+                      for s in bk[key][tag])
+
+    buckets = defaultdict(lambda: defaultdict(list))
+    buckets[("166", "R", "SB", "")]["HG"] += [sp(0.0, 8.927, "U", 0.0, 8.927)]
+    buckets[("166", "R", "SB", "")]["TER"] += [sp(0.0, 8.927, "F", 0.0, 8.927),
+                                               sp(22.893, 23.539, "R", 22.893, 0.646)]
+    buckets[("166", "R", "SLO", "")]["TER"] += [sp(8.927, 22.893, "R", 8.927, 13.966),
+                                                sp(39.884, 50.76, "R", 36.442, 10.876)]
+    warnings = []
+    cch._split_parked([("HG", "166", "R", "SLO", "", "SB", "",
+                        cch._Span(u(8.927), u(23.537), ("D",), (2.0, 2.0), 2.0,
+                                  8.927, 14.61))], buckets, warnings)
+    check("the second county's part starts where the road re-enters it (22.893), "
+          "never at 0",
+          spans_of(buckets, ("166", "R", "SB", ""), "HG")
+          == [(0.0, 8.927, "U"), (22.893, 23.537, "D")])
+    check("... and the first county's part ends where the road leaves it, not at the "
+          "end of its later visit",
+          spans_of(buckets, ("166", "R", "SLO", ""), "HG") == [(8.927, 22.893, "D")]
+          and warnings == [])
+
+    buckets = defaultdict(lambda: defaultdict(list))
+    buckets[("166", "R", "SB", "R")]["TER"] += [sp(23.539, 34.987, "M", 23.539, 11.448),
+                                                sp(51.09, 51.966, "R", 47.648, 0.876)]
+    buckets[("166", "R", "SLO", "R")]["TER"] += [sp(50.76, 51.09, "R", 47.318, 0.33),
+                                                 sp(70.141, 70.498, "F", 66.605, 0.357)]
+    cch._split_parked([("TER", "166", "R", "SLO", "R", "SB", "R",
+                        cch._Span(u(50.76), u(51.966), ("X",), (2.0, 2.0), 2.0,
+                                  47.318, 1.206))], buckets, [])
+    check("a crossing inside a prefix space stays on its own visit of each county",
+          [x for x in spans_of(buckets, ("166", "R", "SB", "R"), "TER") if x[2] == "X"]
+          == [(51.09, 51.966, "X")]
+          and [x for x in spans_of(buckets, ("166", "R", "SLO", "R"), "TER")
+               if x[2] == "X"] == [(50.76, 51.09, "X")])
+
+    buckets = defaultdict(lambda: defaultdict(list))
+    buckets[("166", "R", "SB", "R")]["TER"] += [sp(23.539, 34.987, "M", 23.539, 11.448)]
+    buckets[("166", "R", "SLO", "R")]["TER"] += [sp(29.756, 30.115, "M", 29.756, 0.359),
+                                                 sp(33.834, 34.037, "M", 33.834, 0.203),
+                                                 sp(34.987, 36.442, "R", 34.987, 1.455)]
+    cch._split_parked([("HG", "166", "R", "SB", "R", "SLO", "R",
+                        cch._Span(u(32.99), u(36.442), ("U",), (2.0, 2.0), 2.0,
+                                  32.99, 3.452))], buckets, [])
+    check("... and covers every stretch of either county between its two ends "
+          "(166 weaves along the line)",
+          spans_of(buckets, ("166", "R", "SLO", "R"), "HG")
+          == [(33.834, 34.037, "U"), (34.987, 36.442, "U")]
+          and spans_of(buckets, ("166", "R", "SB", "R"), "HG") == [(32.99, 34.987, "U")])
+
+    buckets = defaultdict(lambda: defaultdict(list))
+    buckets[("900", "R", "AAA", "")]["TER"] += [sp(0.0, 8.5, "F", 0.0, 8.5),
+                                                sp(20.0, 30.0, "F", 30.0, 10.0)]
+    buckets[("900", "R", "BBB", "")]["TER"] += [sp(0.5, 6.0, "F", 9.0, 5.5)]
+    cch._split_parked([("TER", "900", "R", "AAA", "", "BBB", "",
+                        cch._Span(u(8.0), u(0.5), ("Y",), (2.0, 2.0), 2.0, 8.0,
+                                  1.0))], buckets, [])
+    check("a first county the road comes back to later keeps the part on its own visit",
+          [x for x in spans_of(buckets, ("900", "R", "AAA", ""), "TER") if x[2] == "Y"]
+          == [(8.0, 8.5, "Y")]
+          and (0.0, 0.5, "Y") in spans_of(buckets, ("900", "R", "BBB", ""), "TER"))
+
+    buckets = defaultdict(lambda: defaultdict(list))
+    buckets[("001", "R", "MON", "")]["TER"] += [sp(90.0, 101.2, "F", 90.0, 11.2)]
+    buckets[("001", "R", "SCR", "")]["TER"] += [sp(0.043, 5.0, "F", 101.243, 4.957)]
+    cch._split_parked([("TER", "001", "R", "MON", "", "SCR", "",
+                        cch._Span(u(101.178), u(0.043), ("Z",), (2.0, 2.0), 2.0,
+                                  101.178, 0.065))], buckets, [])
+    check("a county whose postmiles restart at the line still takes the part from 0",
+          (0.0, 0.043, "Z") in spans_of(buckets, ("001", "R", "SCR", ""), "TER")
+          and (101.178, 101.2, "Z") in spans_of(buckets, ("001", "R", "MON", ""), "TER"))
+
+
+def test_ar_fill():
+    """A layer that records a stretch under another prefix than the road's is
+    read at the row's AR, as the site reads it: SHS Population keeps 001 SLO's
+    R34.716-R37.079 as plain 32.634-37.19 (v0.51.1)."""
+    print("a cell the postmile overlay leaves blank is read at the row's AR:")
+    from datetime import date
+
+    u = crl.pm_units
+    rid = "SHS_001._P"
+
+    def span(b, e, value):
+        return cch._Span(u(b), u(e), (value,), (1.0, 1.0), 1.0, None, None)
+
+    def build(pop_spans):
+        fill = cch._ArFill()
+        hg = span(34.716, 37.079, "U- Undivided Highway")
+        fill.add("HG", "001", "R", ("SLO", "R"), ("SLO", "R"), hg.b, hg.e, rid,
+                 198.5, 200.863, hg)
+        for (b, e, p, value), (frm, to) in pop_spans:
+            pop = span(b, e, value)
+            fill.add("POP", "001", "R", ("SLO", p), ("SLO", p), pop.b, pop.e, rid,
+                     frm, to, pop)
+        rows = cch._build_cp("001", "SLO", "R", {"HG": [hg]}, {}, {}, date(2026, 10, 5),
+                             True, fill)
+        return [r["row"][cch._COL["THY_POPULATION_CODE"]] for r in rows]
+
+    check("a span the layer files under another prefix reaches the row at its AR",
+          build([((32.634, 37.19, "", "B- Urban"), (196.0, 200.9))]) == ["B"])
+    check("... and none at that AR leaves the cell blank",
+          build([((32.634, 37.19, "", "B- Urban"), (190.0, 195.0))]) == [None])
+    check("a span of the row's own space is never read at the AR (the overlay ruled it out)",
+          build([((38.0, 40.0, "R", "B- Urban"), (196.0, 200.9))]) == [None])
+    rows = cch._build_cp("001", "SLO", "R", {"HG": [span(34.716, 37.079, "U")]}, {}, {},
+                         date(2026, 10, 5), True)
+    check("... and without the AR lookup the build stays postmile-only",
+          [r["row"][cch._COL["THY_POPULATION_CODE"]] for r in rows] == [None])
+
+
+def test_independent_row_dates():
+    """An independent row nulls the other roadbed's block but keeps its
+    effective date, as TSN and the site do (001 MON R81.505R carries the Left
+    roadbed's 1973-06-08) (v0.51.1)."""
+    print("an independent row carries the other roadbed's effective date:")
+    from datetime import date
+
+    u = crl.pm_units
+
+    def span(b, e, value, when):
+        return cch._Span(u(b), u(e), (value, 3), (1.0, 1.0), crl.to_serial(when),
+                         None, None)
+
+    rbucket = {"HG": [span(81.505, 82.716, "R- Independent Alignment - Right",
+                           date(1964, 1, 1))],
+               "TWR": [span(81.505, 82.716, 12, date(1980, 1, 1))]}
+    lbucket = {"HG": [span(81.505, 82.739, "L- Independent Alignment - Left",
+                           date(1964, 1, 1))],
+               "TWL": [span(81.505, 82.739, 12, date(1973, 6, 8))]}
+    rows = cch._build_cp("001", "MON", "R", rbucket, lbucket, {}, date(2026, 10, 5), True)
+    col = cch._COL
+    by_kind = {r["kind"]: r["row"] for r in rows}
+    check("the R row carries the Left roadbed's date and still no Left values",
+          by_kind["R"][col["THY_LEFT_ROAD_EFF_DATE"]] == date(1973, 6, 8)
+          and by_kind["R"][col["THY_LT_LANES_AMT"]] is None)
+    check("the L row carries the Right roadbed's date and still no Right values",
+          by_kind["L"][col["THY_RIGHT_ROAD_EFF_DATE"]] == date(1980, 1, 1)
+          and by_kind["L"][col["THY_RT_LANES_AMT"]] is None)
+
+
+def test_postmile_to_ar():
+    """The PM -> AR calibration the AR lookups use (v0.51.1): between the
+    nearest span ends, a stale span ignored, the containing span last."""
+    print("a postmile translates to AR from the layers' own span ends:")
+    rid = "SHS_009._P"
+
+    def to_ar(*spans):
+        t = crl.PostmileToAr()
+        for b, e, frm, to, begin, finish in spans:
+            t.add("009", begin, finish, (b, e), (frm, to), rid, True)
+        return t
+
+    plain = ("SCL", "")
+    t = to_ar((5.653, 6.303, 32.3433678, 32.975049, plain, plain),
+              (6.403, 7.267, 33.0707829, 33.9774018, plain, plain),
+              (5.653, 7.267, 32.3433678, 33.9774018, plain, plain))
+    _rid, ar = t.translate("009", "SCL", "", 6.372, "R")
+    check("a point in a gap reads between the gap's own ends, not along a long span",
+          abs(ar - (32.975049 + 0.069 * (33.0707829 - 32.975049) / 0.1)) < 1e-9
+          and ar < 33.0707829)
+    t = to_ar((0.0, 4.938, 0.4871, 0.5592, plain, plain),
+              (0.071, 3.071, 0.5592, 3.5566, plain, plain))
+    check("a span whose AR length is a fraction of its postmile length gives no ends",
+          abs(t.translate("009", "SCL", "", 3.151, "R")[1] - 3.6366) < 1e-9)
+    check("... nor reaches past half a mile from the nearest end",
+          t.translate("009", "SCL", "", 4.5, "R")[1]
+          == 0.4871 + 4.5 * (0.5592 - 0.4871) / 4.938)
+    t = to_ar((0.0, 33.035, 0.0, 7.057, plain, plain))
+    check("a postmile no end reaches reads along the span that contains it",
+          t.translate("009", "SCL", "", 9.13, "R") == (rid, 9.13 * 7.057 / 33.035))
+    check("... and none at all is untranslated",
+          t.translate("009", "SCL", "", 40.0, "R") == (None, None))
+
 
 def main():
     test_dialects_and_algebra()
@@ -1053,6 +1305,10 @@ def main():
     test_normalizer_and_comparator()
     test_skipped_span_source_truth()
     test_prefix_change_split()
+    test_county_line_without_reset()
+    test_ar_fill()
+    test_independent_row_dates()
+    test_postmile_to_ar()
     print()
     if _fail:
         print(f"FAILED: {len(_fail)} check(s): {_fail}")

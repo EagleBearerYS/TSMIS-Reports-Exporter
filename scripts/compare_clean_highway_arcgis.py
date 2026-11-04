@@ -16,7 +16,12 @@ differently (the site prints MM/DD/YYYY, '02' lanes and 'LA.' for the two-letter
 counties; the build writes the TSN extract's shapes): dates as ISO dates,
 amounts as canonical numbers, county codes without the trailing period, a blank
 toll/forest code as 0, and the equation marker 'E' the site writes into the
-postmile-suffix column is no roadbed for the key. Nothing semantic is bridged.
+postmile-suffix column is no roadbed for the key. One vocabulary is read across:
+THY_BREAK_DESC, where the site writes only SHS Route Break's points ('Route
+Resume' as BEG, 'Route Break' as END) and the build the TSN extract's markers —
+its U-BR / R-BR are those same two points, and its structural markers (a
+route's BEG / END, CNTY, D-C, DIST, BEGL, ENDR) have no source on the site, so
+they read as blank. Nothing else semantic is bridged.
 
 Rows pair exactly as the site-vs-TSN comparison pairs them (route + county + PM
 prefix + BEGIN postmile + roadbed), through the same `compare_clean_road_tsn`
@@ -73,6 +78,11 @@ CONTEXT_FIELDS = tuple(_PROFILE.context)
 # leaves blank by design (`clean_road_columns`) and its extract date.
 EXPORT_CONTEXT_FIELDS = tuple(c for c in CONTEXT_FIELDS
                               if c not in cch.CONTEXT_COLUMNS)
+# The build's THY_BREAK_DESC read in the site's route-break vocabulary
+# (clean_highway.js: "133 Route_Break_Type → BEG/END"); every other build
+# marker is one the site never writes.
+_BREAK_AS_SITE = {"U-BR": "BEG", "R-BR": "END"}
+_BREAK_AT = 1 + SHARED_HEADER.index("THY_BREAK_DESC")
 
 
 def _s(v):
@@ -118,6 +128,7 @@ def _load_build(path, collapse):
             r = list(r) + [None] * (len(chc.ARC_HEADER) - len(r))
             vals = [r[_ARC_INDEX[c]] for c in _SPEC.header]
             out = crt._row(_PROFILE, vals, "tsn", hint, collapse=collapse)
+            out[_BREAK_AT] = _BREAK_AS_SITE.get(out[_BREAK_AT], "")
             for i, raw in enumerate(vals):
                 if raw == UNAVAILABLE_TOKEN and _SPEC.header[i] != _SPEC.pm_col:
                     out[1 + i] = UNAVAILABLE_TOKEN
@@ -190,6 +201,11 @@ def _notes_lines(build_path, export_path, unplaced):
         "equation marker 'E' the site writes into THY_PM_SUFFIX_CODE is no "
         "roadbed for the key (the column itself still compares). A print-edition "
         "export folds runs of spaces on both sides, as its HTML does.",
+        "THY_BREAK_DESC: the site writes only route breaks, off SHS Route Break "
+        "('Route Resume' as BEG, 'Route Break' as END). The build writes the TSN "
+        "extract's markers, so its U-BR / R-BR (the same two points) read as BEG "
+        "/ END, and its markers the site has no source for (a route's BEG / END, "
+        "CNTY, D-C, DIST, BEGL, ENDR) read as blank.",
         "CONTEXT (shown, never counted): the 22 columns the site has no source "
         "for (blank in its file by design — the build may still carry a value, "
         "e.g. the ADT trio), TSN's bookkeeping columns, the two offset columns "

@@ -26,8 +26,11 @@ imported lazily so the module loads in bare environments.
 from __future__ import annotations
 
 import re
+from bisect import bisect_left
+from collections import defaultdict
 from datetime import date, datetime
 from pathlib import Path
+from statistics import median
 
 import paths
 
@@ -452,3 +455,112 @@ def merge_adjacent(segments, same):
         else:
             out.append((b, e, seg))
     return out
+
+
+# --------------------------------------------------------------------------- #
+# postmile -> AR, for what the layers give no measure of its own
+# --------------------------------------------------------------------------- #
+class PostmileToAr:
+    """A postmile translated to an AR measure on one roadbed — the site's LRS
+    `translate` (network 3 → 4) for a point that carries no measure of its own
+    (an intersection, a CA HIGHWAYS row), calibrated offline from the ends of
+    the spans of every layer a build reads
+    (`arcgis_clean_road_build.PointLayer.read(calibration=...)`,
+    `consolidate_clean_highway._ArFill`): each end is an
+    exact postmile ↔ AR pair on its RouteID, and a span that changes county or
+    prefix gives one in each space. A postmile is interpolated between the
+    nearest end at or below it and the nearest at or above it in its county +
+    prefix space, the current calibration's ends when the space has any. A
+    span's ends are exact only there: the network's 0.111 → 20.601 puts 043 KER
+    17.168 0.13 mi short of where Highway Group's span beginning at 17.108
+    does, and 009 SCL 6.372 lies in a 0.1 mi gap between two Saratoga spans.
+    Where those two ends disagree with one AR mile per postmile mile by more
+    than half (a postmile equation between them), or one side has none, the
+    postmile is read one AR mile per postmile mile from the nearer end, up to
+    half a mile from it.
+
+    A whole span whose AR length is not within half to twice its postmile
+    length gives no ends — its postmiles are stale (on 038 SBD the network keeps
+    0 → 4.938 over 0.07 AR miles; on 036 TEH R75.146 → R78.072 over a 1.09 mi
+    remnant). A postmile no end reaches is read along the span that contains
+    it, as before the ends were used: the current calibration first, a whole
+    span over the stretch beside a county or prefix change, then the shortest
+    (245 TUL's only ends past 8.076 are the network's 0 → 33.035, kept over
+    7.06 AR miles)."""
+
+    __slots__ = ("_ends", "_spans", "_index")
+    _RATIO = 2.0
+    _REACH = 0.5
+
+    def __init__(self):
+        self._ends = defaultdict(list)
+        self._spans = defaultdict(list)
+        self._index = {}
+
+    @classmethod
+    def _fits(cls, pm_len, ar_len):
+        return abs(ar_len - pm_len) <= 0.05 or (
+            pm_len > 0 and 1 / cls._RATIO <= ar_len / pm_len <= cls._RATIO)
+
+    def add(self, route, begin, finish, pms, ars, rid, current):
+        """Calibrate from one span on `rid`: `begin` / `finish` are its
+        (county, prefix) at each end, `pms` its postmiles, `ars` its AR
+        measures."""
+        (b, e), (frm, to) = pms, ars
+        if to < frm or begin == finish and e < b:
+            return
+        align = "L" if rid.endswith("_S") else "R"
+        first, last = (route, *begin, align), (route, *finish, align)
+        if begin == finish:
+            self._spans[first].append((b, e, frm, to, rid, current, True))
+            if not self._fits(e - b, to - frm):
+                return
+        elif to > frm:
+            self._spans[first].append((b, b + to - frm, frm, to, rid, current, False))
+            self._spans[last].append((e - (to - frm), e, frm, to, rid, current, False))
+        self._ends[first].append((b, frm, current, rid))
+        self._ends[last].append((e, to, current, rid))
+        self._index.clear()
+
+    def _space(self, space):
+        """One space's ends as (sorted postmiles, their ARs, RouteID): the
+        current calibration's when it has any, several ends at one postmile
+        read as their median."""
+        found = self._index.get(space)
+        if found is None:
+            ends = self._ends.get(space, ())
+            ends = [end for end in ends if end[2]] or list(ends)
+            by_pm = defaultdict(list)
+            for pm, ar, _current, _rid in ends:
+                by_pm[pm].append(ar)
+            pms = sorted(by_pm)
+            found = self._index[space] = (pms, [median(by_pm[pm]) for pm in pms],
+                                          ends[0][3] if ends else None)
+        return found
+
+    def translate(self, route, county, prefix, pm, align):
+        """(RouteID, AR measure) of postmile `pm` on roadbed `align` ("R" or
+        "L"), or (None, None) when no calibrating span covers it."""
+        if pm is None:
+            return None, None
+        space = (route, county, prefix, align)
+        pms, ars, rid = self._space(space)
+        i = bisect_left(pms, pm)
+        if i < len(pms) and pms[i] == pm:
+            return rid, ars[i]
+        below = (pms[i - 1], ars[i - 1]) if i else None
+        above = (pms[i], ars[i]) if i < len(pms) else None
+        if below and above and self._fits(above[0] - below[0], above[1] - below[1]):
+            return rid, below[1] + (pm - below[0]) * (above[1] - below[1]) / (above[0] - below[0])
+        near = min((end for end in (below, above) if end), key=lambda end: abs(pm - end[0]),
+                   default=None)
+        if near is not None and abs(pm - near[0]) <= self._REACH:
+            return rid, near[1] + (pm - near[0])
+        best = None
+        for lo, hi, ar_lo, ar_hi, span_rid, current, whole in self._spans.get(space, ()):
+            if lo <= pm <= hi:
+                rank = (current, whole, lo - hi)
+                if best is None or rank > best[0]:
+                    ar = ar_lo if hi == lo else ar_lo + (pm - lo) * (ar_hi - ar_lo) / (hi - lo)
+                    best = (rank, span_rid, ar)
+        return (None, None) if best is None else (best[1], best[2])

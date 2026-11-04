@@ -21,12 +21,17 @@ replaced):
     leg any other; within each, Increasing before Decreasing, the _P roadbed
     before _S, then the lowest APPROACH_ID. One leg's attributes are printed;
   * HIGHWAY GROUP, CITY and POPULATION come from the span layers at the
-    intersection's postmile on its own roadbed (`PostmileOverlay` — the site
-    translates the postmile to an AR measure and looks the layer up there; an
-    intersection carries no LRS measure, so the build stays in postmile space);
+    intersection, as the site's AR lookup lands on them (`PointLayer`): the
+    layer's own span in the intersection's postmile space where there is one
+    (exact at the span's boundaries), else its postmile translated to AR on its
+    own roadbed (the `_S` route for a postmile suffix L, else `_P`;
+    `PostmileToAr`, calibrated from the ends of these layers' own spans because
+    an intersection carries no LRS measure) and read with the site's
+    `queryRangeLayer` pick;
   * INX_SEG_ORDER_ID / INX_X_SEG_ORDER_ID are `SHS Inv Network Date.SegOrderId`
-    at the intersection on the file's route and at the crossing route's own
-    postmile on that route (the primary roadbed, as the site's lookup uses);
+    at that AR on the file's route and at the crossing route's own postmile
+    translated on that route (its R roadbed first, then L), each read on the
+    primary roadbed as the site's lookup does;
   * INX_MAIN_BEGIN_DATE and INX_CROSS_BEGIN_DATE are the layer's own
     Main_Begin_Date / Cross_Begin_Date. The site writes the GEOMETRY begin date
     into both (`ml1Eff` / `interEff` = `dateOfRecord`), so these two columns are
@@ -53,7 +58,7 @@ log = logging.getLogger(__name__)
 
 REPORT_NAME = "Clean Road Intersection (ArcGIS)"
 SPEC = crc.INTERSECTION
-BUILD_VERSION = 1
+BUILD_VERSION = 2
 FILENAME = "clean_intersection_from_layers.xlsx"
 OUT_DIR = paths.OUTPUT_ROOT / "arcgis_reports"
 OUT_PATH = OUT_DIR / FILENAME
@@ -139,13 +144,13 @@ PROVENANCE = {
     "INX_PM_SUFFIX_CODE": (f"{_INX}.Main_PMSuffix", "code ('.' = none)"),
     "INX_ROUTE_SUFFIX_CODE": (f"{_INX}.Main_RouteSuffix", "code ('.' = none)"),
     "INX_SEG_ORDER_ID": (f"{NET_LAYER}.SegOrderId",
-                         "span at the intersection's postmile, primary roadbed"),
+                         "span at the intersection's AR, primary roadbed"),
     "INX_HIGHWAY_GROUP": ("SHS Highway Group.Highway_Group",
-                          "span at the postmile on the intersection's roadbed"),
+                          "span at the intersection's AR on its own roadbed"),
     "INX_CITY_CODE": ("City.City_Code",
-                      "span at the postmile on the intersection's roadbed, TASAS code"),
+                      "span at the intersection's AR on its own roadbed, TASAS code"),
     "INX_POPULATION_GROUP": ("SHS Population.Population_Code",
-                             "span at the postmile on the intersection's roadbed"),
+                             "span at the intersection's AR on its own roadbed"),
     "INX_X_ROUTE_NAME": (f"{_INX}.Cross_RouteNum (Main_RouteNum on the cross "
                          "route's row)", "3 digits"),
     "INX_X_PM_PREFIX_CODE": (f"{_INX}.Cross_PMPrefix", "code ('.' = none)"),
@@ -153,7 +158,7 @@ PROVENANCE = {
     "INX_X_PM_SUFFIX_CODE": (f"{_INX}.Cross_PMSuffix", "code ('.' = none)"),
     "INX_X_ROUTE_SUFFIX_CODE": (f"{_INX}.Cross_RouteSuffix", "code ('.' = none)"),
     "INX_X_SEG_ORDER_ID": (f"{NET_LAYER}.SegOrderId",
-                           "span at the crossing route's own postmile"),
+                           "span at the crossing route's own postmile, as AR"),
     "INX_EXTRACT_DATE": ("(the build's as-of date)", "MM/DD/YYYY"),
 }
 assert set(PROVENANCE) | set(SPEC.unsourced) == set(SPEC.header), \
@@ -222,26 +227,40 @@ def _side(r, which):
             "pm": r[f"{which}_PMMeasure"], "begin": r[f"{which}_Begin_Date"]}
 
 
-def _project(r, here, there, legs, detail, overlays, net, extract):
+def _seg_order(net, route, county, prefix, pm, rid, ar):
+    """`SegOrderId` there, read on the primary roadbed as the site's
+    `hl_queryLayer122Field` reads it (no snap)."""
+    return net.value(route, county, prefix, pm, "R",
+                     acb.primary_route_id(rid) if rid else rid, ar, snap=False)
+
+
+def _project(r, here, there, legs, detail, overlays, net, to_ar, extract):
     """One row in the file of `here`'s route, crossing `there`."""
     route = acb.route_token(here["num"], here["sfx"])
     county = crl.norm_county(r["County_Code"])
     prefix = acb.pfx(here["pfx"])
     pm_units = crl.pm_units(here["pm"])
     pm = None if pm_units is None else crl.pm_float(pm_units)
-    left = acb.pfx(here["pmsfx"]) == "L"
+    align = "L" if acb.pfx(here["pmsfx"]) == "L" else "R"
+    rid, ar = to_ar.translate(route, county, prefix, pm, align)
     main_leg, cross_leg = _pick_legs(legs, route)
     ml, cs = _leg_values(main_leg, detail), _leg_values(cross_leg, detail)
 
     def at(tag):
-        return overlays[tag].value_at(route, county, prefix, pm, left)
+        return overlays[tag].value(route, county, prefix, pm, align, rid, ar)
 
     x_route = acb.s(there["num"])
     x_pm_units = crl.pm_units(there["pm"])
     x_seg = ""
     if x_route and x_pm_units is not None:
-        x_seg = net.value_at(acb.route_token(there["num"], there["sfx"]), county,
-                             acb.pfx(there["pfx"]), crl.pm_float(x_pm_units))
+        x_token, x_pfx = acb.route_token(there["num"], there["sfx"]), acb.pfx(there["pfx"])
+        x_pm = crl.pm_float(x_pm_units)
+        x_rid = x_ar = None
+        for x_align in ("R", "L"):
+            x_rid, x_ar = to_ar.translate(x_token, county, x_pfx, x_pm, x_align)
+            if x_rid:
+                break
+        x_seg = _seg_order(net, x_token, county, x_pfx, x_pm, x_rid, x_ar)
     pm_text = acb.num(here["pm"]) if pm_units is not None else ""
     v = {
         "INX_CONNECTION_ID": acb.integer(r["INTERSECTION_ID"]),
@@ -278,7 +297,8 @@ def _project(r, here, there, legs, detail, overlays, net, extract):
         "INX_PM_PREFIX_CODE": prefix,
         "INX_PM_SUFFIX_CODE": acb.pfx(here["pmsfx"]),
         "INX_ROUTE_SUFFIX_CODE": acb.pfx(here["sfx"]),
-        "INX_SEG_ORDER_ID": acb.integer(net.value_at(route, county, prefix, pm)),
+        "INX_SEG_ORDER_ID": acb.integer(_seg_order(net, route, county, prefix, pm, rid,
+                                                   ar)),
         "INX_HIGHWAY_GROUP": crl.code_of(at("HG")),
         "INX_CITY_CODE": city_codes.norm_city(at("CITY")),
         "INX_POPULATION_GROUP": crl.code_of(at("POP")),
@@ -308,11 +328,13 @@ def build_rows(lib, index, *, asof, asof_day, events):
     """(rows, stats): one row per intersection per state route it is on."""
     events.on_log("  reading the span layers the file looks intersections up in...")
 
+    to_ar = crl.PostmileToAr()
+
     def read(layer, attr, **dates):
         entry = index.get(layer) or {}
-        ov = acb.PostmileOverlay.read(lib["present"][layer], layer, attr,
-                                      asof=asof, expected_rows=entry.get("rows"),
-                                      **dates)
+        ov = acb.PointLayer.read(lib["present"][layer], layer, attr,
+                                 asof=asof, expected_rows=entry.get("rows"),
+                                 calibration=to_ar, **dates)
         events.on_log(f"  {layer}: read")
         return ov
 
@@ -334,12 +356,14 @@ def build_rows(lib, index, *, asof, asof_day, events):
             continue
         mine = legs.get(acb.s(r["INTERSECTION_ID"]), ())
         main, cross = _side(r, "Main"), _side(r, "Cross")
-        rows.append(_project(r, main, cross, mine, detail, overlays, net, extract))
+        rows.append(_project(r, main, cross, mine, detail, overlays, net, to_ar,
+                             extract))
         if acb.s(cross["num"]) and acb.s(cross["pm"]) \
                 and acb.route_token(cross["num"], cross["sfx"]) \
                 != acb.route_token(main["num"], main["sfx"]):
             crossed += 1
-            rows.append(_project(r, cross, main, mine, detail, overlays, net, extract))
+            rows.append(_project(r, cross, main, mine, detail, overlays, net, to_ar,
+                                 extract))
 
     pm_at = 1 + SPEC.header.index("INX_BEGIN_PM_AMT")
     county_at = 1 + SPEC.header.index("INX_COUNTY_CODE")
