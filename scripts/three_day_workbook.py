@@ -28,11 +28,13 @@ from errors import RunCancelled
 GRID_SHEET = "Three days"
 GRID_FIRST_ROW = 3                # the grid's legend row, its header, then records
 GRID_LEAD = 6                     # Route, Location, Presence and three tallies
+GRID_LEAD_WIDTHS = [8, 30, 22, 9, 11, 11]
 SHEETS = ("Summary", "Routes", "Changes", "Added & removed", GRID_SHEET, "Notes")
 
 _BLANK = td.BLANK_MARK
 _ABSENT = td.ABSENT_MARK
 _ARROW = td.ARROW
+ON_MARK = "✓"               # a day the record is on, in the Added & removed list
 _MAX_LIST_ROWS = 1_048_000        # one list fits one sheet
 _DARK = "1F3864"
 _FILLS = {td.NEWEST: "FFC7CE", td.MIDDLE: "FFEB9C", td.BACK: "DDEBF7",
@@ -43,6 +45,7 @@ _FONTS = {td.NEWEST: "9C0006", td.MIDDLE: "7F6000", td.BACK: "1F4E79",
           "removed": "843C0C", "blip": "595959"}
 _PRESENCE_TONE = {"d12": "removed", "d1": "removed", "d23": "added", "d3": "added",
                   "d13": "blip", "d2": "blip"}
+SUMMARY_WIDTHS = (62, 22, 24, 24, 24, 20, 26)
 
 
 class UnwritableValue(Exception):
@@ -214,10 +217,10 @@ def summary_lines(sc, counts, days, meta):
     return out
 
 
-def _write_summary(wb, st, sc, counts, days, meta):
-    ws = wb.create_sheet("Summary")
-    ws.sheet_properties.tabColor = _DARK
-    _widths(ws, [62, 22, 24, 24, 24, 20, 26])
+def _write_summary(wb, st, sc, counts, days, meta, sheet="Summary", tab=_DARK):
+    ws = wb.create_sheet(sheet)
+    ws.sheet_properties.tabColor = tab
+    _widths(ws, SUMMARY_WIDTHS)
     for kind, cells in summary_lines(sc, counts, days, meta):
         if kind == "title":
             ws.append([_cell(ws, st, cells[0], st.title)])
@@ -282,12 +285,19 @@ def route_table(rows, compared):
     return list(out.items())
 
 
-def _write_routes(wb, st, sc, rows, compared, days, events):
+def _routes_sheet(wb, st, sc, days, n_routes, prepare=None):
+    """The Routes sheet with its two heading rows written, ready for one row
+    per route. `prepare(ws)` runs before the first row is streamed — the last
+    moment a sheet can be given anything but rows."""
     d1, d2, d3 = days
     ws = wb.create_sheet("Routes")
     ws.sheet_properties.tabColor = "70AD47"
     ws.freeze_panes = "B3"
     _widths(ws, [9, 13, 13, 13, 13, 11, 11, 15, 14, 14, 16, 16, 18])
+    if n_routes:
+        ws.auto_filter.ref = f"A2:M{n_routes + 2}"
+    if prepare is not None:
+        prepare(ws)
     ws.append([_cell(ws, st, f"Every route's {sc.id_noun_plural} and changed "
                      "cells. Filter or sort a column to find the routes that "
                      "moved.", st.bold)])
@@ -297,7 +307,12 @@ def _write_routes(wb, st, sc, rows, compared, days, events):
         f"On or off {d2} only", f"Changed {d3}", f"Changed {d2}",
         f"Changed {d2}, back {d3}", f"Changed {d2} and {d3}",
         f"Differs, {sc.id_noun_plural} on two days")))
+    return ws
+
+
+def _write_routes(wb, st, sc, rows, compared, days, events):
     table = route_table(rows, compared)
+    ws = _routes_sheet(wb, st, sc, days, len(table))
     for k, (route, t) in enumerate(table):
         if k % 200 == 0:
             _cancel(events)
@@ -310,8 +325,6 @@ def _write_routes(wb, st, sc, rows, compared, days, events):
                    _tinted(ws, st, t["B"], td.BACK),
                    _tinted(ws, st, t["X"], td.BOTH),
                    _tinted(ws, st, t["D"], "two")])
-    if table:
-        ws.auto_filter.ref = f"A2:M{len(table) + 2}"
 
 
 # --------------------------------------------------------------------------- #
@@ -330,95 +343,144 @@ def two_day_change(presence, days):
             "d13": f"differs {d1} vs {d3} (missing {d2})"}[presence]
 
 
-def _write_changes(wb, st, sc, rows, compared, days, events):
-    """One row per changed cell: the record, the column, its value on each day
-    and what the change is."""
+def changed_cells(compared):
+    """Every listed change as (record index, column index, state code), in grid
+    order — at most `_MAX_LIST_ROWS` of them, the rows one list sheet holds."""
+    out = []
+    for k, state in enumerate(compared.states):
+        if not any(code in state for code in td.DIFF_CODES):
+            continue
+        for f, code in enumerate(state):
+            if code in td.DIFF_CODES:
+                if len(out) >= _MAX_LIST_ROWS:
+                    return out
+                out.append((k, f, code))
+    return out
+
+
+def total_changed(compared):
+    """How many compared cells differ between the days their record is on."""
+    return sum(sum(state.count(code) for code in td.DIFF_CODES)
+               for state in compared.states)
+
+
+def _changes_sheet(wb, st, sc, days, n_listed, prepare=None):
+    """The Changes sheet with its two heading rows written, ready for one row
+    per changed cell. `prepare(ws)` runs before the first row is streamed."""
     ws = wb.create_sheet("Changes")
     ws.sheet_properties.tabColor = _FILLS[td.NEWEST]
     ws.freeze_panes = "A3"
     _widths(ws, [8, 30, 32, 26, 26, 26, 38, 9])
+    if n_listed:
+        ws.auto_filter.ref = f"A2:H{n_listed + 2}"
+    if prepare is not None:
+        prepare(ws)
     ws.append([_cell(ws, st, "Every compared cell that is not the same on all the "
                      f"days its {sc.id_noun} is on. Filter the Change or the "
                      "Column header.", st.bold)])
     ws.append(_header(ws, st, ("Route", "Location", "Column", days[0], days[1],
                                days[2], "Change", "Grid row")))
-    header = list(sc.header)
-    written = 0
-    for k, (rec, state) in enumerate(zip(compared.records, compared.states)):
-        if k % 2000 == 0:
-            _cancel(events)
-        if not any(code in state for code in td.DIFF_CODES):
-            continue
-        presence = td.presence_of(rec)
-        route, location = _route_of(rows, rec), compared.locations[k]
-        for f, code in enumerate(state):
-            if code not in td.DIFF_CODES:
-                continue
-            if written >= _MAX_LIST_ROWS:
-                ws.append([_cell(ws, st, f"… the list stops at {_MAX_LIST_ROWS:,} "
-                                 f"rows — filter the {GRID_SHEET} sheet for the rest",
-                                 st.warn)])
-                ws.auto_filter.ref = f"A2:H{written + 2}"
-                return written
-            texts = td.texts_of(compared.trim, rec, f)
-            if code == "D":
-                tone, change = "two", two_day_change(presence, days)
-            else:
-                tone = td.CLASS_OF[code]
-                change = td.class_short(tone, days)
-            # Every cell is built for THIS row: a guarded (formula-looking) text
-            # is a cell object, and one object cannot sit in two rows.
-            ws.append([_plain(ws, route), _plain(ws, location), _plain(ws, header[f]),
-                       _plain(ws, day_text(texts[0])), _plain(ws, day_text(texts[1])),
-                       _plain(ws, day_text(texts[2])),
-                       _cell(ws, st, change, st.font[tone], st.fill[tone]),
-                       _link(ws, st, GRID_FIRST_ROW + k)])
-            written += 1
-    if not written:
+    return ws
+
+
+def _changes_foot(ws, st, sc, compared, n_listed):
+    """The line under the list: none to list, or where a full sheet stops."""
+    if not n_listed:
         ws.append([_cell(ws, st, "None — every compared cell is the same on every "
                          f"day its {sc.id_noun} is on.", st.muted)])
-    else:
-        ws.auto_filter.ref = f"A2:H{written + 2}"
-    return written
+    elif n_listed < total_changed(compared):
+        ws.append([_cell(ws, st, f"… the list stops at {_MAX_LIST_ROWS:,} "
+                         f"rows — filter the {GRID_SHEET} sheet for the rest",
+                         st.warn)])
 
 
-def _write_records(wb, st, sc, rows, compared, days, events):
-    """One row per record that is not on all three days."""
+def _write_changes(wb, st, sc, rows, compared, days, events):
+    """One row per changed cell: the record, the column, its value on each day
+    and what the change is."""
+    listed = changed_cells(compared)
+    ws = _changes_sheet(wb, st, sc, days, len(listed))
+    header = list(sc.header)
+    for n, (k, f, code) in enumerate(listed):
+        if n % 2000 == 0:
+            _cancel(events)
+        rec = compared.records[k]
+        texts = td.texts_of(compared.trim, rec, f)
+        if code == "D":
+            tone, change = "two", two_day_change(td.presence_of(rec), days)
+        else:
+            tone = td.CLASS_OF[code]
+            change = td.class_short(tone, days)
+        # Every cell is built for THIS row: a guarded (formula-looking) text is
+        # a cell object, and one object cannot sit in two rows.
+        ws.append([_plain(ws, _route_of(rows, rec)), _plain(ws, compared.locations[k]),
+                   _plain(ws, header[f]),
+                   _plain(ws, day_text(texts[0])), _plain(ws, day_text(texts[1])),
+                   _plain(ws, day_text(texts[2])),
+                   _cell(ws, st, change, st.font[tone], st.fill[tone]),
+                   _link(ws, st, GRID_FIRST_ROW + k)])
+    _changes_foot(ws, st, sc, compared, len(listed))
+    return len(listed)
+
+
+def partial_records(compared):
+    """The index of every record that is not on all three days, in grid order —
+    at most `_MAX_LIST_ROWS` of them, the rows one list sheet holds."""
+    out = []
+    for k, rec in enumerate(compared.records):
+        if None in rec:
+            if len(out) >= _MAX_LIST_ROWS:
+                break
+            out.append(k)
+    return out
+
+
+def _records_sheet(wb, st, sc, days, n_listed):
+    """The Added & removed sheet with its two heading rows written, ready for
+    one row per record that is not on all three days."""
     ws = wb.create_sheet("Added & removed")
     ws.sheet_properties.tabColor = _FILLS["added"]
     ws.freeze_panes = "A3"
     _widths(ws, [8, 30, 46, 13, 13, 13, 16, 9])
+    if n_listed:
+        ws.auto_filter.ref = f"A2:H{n_listed + 2}"
     ws.append([_cell(ws, st, f"Every {sc.id_noun} that is not on all three days.",
                      st.bold)])
     ws.append(_header(ws, st, ("Route", "Location", "What happened", days[0],
                                days[1], days[2], "Differing cells", "Grid row")))
-    written = 0
-    for k, (rec, state) in enumerate(zip(compared.records, compared.states)):
-        if k % 2000 == 0:
+    return ws
+
+
+def _records_foot(ws, st, sc, compared, n_listed):
+    """The line under the list: none to list, or where a full sheet stops."""
+    partial = sum(1 for rec in compared.records if None in rec)
+    if not n_listed:
+        ws.append([_cell(ws, st, f"None — every {sc.id_noun} is on all three days.",
+                         st.muted)])
+    elif n_listed < partial:
+        ws.append([_cell(ws, st, f"… the list stops at {_MAX_LIST_ROWS:,} rows — "
+                         f"filter the {GRID_SHEET} sheet's Presence column",
+                         st.warn)])
+
+
+def _write_records(wb, st, sc, rows, compared, days, events):
+    """One row per record that is not on all three days."""
+    listed = partial_records(compared)
+    ws = _records_sheet(wb, st, sc, days, len(listed))
+    for n, k in enumerate(listed):
+        if n % 2000 == 0:
             _cancel(events)
+        rec, state = compared.records[k], compared.states[k]
         presence = td.presence_of(rec)
-        if presence == "all":
-            continue
-        if written >= _MAX_LIST_ROWS:
-            ws.append([_cell(ws, st, f"… the list stops at {_MAX_LIST_ROWS:,} rows — "
-                             f"filter the {GRID_SHEET} sheet's Presence column",
-                             st.warn)])
-            break
         tone = _PRESENCE_TONE[presence]
         ws.append([_plain(ws, _route_of(rows, rec)),
                    _plain(ws, compared.locations[k]),
                    _cell(ws, st, td.presence_label(presence, days), st.font[tone],
                          st.fill[tone])]
-                  + ["✓" if idx is not None else _ABSENT for idx in rec]
+                  + [ON_MARK if idx is not None else _ABSENT for idx in rec]
                   + [state.count("D") if presence in td.TWO_DAY else None,
                      _link(ws, st, GRID_FIRST_ROW + k)])
-        written += 1
-    if not written:
-        ws.append([_cell(ws, st, f"None — every {sc.id_noun} is on all three days.",
-                         st.muted)])
-    else:
-        ws.auto_filter.ref = f"A2:H{written + 2}"
-    return written
+    _records_foot(ws, st, sc, compared, len(listed))
+    return len(listed)
 
 
 # --------------------------------------------------------------------------- #
@@ -433,21 +495,26 @@ def grid_text(code, texts):
     return _newest(texts)
 
 
-def _write_grid(wb, st, sc, rows, compared, days, events):
-    """One row per record, every column, each changed cell showing its history
-    and filled by its class."""
-    from openpyxl.utils import get_column_letter
+def grid_labels(sc, days):
+    """The grid's column headings: its six lead columns, then every column of
+    the report."""
+    return (["Route", "Location", "Presence", "Changed cells",
+             f"Changed {days[1]}", f"Changed {days[2]}"] + list(sc.header))
 
-    ws = wb.create_sheet(GRID_SHEET)
-    ws.sheet_properties.tabColor = _DARK
-    ws.freeze_panes = "C3"
-    header = list(sc.header)
-    shown_only = {header[f] for f in sc.field_indices if sc.is_context(f)}
-    labels = (["Route", "Location", "Presence", "Changed cells",
-               f"Changed {days[1]}", f"Changed {days[2]}"] + header)
+
+def field_widths(sc):
+    """One width per column of the report, as the grid shows it."""
     wide = sc.data_widths or {}
-    _widths(ws, [8, 30, 22, 9, 11, 11]
-            + [max(12, min(40, int(wide.get(c) or 16))) for c in header])
+    return [max(12, min(40, int(wide.get(c) or 16))) for c in sc.header]
+
+
+def shown_only(sc):
+    """The columns that are shown and never counted."""
+    return {sc.header[f] for f in sc.field_indices if sc.is_context(f)}
+
+
+def _grid_legend(ws, st, sc, days):
+    """The grid's first row: how to read a changed cell, and the colours."""
     legend = [_cell(ws, st, "A changed cell shows its three days in order "
                     f"({days[0]} → {days[1]} → {days[2]}; — = not on that day):",
                     st.bold), None, None]
@@ -457,11 +524,23 @@ def _write_grid(wb, st, sc, rows, compared, days, events):
     legend.append(_cell(ws, st, f"{sc.id_noun} on two days only", st.font["two"],
                         st.fill["two"]))
     legend.append(_cell(ws, st, "grey header = shown, never counted", st.muted))
-    ws.append(legend)
-    ws.append(_header(ws, st, labels, grey=shown_only))
+    return legend
+
+
+def _write_grid(wb, st, sc, rows, compared, days, events):
+    """One row per record, every column, each changed cell showing its history
+    and filled by its class."""
+    from openpyxl.utils import get_column_letter
+
+    ws = wb.create_sheet(GRID_SHEET)
+    ws.sheet_properties.tabColor = _DARK
+    ws.freeze_panes = "C3"
+    labels = grid_labels(sc, days)
+    _widths(ws, GRID_LEAD_WIDTHS + field_widths(sc))
+    ws.append(_grid_legend(ws, st, sc, days))
+    ws.append(_header(ws, st, labels, grey=shown_only(sc)))
     ws.auto_filter.ref = (f"A{GRID_FIRST_ROW - 1}:{get_column_letter(len(labels))}"
                           f"{len(compared.records) + GRID_FIRST_ROW - 1}")
-    same = td.CODE[td.SAME]
     trim = compared.trim
     for k, (rec, state) in enumerate(zip(compared.records, compared.states)):
         if k % 2000 == 0:
@@ -616,6 +695,8 @@ def write_workbook(sc, rows, compared, days, out_path, meta, events=None,
         raise
 
 
-__all__ = ["GRID_FIRST_ROW", "GRID_SHEET", "SHEETS", "UnwritableValue", "day_text",
-           "grid_text", "history", "route_table", "standard_notes", "summary_lines",
-           "two_day_change", "write_workbook"]
+__all__ = ["GRID_FIRST_ROW", "GRID_SHEET", "SHEETS", "UnwritableValue",
+           "changed_cells", "day_text", "field_widths", "grid_labels", "grid_text",
+           "history", "partial_records", "route_table", "shown_only",
+           "standard_notes", "summary_lines", "total_changed", "two_day_change",
+           "write_workbook"]
