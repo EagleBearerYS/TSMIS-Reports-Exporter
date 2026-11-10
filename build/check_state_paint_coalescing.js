@@ -77,6 +77,7 @@ for (const [fn, guard] of [
   ["updateDayMatrixProgress", "DAY_MATRIX_GROUP"],
   ["updateBaselineMatrixProgress", "BASELINE_MATRIX_GROUP"],
   ["updatePveMatrixProgress", "PVE_MATRIX_GROUP"],
+  ["updateThreeDayMatrixProgress", "THREE_DAY_MATRIX_GROUP"],
 ]) {
   const line = paintSrc.split("\n").find((l) => l.includes(fn + "()"));
   check(`${fn} is gated on ${guard}`,

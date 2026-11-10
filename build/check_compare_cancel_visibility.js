@@ -58,6 +58,13 @@ check("a by-day matrix comparison LOCKS",
       lock({ task: "matrix", matrix_current: { which: "day" } }) === true);
 check("a vs-baseline matrix comparison LOCKS",
       lock({ task: "matrix", matrix_current: { which: "baseline" } }) === true);
+check("a PDF-vs-Excel matrix comparison LOCKS",
+      lock({ task: "matrix", matrix_current: { which: "pdf_vs_excel" } }) === true);
+check("a Three Days matrix comparison LOCKS",
+      lock({ task: "matrix", matrix_current: { which: "three_day" } }) === true);
+// The ArcGIS tab's matrices are another tab too (their own Cancel).
+check("an ArcGIS three-way matrix run does NOT lock the Compare strip",
+      lock({ task: "matrix", matrix_current: { which: "three_way" } }) === false);
 
 // An EVERYTHING-tab matrix run is a different tab (its own Cancel) -> never locks
 // this strip; and a matrix task with no current job can't be a Compare-tab run.

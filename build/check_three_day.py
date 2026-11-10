@@ -29,7 +29,8 @@ Drives the SHIPPED path on synthetic data (no corpus files):
     raw file no longer says what the workbook says;
   * staleness when any of the three days' exports moves, when the results
     cache is lost, and when the workbook is rewritten; the scoped rebuild list;
-  * the matrix store: the cell's file and cache record per source.
+  * the bridge: adding a set of days in any order, its refusals, the queued
+    job, and the worker building the cell.
 
 Run with the build venv:
     build\\.venv\\Scripts\\python.exe build\\check_three_day.py
@@ -37,9 +38,11 @@ Run with the build venv:
 import contextlib
 import io
 import os
+import queue
 import random
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -52,11 +55,16 @@ from openpyxl import Workbook, load_workbook  # noqa: E402
 
 import clean_road_columns as crc  # noqa: E402
 import compare_core as core  # noqa: E402
+import compare_timings  # noqa: E402
 import compare_env_editions as cee  # noqa: E402
+import gui_api  # noqa: E402
+import gui_three_day_api  # noqa: E402
+import gui_worker_matrix  # noqa: E402
 import matrix  # noqa: E402
 import outcome  # noqa: E402
 import paths  # noqa: E402
 import reports  # noqa: E402
+import settings  # noqa: E402
 import three_day as td  # noqa: E402
 import three_day_check  # noqa: E402  (tools/: the independent raw-file check)
 import three_day_matrix as tdm  # noqa: E402
@@ -907,13 +915,140 @@ def test_matrix(tmp):
             c.check(f"build_cell refuses {why}", refused)
 
 
+# --------------------------------------------------------------------------- #
+# 6. the bridge and the worker
+# --------------------------------------------------------------------------- #
+class _FakeWorker:
+    last = None
+
+    def __init__(self, *args, **kwargs):
+        _FakeWorker.last = (args, kwargs)
+
+    def start(self):
+        pass
+
+
+def test_bridge(tmp):
+    print("the bridge and the worker:")
+    cfg = tmp / "cfg"
+    cfg.mkdir()
+    # The worker times each cell for the live ETA: keep this fixture's
+    # split-second runs out of the app's own timings file.
+    with patch(paths, "OUTPUT_ROOT", tmp / "output"), \
+            patch(settings, "CONFIG_FILE", cfg / "config.json"), \
+            patch(compare_timings, "_FILE", cfg / "compare_timings.json"), \
+            patch(gui_three_day_api, "ThreeDayMatrixCompareWorker", _FakeWorker):
+        settings._cache = settings._cache_mtime = None
+        _write_days(paths.OUTPUT_ROOT)
+        api = gui_api.GuiApi()
+        c.check("the source saves in its explicit site form",
+                api.set_three_day_matrix_source(SRC).get("ok")
+                and settings.get_three_day_matrix_source() == SRC)
+        info = api.three_day_matrix_info()
+        c.check("the snapshot starts with no set and offers the three days",
+                info["sets"] == [] and info["available_days"] == list(reversed(DAYS))
+                and info["rows"] == list(tdm.ROW_KEYS), info.get("available_days"))
+        c.check("three different days are required",
+                bool(api.add_three_day_matrix_set(DAYS[0], DAYS[0], DAYS[2]).get("error"))
+                and bool(api.add_three_day_matrix_set(DAYS[0], "", DAYS[2]).get("error")))
+        c.check("a day with no export is refused by name",
+                "2026-01-01" in api.add_three_day_matrix_set(
+                    DAYS[0], DAYS[1], "2026-01-01").get("error", ""))
+        added = api.add_three_day_matrix_set(DAYS[2], DAYS[0], DAYS[1])
+        c.check("three days picked newest first become ONE oldest-first set",
+                added.get("set") == SET and settings.get_three_day_matrix_sets() == [SET],
+                added)
+        c.check("adding the same days again adds nothing",
+                api.add_three_day_matrix_set(*DAYS).get("sets") == [SET])
+        info = api.three_day_matrix_info()
+        c.check("the snapshot carries the set and its cells",
+                info["sets"] == [{"id": SET, "days": list(DAYS)}]
+                and matrix.cell_buildable(info["cells"]["clean_ramp"][SET]["cmp"]))
+        c.check("a row can be hidden and shown; an unknown one is refused",
+                api.set_three_day_matrix_report("clean_highway_pdf", False).get("ok")
+                and "clean_highway_pdf" not in api.three_day_matrix_info()["rows"]
+                and api.set_three_day_matrix_report("clean_highway_pdf", True).get("ok")
+                and bool(api.set_three_day_matrix_report("nope", False).get("error")))
+        order = ["clean_ramp", "clean_highway"]
+        c.check("the row order is kept as dragged",
+                api.set_three_day_matrix_row_order(order + ["nope"]).get("order") == order
+                and api.three_day_matrix_info()["rows"][:2] == order)
+        refusal = api.build_three_day_matrix_cell("clean_ramp_pdf", SET).get("error", "")
+        c.check("a cell with a missing export refuses to build, naming the days",
+                all(d in refusal for d in DAYS) and "Clean Road: Ramp (PDF)" in refusal,
+                refusal)
+        c.check("an unknown set refuses",
+                bool(api.build_three_day_matrix_cell("clean_ramp", "x").get("error")))
+        _FakeWorker.last = None
+        queued = api.build_three_day_matrix_cell("clean_ramp", SET)
+        args = _FakeWorker.last[0] if _FakeWorker.last else ()
+        c.check("building a cell dispatches the three-day worker with that cell",
+                queued.get("ok") and args[:2] == (SRC, [(SET, "clean_ramp")]), args)
+        state = api._state_snapshot()
+        cur = state.get("matrix_current") or {}
+        c.check("the running job is a three-day job named for its days",
+                cur.get("which") == "three_day"
+                and " → ".join(DAYS) in cur.get("label", ""), cur)
+        later = api.rebuild_three_day_matrix("stale")
+        c.check("a second request queues behind it", later.get("ok")
+                and len(api._state_snapshot().get("matrix_queue") or []) == 1, later)
+        c.check("the rebuild resolves the stale cells of a row or a set",
+                api._resolve_three_day_cells({"scope": "row", "row": "clean_ramp",
+                                              "env": None}) == [(SET, "clean_ramp")]
+                and api._resolve_three_day_cells({"scope": "column", "row": None,
+                                                  "env": SET}) == [(SET, "clean_ramp")])
+        c.check("removing the set empties the matrix",
+                api.remove_three_day_matrix_set(SET).get("sets") == []
+                and api.three_day_matrix_info()["sets"] == [])
+
+        settings.set_three_day_matrix_source("ssor-prod other-site")
+        c.check("a saved source that is no longer offered falls back for the grid, "
+                "Add and Build alike",
+                api._three_day_source() == SRC
+                and api.three_day_matrix_info()["source"] == SRC
+                and api.add_three_day_matrix_set(*DAYS).get("set") == SET
+                and api.remove_three_day_matrix_set(SET).get("sets") == [])
+        settings.set_three_day_matrix_source(SRC)
+
+        # the real worker, run to completion in this thread
+        q = queue.Queue()
+        worker = gui_worker_matrix.ThreeDayMatrixCompareWorker(
+            SRC, [(SET, "clean_ramp")], q, threading.Event())
+        worker.run()
+        events = []
+        while not q.empty():
+            events.append(q.get())
+        done = [p for kind, p in events if kind == "matrix_done"]
+        cells = [p for kind, p in events if kind == "matrix_cell"]
+        c.check("the worker builds the cell and reports it done",
+                len(done) == 1 and done[0]["succeeded"] == 1 and done[0]["failed"] == 0
+                and [p["status"] for p in cells] == ["running", "ok"]
+                and cells[0]["cell"] == SET, (done, cells))
+        cell = _cell(tdm.matrix_snapshot(SRC, [SET]))
+        c.check("...and the matrix then reads it fresh",
+                cell["built"] and not cell["stale"] and cell["three_day"]["newest"] == 1,
+                cell)
+        cancel = threading.Event()
+        cancel.set()
+        q = queue.Queue()
+        gui_worker_matrix.ThreeDayMatrixCompareWorker(
+            SRC, [(SET, "clean_ramp")], q, cancel).run()
+        done = [p for kind, p in list(q.queue) if kind == "matrix_done"]
+        c.check("a cancelled run attempts nothing and says it was cancelled",
+                len(done) == 1 and done[0]["cancelled"] and done[0]["attempted"] == 0,
+                done)
+        c.check("the cell's duration went to the timings file this check owns",
+                "clean_ramp|three_day" in compare_timings._load())
+    settings._cache = settings._cache_mtime = None
+
+
 def main():
     with pinned_site("dev"), temp_dir("tsmis_td_") as tmp:
         tmp = Path(tmp)
         test_classes()
         for name, test in (("fx", test_fixture), ("eq", test_two_day_equivalence),
                            ("gate", test_gate), ("edge", test_edges),
-                           ("mx", test_matrix)):
+                           ("mx", test_matrix), ("br", test_bridge)):
             sub = tmp / name
             sub.mkdir()
             test(sub)

@@ -222,12 +222,17 @@ warning colour and the Notes sheet leads with it.
 `tsn_library/highway_log/raw/` — the one drop location since v0.30.0 retired
 `input/`) and the app's own PDF editions. The **Compare** tab diffs every report
 TSMIS-vs-TSN (each PDF edition also offers a PDF-vs-Excel self-check), runs
-cross-environment comparisons, and hosts three matrices beyond the Everything one:
+cross-environment comparisons, and hosts four matrices beyond the Everything one:
 the **by-day** vs-TSN matrix, the **vs Baseline Matrix** (any exported day vs an
-EARLIER pull of the same report; `baseline_matrix.py`, §12c), and the **PDF vs Excel
+EARLIER pull of the same report; `baseline_matrix.py`, §12c), the **PDF vs Excel
 Matrix** (v0.31.0 — the 11 dual-edition families × exported days, each cell that day's
 PDF export self-checked against its Excel export from the SAME run folder;
-`pdf_excel_matrix.py`).
+`pdf_excel_matrix.py`), and the **Three Days Matrix** (v0.52.0, `three_day.py` +
+`three_day_matrix.py`, §9p / §12f — the Clean Road editions × sets of three exported
+days, each cell that report's three exports classified cell by cell: changed on the
+newest day, changed on the middle day and kept, changed and back, changed both
+times. It loads each day through the vs Baseline matrix's own adapter, so every pair
+of days reads exactly as its two-day comparison does).
 
 **Visual evidence** (HD, ID, HL, HSL, RD vs-TSN + the self checks): sampled diffs
 render as highlighted snippets from both sources — parse-back-verified, ditto-aware
@@ -596,6 +601,13 @@ scripts/                     the engine (console-free) + console & GUI drivers +
   compare_clean_road_three_way.py   the Clean Road adapters: loaders, the two pairing
                              schemas, the every-column layer trace, "look it up" locations
   three_way_matrix.py        the ArcGIS-tab Three-way by-day matrix (TSN + ArcGIS + export)
+  three_day.py               the three-day engine (v0.52.0): one report on three export
+                             days through its cross-environment adapter, the middle day
+                             anchoring compare_core's own pairing, the five cell classes,
+                             each pair's two-day counts, the counts in its sidecar
+  three_day_workbook.py      its values workbook (Summary, Routes, Changes, Added &
+                             removed, the record grid, Notes)
+  three_day_matrix.py        the Compare-tab Three Days matrix (sets of three days)
   highway_log_columns.py intersection_detail_columns.py highway_detail_columns.py   the per-report column labels
   highway_summary_columns.py the Highway Summary layout SoT: sections/codes + the ONE
                              strict miles reader the consolidator, the cross-env loader
@@ -604,6 +616,7 @@ scripts/                     the engine (console-free) + console & GUI drivers +
   gui_main.py gui_api.py     GUI entry / the bridge core (state, pump, gate)
   gui_export_api.py gui_auth_api.py gui_compare_api.py gui_settings_api.py gui_update.py   the endpoint mixins (S1)
   gui_arcgis_api.py gui_arcgis_layers_api.py gui_three_way_api.py   the ArcGIS tab's endpoint mixins
+  gui_three_day_api.py       the Compare ▸ Three Days Matrix endpoint mixin
   gui_worker.py              re-export SHIM over gui_worker_export/_env/_maint/_matrix.py (S2)
   task_coordinator.py contract.py        GUI task-state owner / Python⇄JS bridge enum SSOT
   gui_endpoint.py gui_matrix.py gui_win32.py   the endpoint envelope (+_task_endpoint/pick_path) / matrix mixin / Win32

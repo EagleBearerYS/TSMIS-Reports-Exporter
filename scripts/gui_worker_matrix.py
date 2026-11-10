@@ -843,6 +843,78 @@ class ThreeWayMatrixCompareWorker(threading.Thread):
                                         "elapsed_s": round(clock.elapsed, 1)}))
 
 
+class ThreeDayMatrixCompareWorker(threading.Thread):
+    """(Re)build Compare-tab "Three Days" cells — each a (set of three days,
+    edition) comparison of that report's three exports
+    (three_day_matrix.build_cell).
+
+    `cells` is a list of (set id, row_key). No browser. Honors cancel BETWEEN
+    cells (each finished cell is saved) and posts the same ('matrix_cell', …) /
+    ('matrix_done', …) events as the other compare workers."""
+
+    def __init__(self, source, cells, queue, cancel_event):
+        super().__init__(daemon=True, name="three-day-matrix-compare")
+        self.source = source
+        self.cells = [(c[0], c[1]) for c in cells]   # (set id, row_key)
+        self.q = queue
+        self.cancel = cancel_event
+
+    def run(self):
+        import three_day_matrix                       # lazy: pulls the adapters
+
+        events = Events(is_cancelled=self.cancel.is_set,
+                        on_log=lambda m: self.q.put(("log", m)))
+        tally = _AttemptTally(len(self.cells))
+        total = tally.total
+        clock = _RunClock([f"{row}|three_day" for _set, row in self.cells])
+        attempts_root = three_day_matrix.td_root()
+        try:
+            for set_key, row_key in self.cells:
+                if self.cancel.is_set():
+                    break
+                shown = " → ".join(set_key.split("_"))
+                self.q.put(("matrix_cell", {"row": row_key, "cell": set_key,
+                                            "status": "running",
+                                            "done": tally.done, "total": total,
+                                            **clock.progress_extra()}))
+                self.q.put(("log", f"  ▸ comparing {row_key} across {shown}…"))
+                error_type = None
+                started = clock.start()
+                try:
+                    res = three_day_matrix.build_cell(self.source, set_key, row_key,
+                                                      events)
+                    attempt, why = _attempt_state(
+                        res, cancelled=res.status == "cancelled")
+                    status = res.status
+                    if status != "ok":
+                        tally.errors += 1
+                except Exception as e:                   # noqa: BLE001
+                    log.exception("three-day matrix compare %s/%s crashed",
+                                  set_key, row_key)
+                    cancelled_cell = self.cancel.is_set()
+                    status = "cancelled" if cancelled_cell else "error"
+                    tally.errors += 1
+                    attempt, why = _attempt_state(None, cancelled=cancelled_cell)
+                    if not cancelled_cell:
+                        why = f"{type(e).__name__}: {e}"
+                        error_type = type(e).__name__
+                dur = clock.finish(f"{row_key}|three_day", started)
+                self.q.put(("log", _cell_done_line(row_key, shown, "three_day",
+                                                   attempt, why, dur)))
+                tally.count(attempt)
+                _record_attempt(attempts_root, f"{row_key}|{self.source}", set_key,
+                                attempt, why, error_type=error_type,
+                                clear_preview=False)
+                tally.done += 1
+                self.q.put(("matrix_cell", {"row": row_key, "cell": set_key,
+                                            "status": status,
+                                            "done": tally.done, "total": total,
+                                            **clock.progress_extra()}))
+        finally:
+            self.q.put(("matrix_done", {**tally.payload(self.cancel.is_set()),
+                                        "elapsed_s": round(clock.elapsed, 1)}))
+
+
 class MatrixEvidenceWorker(threading.Thread):
     """Run the ON-DEMAND evidence generation for ONE cell's EXISTING vs-TSN
     comparison (either matrix — the caller pre-binds the resolver). No browser,

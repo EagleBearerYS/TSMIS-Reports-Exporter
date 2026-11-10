@@ -159,6 +159,10 @@ function makeMockApi() {
     baseline_matrix_hidden: [],
     baseline_matrix_row_order: [],
     baseline_matrix_formulas: false,
+    three_day_matrix_source: "ssor-prod dev-site",  // v0.52.0 "Three Days" matrix
+    three_day_matrix_sets: ["2026-06-11_2026-06-17_2026-06-18"],
+    three_day_matrix_hidden: [],
+    three_day_matrix_row_order: [],
     evidence: {                  // v0.21.0 visual-evidence toggle (shared); v0.22.0 per-report;
       // v0.24.0 Highway Log (raw-sourced prints) + the named unsupported rows;
       // v0.25.0 Highway Sequence (raw-sourced like Highway Log);
@@ -1140,6 +1144,98 @@ function makeMockApi() {
              library: { drop: MOCK_AG_DROP, builds },
              available_days: mockAvail(source),
              available_day_reports: mockDayReports(MOCK_TW_DAY_REPORTS, source, false) };
+  }
+
+  // ---- the Compare tab: "Three Days" matrix (v0.52.0) ----
+  // The six Clean Road editions across a SET of three exported days. The preview
+  // shows the states a real set lands in: Highway with many changes (red), Ramp
+  // with a handful (amber), Intersection with none on the newest day, a stale
+  // cell, and the print rows waiting on a day that has no PDF export. Counts are
+  // the real 2026-10-30 → 11-03 → 11-06 dev-site results.
+  const MOCK_TD_ROWS = MOCK_TW_ROWS.map((r) => ({ key: r.key, label: r.label, code: r.code }));
+  const MOCK_TD_DAY_REPORTS = {
+    "ssor-prod": { "2026-06-18": ["CR-HWY", "CR-HWY-PDF", "CR-INT", "CR-INT-PDF", "CR-RMP", "CR-RMP-PDF"],
+                   "2026-06-17": ["CR-HWY", "CR-HWY-PDF", "CR-INT", "CR-INT-PDF", "CR-RMP", "CR-RMP-PDF"],
+                   "2026-06-11": ["CR-HWY", "CR-INT", "CR-RMP"] },
+    "ars-prod": { "2026-06-17": ["CR-RMP"], "2026-06-11": ["CR-RMP"] },
+  };
+  const mockTdPair = (paired, earlier, later, recs, cells) => ({
+    paired, only_earlier: earlier, only_later: later, differing_records: recs,
+    differing_cells: cells });
+  const MOCK_TD_COUNTS = {
+    clean_highway: {
+      newest: 41355, middle: 1354, back: 4896, both: 68, same: 3587751, changed: 47673,
+      added: 2543, removed: 470, middle_only: 317, two_day: 456, counted_columns: 72,
+      records: { all: 50492, d12: 247, d23: 756, d13: 176, d1: 223, d2: 141, d3: 1787 },
+      pairs: { "1-2": mockTdPair(50739, 399, 897, 883, 6407),
+               "2-3": mockTdPair(51248, 388, 1963, 3929, 46601),
+               "1-3": mockTdPair(50668, 470, 2543, 4000, 42862) } },
+    clean_intersection: {
+      newest: 0, middle: 4, back: 0, both: 0, same: 868348, changed: 4, added: 0,
+      removed: 0, middle_only: 0, two_day: 0, counted_columns: 53,
+      records: { all: 16384, d12: 0, d23: 0, d13: 0, d1: 0, d2: 0, d3: 0 },
+      pairs: { "1-2": mockTdPair(16384, 0, 0, 4, 4), "2-3": mockTdPair(16384, 0, 0, 0, 0),
+               "1-3": mockTdPair(16384, 0, 0, 4, 4) } },
+    clean_ramp: {
+      newest: 5, middle: 18, back: 0, both: 0, same: 486825, changed: 23, added: 1,
+      removed: 0, middle_only: 0, two_day: 0, counted_columns: 32,
+      records: { all: 15214, d12: 0, d23: 1, d13: 0, d1: 0, d2: 0, d3: 0 },
+      pairs: { "1-2": mockTdPair(15214, 0, 1, 13, 18), "2-3": mockTdPair(15215, 0, 0, 1, 5),
+               "1-3": mockTdPair(15214, 0, 1, 14, 23) } },
+  };
+  const mockTdCode = (rk) => (MOCK_TD_ROWS.find((r) => r.key === rk) || {}).code;
+  const mockTdLabel = (rk) => (MOCK_TD_ROWS.find((r) => r.key === rk) || {}).label || rk;
+  const mockTdArrow = (sid) => String(sid).split("_").join(" → ");
+  function mockTdSnapshot() {
+    const source = st.three_day_matrix_source || "ssor-prod dev-site";
+    const avail = mockAvail(source);
+    const sets = (st.three_day_matrix_sets || [])
+      .filter((sid) => sid.split("_").every((d) => avail.indexOf(d) >= 0))
+      .sort((a, b) => a.split("_").reverse().join().localeCompare(b.split("_").reverse().join()));
+    const hidden = st.three_day_matrix_hidden || [];
+    const visible = MOCK_TD_ROWS.filter((r) => hidden.indexOf(r.key) < 0);
+    const byKey = {}; visible.forEach((r) => { byKey[r.key] = r; });
+    const shown = mockApplyOrder(visible.map((r) => r.key), st.three_day_matrix_row_order)
+      .map((k) => byKey[k]);
+    const dayReports = MOCK_TD_DAY_REPORTS[mockEnv(source)] || {};
+    const cells = {}, rowLabels = {};
+    MOCK_TD_ROWS.forEach((r) => { rowLabels[r.key] = r.label; });
+    shown.forEach((r) => {
+      cells[r.key] = {};
+      sets.forEach((sid, i) => {
+        const days = sid.split("_");
+        const exports = days.map((d, k) => {
+          const present = (dayReports[d] || []).indexOf(r.code) >= 0;
+          return { date: d, present, mtime: 0,
+                   age_seconds: present ? (9 - 3 * k) * 86400 : null };
+        });
+        const missingDays = exports.filter((e) => !e.present).map((e) => e.date);
+        let cmp;
+        if (missingDays.length) {
+          cmp = { supported: true, built: false, stale: true, reason: "missing",
+                  missing_side: "day" + (days.indexOf(missingDays[0]) + 1),
+                  missing_sides: missingDays.map((d) => "day" + (days.indexOf(d) + 1)),
+                  missing_days: missingDays };
+        } else if (i > 0 || !MOCK_TD_COUNTS[r.key]) {
+          cmp = { supported: true, built: false, stale: true, reason: "missing",
+                  missing_side: null, missing_sides: [], missing_days: [] };
+        } else {
+          const stale = r.key === "clean_intersection";
+          cmp = { supported: true, built: true, mtime: 1794000000, completion: "complete",
+                  stale, reason: stale ? "day3_newer" : "fresh", missing_side: null,
+                  missing_sides: [], missing_days: [], three_day: MOCK_TD_COUNTS[r.key] };
+        }
+        cells[r.key][sid] = { exports, cmp };
+      });
+    });
+    return { source, sources: mockSourceOptions(),
+             day_hosts: mockDayHosts(source, avail),
+             ...mockSourceInfo(source),
+             sets: sets.map((sid) => ({ id: sid, days: sid.split("_") })),
+             today: MOCK_TODAY, rows: shown.map((r) => r.key), row_labels: rowLabels,
+             all_rows: MOCK_TD_ROWS.map((r) => ({ ...r })), hidden, cells,
+             available_days: avail,
+             available_day_reports: mockDayReports(MOCK_TD_DAY_REPORTS, source, false) };
   }
 
   // v0.16.0 mock job queue — mirrors gui_api: enqueue, run one at a time, auto-
@@ -2598,6 +2694,62 @@ function makeMockApi() {
     },
     open_three_way_comparisons_folder: async () => {
       push({ t: "log", text: "(mock) open the three-way comparisons folder" });
+      return { ok: true };
+    },
+    // ---- the Compare tab: Three Days matrix (v0.52.0) ----
+    three_day_matrix_info: async () => mockTdSnapshot(),
+    set_three_day_matrix_source: async (s) => {
+      st.three_day_matrix_source = s;
+      const avail = mockAvail(s);
+      st.three_day_matrix_sets = (st.three_day_matrix_sets || [])
+        .filter((sid) => sid.split("_").every((d) => avail.indexOf(d) >= 0));
+      pushState(); return { ok: true, source: s, sets: st.three_day_matrix_sets };
+    },
+    add_three_day_matrix_set: async (a, b, c) => {
+      const days = [...new Set([a, b, c].filter(Boolean))].sort();
+      if (days.length !== 3) return { error: "Pick three different days." };
+      const avail = mockAvail(st.three_day_matrix_source || "ssor-prod dev-site");
+      const missing = days.filter((d) => avail.indexOf(d) < 0);
+      if (missing.length)
+        return { error: `${missing.join(", ")} has no export for this source (only exported days can be compared).` };
+      const sid = days.join("_");
+      if ((st.three_day_matrix_sets || []).indexOf(sid) < 0)
+        st.three_day_matrix_sets = [...(st.three_day_matrix_sets || []), sid];
+      pushState(); return { ok: true, set: sid, sets: st.three_day_matrix_sets };
+    },
+    remove_three_day_matrix_set: async (sid) => {
+      st.three_day_matrix_sets = (st.three_day_matrix_sets || []).filter((x) => x !== sid);
+      pushState(); return { ok: true, sets: st.three_day_matrix_sets };
+    },
+    set_three_day_matrix_report: async (rk, visible) => {
+      const hidden = new Set(st.three_day_matrix_hidden || []);
+      if (visible) hidden.delete(rk); else hidden.add(rk);
+      if (hidden.size >= MOCK_TD_ROWS.length) return { error: "Keep at least one report on the matrix." };
+      st.three_day_matrix_hidden = [...hidden];
+      return { ok: true, hidden: st.three_day_matrix_hidden };
+    },
+    set_three_day_matrix_row_order: async (keys) => {
+      st.three_day_matrix_row_order = keys || [];
+      pushState(); return { ok: true, order: st.three_day_matrix_row_order };
+    },
+    build_three_day_matrix_cell: async (rk, sid) =>
+      mockEnqueue("compare", "cell", `Three days ${mockTdLabel(rk)} — ${mockTdArrow(sid)}`,
+                  { which: "three_day", total: 1 }),
+    rebuild_three_day_matrix: async (scope, row, sid) => {
+      if (!(st.three_day_matrix_sets || []).length) return { ok: true, nothing: true };
+      const label = row ? `Three days ${mockTdLabel(row)} — every set of days`
+        : sid ? `Three days all reports — ${mockTdArrow(sid)}`
+        : scope === "all" ? "Rebuild all three-day comparisons"
+          : "Refresh stale three-day comparisons";
+      return mockEnqueue("compare", row ? "row" : sid ? "column" : scope, label,
+                         { which: "three_day", total: row ? 1 : 3 });
+    },
+    open_three_day_cell_comparison: async (rk, sid) => {
+      push({ t: "log", text: `(mock) open three-day workbook: ${rk}_three_days ${sid.split("_").join(" ")}.xlsx` });
+      return { ok: true };
+    },
+    open_three_day_comparisons_folder: async () => {
+      push({ t: "log", text: "(mock) open the three-day comparisons folder" });
       return { ok: true };
     },
     open_arcgis_reports_folder: async () => push({ t: "log", text: "(mock) would open the arcgis_reports builds folder" }),

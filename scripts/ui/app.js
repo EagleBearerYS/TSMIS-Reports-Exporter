@@ -237,6 +237,13 @@ function buildStatic() {
   pveTab.textContent = "PDF vs Excel Matrix";
   pveTab.addEventListener("click", () => selectCompareGroup(PVE_MATRIX_GROUP));
   subStrip.appendChild(pveTab);
+  // Three export days of one report at once (v0.52.0).
+  const tdTab = document.createElement("button");
+  tdTab.className = "subtab"; tdTab.dataset.group = THREE_DAY_MATRIX_GROUP;
+  tdTab.setAttribute("role", "tab"); tdTab.setAttribute("aria-selected", "false");
+  tdTab.textContent = "Three Days Matrix";
+  tdTab.addEventListener("click", () => selectCompareGroup(THREE_DAY_MATRIX_GROUP));
+  subStrip.appendChild(tdTab);
 
   const cl2 = $("compareList");
   // W2: family headers inside each comparison-type sub-tab; tracked PER SUB-TAB
@@ -1061,6 +1068,7 @@ function paintState() {
   if (onCompareGroup(DAY_MATRIX_GROUP)) updateDayMatrixProgress();
   if (onCompareGroup(BASELINE_MATRIX_GROUP)) updateBaselineMatrixProgress();
   if (onCompareGroup(PVE_MATRIX_GROUP)) updatePveMatrixProgress();
+  if (onCompareGroup(THREE_DAY_MATRIX_GROUP)) updateThreeDayMatrixProgress();
   if (typeof syncArcgisLock === "function") syncArcgisLock();
   // env_access can change on a push (background active-env check / scan) —
   // re-overlay the matrix warnings without a full rebuild when one is visible.
@@ -1123,6 +1131,7 @@ function dispatch(events) {
           if (S.tab === "compare" && S.compareGroup === DAY_MATRIX_GROUP) renderDayMatrix();
           if (S.tab === "compare" && S.compareGroup === BASELINE_MATRIX_GROUP) renderBaselineMatrix();
           if (S.tab === "compare" && S.compareGroup === PVE_MATRIX_GROUP) renderPveMatrix();
+          if (S.tab === "compare" && S.compareGroup === THREE_DAY_MATRIX_GROUP) renderThreeDayMatrix();
           if (S.tab === "arcgis") renderArcgisTab();
           break;
         case "matrix_refresh":
@@ -1130,6 +1139,7 @@ function dispatch(events) {
           if (S.tab === "compare" && S.compareGroup === DAY_MATRIX_GROUP) renderDayMatrix();
           if (S.tab === "compare" && S.compareGroup === BASELINE_MATRIX_GROUP) renderBaselineMatrix();
           if (S.tab === "compare" && S.compareGroup === PVE_MATRIX_GROUP) renderPveMatrix();
+          if (S.tab === "compare" && S.compareGroup === THREE_DAY_MATRIX_GROUP) renderThreeDayMatrix();
           if (typeof arcgisMatrixActive === "function" && arcgisMatrixActive()) renderArcgisMatrix();
           if (typeof threeWayMatrixActive === "function" && threeWayMatrixActive()) renderThreeWayMatrix();
           if (S.tab === "arcgis" && typeof agSub !== "undefined" && agSub === "layers") renderArcgisLayers();
@@ -1211,6 +1221,7 @@ function bindEvents() {
       if (tab === "compare" && S.compareGroup === DAY_MATRIX_GROUP) renderDayMatrix();
       if (tab === "compare" && S.compareGroup === BASELINE_MATRIX_GROUP) renderBaselineMatrix();
       if (tab === "compare" && S.compareGroup === PVE_MATRIX_GROUP) renderPveMatrix();
+      if (tab === "compare" && S.compareGroup === THREE_DAY_MATRIX_GROUP) renderThreeDayMatrix();
       applyMatrixWide();   // clears matrix-wide unless a day matrix is active
     }
     updateActivityCards();
@@ -1336,6 +1347,9 @@ function bindEvents() {
   // …and so does the ArcGIS "Three-way" matrix (v0.51.0).
   $("btnTwQueueClear")?.addEventListener("click", () => api.matrix_queue_clear());
   $("btnTwQueueStopAll")?.addEventListener("click", () => api.matrix_stop_all());
+  // …and the Compare tab's Three Days matrix (v0.52.0).
+  $("btnThreeDayQueueClear")?.addEventListener("click", () => api.matrix_queue_clear());
+  $("btnThreeDayQueueStopAll")?.addEventListener("click", () => api.matrix_stop_all());
 
   renderThemeButton();
   $("btnTheme").onclick = () => {
