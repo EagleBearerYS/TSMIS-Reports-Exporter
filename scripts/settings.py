@@ -1075,6 +1075,61 @@ def set_three_way_matrix_row_order(keys):
     return _set_order("three_way_matrix_row_order", keys)
 
 
+# ---- Compare-tab "Three Days" matrix (v0.52.0) ------------------------------
+# A source, the SETS of three days the user added (each '<oldest>_<middle>_
+# <newest>', validated by three_day_matrix), hidden rows and a drag row order.
+# Values workbooks only, so no formulas toggle.
+
+_DEFAULT_THREE_DAY_MATRIX_SOURCE = "ssor-prod"
+
+
+def get_three_day_matrix_source():
+    """The saved source in its explicit '<src>-<env> <host>-site' form."""
+    raw = _read_file().get("three_day_matrix_source")
+    raw = raw.strip() if isinstance(raw, str) else ""
+    return qualify_day_source(raw, _DEFAULT_THREE_DAY_MATRIX_SOURCE)
+
+
+def set_three_day_matrix_source(key):
+    """Save (or, empty, reset) the Three Days matrix source."""
+    data = dict(_read_file())
+    key = (key or "").strip()
+    if key:
+        data["three_day_matrix_source"] = key
+    else:
+        data.pop("three_day_matrix_source", None)
+    _atomic_write(data)
+    log.info("settings: three_day_matrix_source -> %s", key or "(default)")
+    return get_three_day_matrix_source()
+
+
+def get_three_day_matrix_sets():
+    """The sets of three days the user added, as set ids (default: none)."""
+    return _get_order("three_day_matrix_sets")
+
+
+def set_three_day_matrix_sets(set_ids):
+    return _set_order("three_day_matrix_sets", set_ids)
+
+
+def get_three_day_matrix_hidden():
+    """Hidden edition rows on the Three Days matrix (default: none)."""
+    return _get_str_list("three_day_matrix_hidden")
+
+
+def set_three_day_matrix_hidden(keys):
+    return _set_str_list("three_day_matrix_hidden", keys)
+
+
+def get_three_day_matrix_row_order():
+    """The user's drag-to-reorder row order (default: none = registry order)."""
+    return _get_order("three_day_matrix_row_order")
+
+
+def set_three_day_matrix_row_order(keys):
+    return _set_order("three_day_matrix_row_order", keys)
+
+
 def get_arcgis_python():
     """ArcGIS Pro's python.exe as chosen on the ArcGIS ▸ Layers tab ("" = find
     it automatically). Used only when the file still exists."""

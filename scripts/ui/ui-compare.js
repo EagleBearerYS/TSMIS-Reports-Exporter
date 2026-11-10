@@ -19,6 +19,7 @@ function compareKind() {
 const DAY_MATRIX_GROUP = "tsn_by_day";
 const BASELINE_MATRIX_GROUP = "baseline_by_day";
 const PVE_MATRIX_GROUP = "pdf_vs_excel_by_day";   // M2-B
+const THREE_DAY_MATRIX_GROUP = "three_days";      // v0.52.0
 
 // Full-width "matrix" layout is shared by the Everything comparison matrix and the
 // Compare-tab day matrices. Compute it from the active tab/sub-tab in ONE place so
@@ -30,14 +31,16 @@ function applyMatrixWide() {
   const day = S.tab === "compare" && S.compareGroup === DAY_MATRIX_GROUP;
   const bl = S.tab === "compare" && S.compareGroup === BASELINE_MATRIX_GROUP;
   const pve = S.tab === "compare" && S.compareGroup === PVE_MATRIX_GROUP;
+  const td = S.tab === "compare" && S.compareGroup === THREE_DAY_MATRIX_GROUP;
   // The ArcGIS tab's "Reports vs layers" sub-tab is a matrix too (2026-09-02);
   // its predicate lives in ui-arcgis.js beside the sub-tab state it reads.
   const ag = typeof arcgisMatrixActive === "function" && arcgisMatrixActive();
   const tw = typeof threeWayMatrixActive === "function" && threeWayMatrixActive();
-  document.body.classList.toggle("matrix-wide", every || day || bl || pve || ag || tw);
+  document.body.classList.toggle("matrix-wide", every || day || bl || pve || td || ag || tw);
   document.body.classList.toggle("mw-day", day);
   document.body.classList.toggle("mw-bl", bl);
   document.body.classList.toggle("mw-pve", pve);
+  document.body.classList.toggle("mw-td", td);
   document.body.classList.toggle("mw-ag", ag);
   document.body.classList.toggle("mw-tw", tw);
 }
@@ -47,7 +50,7 @@ function applyMatrixWide() {
 // classic view holds the only btnCancelCompare, and the day/baseline grids show
 // their Cancel only for task==="matrix" — so navigating away would strand a live
 // run with NO visible Cancel. Locks for a classic compare AND for a day/baseline
-// matrix comparison (which ∈ {day, baseline}); an Everything-tab matrix run
+// matrix comparison (which ∈ {day, baseline, pdf_vs_excel, three_day}); an Everything-tab matrix run
 // (which==="env") is a DIFFERENT tab and never locks this strip. Pure predicate so
 // it is unit-testable in isolation.
 function compareSubtabsShouldLock(st) {
@@ -55,7 +58,8 @@ function compareSubtabsShouldLock(st) {
   if (st.task === "compare") return true;
   const cur = st.matrix_current;
   return st.task === "matrix" && !!cur
-    && (cur.which === "day" || cur.which === "baseline" || cur.which === "pdf_vs_excel");
+    && (cur.which === "day" || cur.which === "baseline" || cur.which === "pdf_vs_excel"
+        || cur.which === "three_day");
 }
 
 function selectCompareGroup(groupId) {
@@ -70,14 +74,17 @@ function selectCompareGroup(groupId) {
   const dayMode = groupId === DAY_MATRIX_GROUP;
   const blMode = groupId === BASELINE_MATRIX_GROUP;
   const pveMode = groupId === PVE_MATRIX_GROUP;
-  $("compareClassic")?.classList.toggle("hidden", dayMode || blMode || pveMode);
+  const tdMode = groupId === THREE_DAY_MATRIX_GROUP;
+  $("compareClassic")?.classList.toggle("hidden", dayMode || blMode || pveMode || tdMode);
   $("dayMatrixSection")?.classList.toggle("hidden", !dayMode);
   $("baselineMatrixSection")?.classList.toggle("hidden", !blMode);
   $("pveMatrixSection")?.classList.toggle("hidden", !pveMode);
+  $("threeDayMatrixSection")?.classList.toggle("hidden", !tdMode);
   applyMatrixWide();
   if (dayMode) { renderDayMatrix(); return; }
   if (blMode) { renderBaselineMatrix(); return; }
   if (pveMode) { renderPveMatrix(); return; }
+  if (tdMode) { renderThreeDayMatrix(); return; }
   // family headers (W2) filter with their sub-tab, like the rows
   $("compareList").querySelectorAll(".option-group").forEach((h) => {
     h.classList.toggle("hidden", h.dataset.group !== groupId);

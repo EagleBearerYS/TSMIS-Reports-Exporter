@@ -449,9 +449,11 @@
       <!-- Compare pane. Sub-tabs generated from compare_groups — "Cross-environment"
            (every report's between-environments compare) and "vs TSN" (the file-based
            TSMIS-vs-TSN compares, all reports as of v0.17.0) — plus the appended
-           "vs TSN Matrix" (the manual day-picking matrix) and "vs Baseline Matrix"
-           (day-vs-baseline, v0.26.0). The classic picker lives in #compareClassic,
-           the matrices in #dayMatrixSection / #baselineMatrixSection. -->
+           "vs TSN Matrix" (the manual day-picking matrix), "vs Baseline Matrix"
+           (day-vs-baseline, v0.26.0), "PDF vs Excel Matrix" and "Three Days
+           Matrix" (three export days at once, v0.52.0). The classic picker lives
+           in #compareClassic, the matrices in #dayMatrixSection /
+           #baselineMatrixSection / #pveMatrixSection / #threeDayMatrixSection. -->
       <div class="card pane hidden mx-host" id="paneCompare">
         <div class="subtabs" id="compareSubtabs" role="tablist"></div>
         <div id="compareClassic">
@@ -717,6 +719,51 @@
             </button>
           </div>
         </div><!-- /pveMatrixSection -->
+
+        <!-- Three Days Matrix (v0.52.0): rows = report editions, columns = the
+             SETS of three exported days the user adds; each cell = that report's
+             three exports classified cell by cell — changed on the newest day,
+             changed on the middle day and kept, changed and back, changed both
+             times. Shown only on the "Three Days Matrix" sub-tab. Each day loads
+             through the report's own cross-environment adapter, as on the vs
+             Baseline matrix; no TSN dataset, no consolidation, no live re-export. -->
+        <div id="threeDayMatrixSection" class="hidden mx-pane">
+          <div class="card-section mx-gridsection">
+            <div class="section-head">
+              <span class="section-label">Three export days — what changed, and when</span>
+              <span class="section-meta">
+                Source
+                <span class="tb-select select-light"><select id="threeDayMatrixSource"></select><svg class="ic"><use href="#i-chevron-down"/></svg></span>
+                <span class="hint" id="threeDayMatrixProgress" hidden></span>
+              </span>
+            </div>
+            <div class="matrix-legend">
+              <span class="mx-key mx-match">no change</span>
+              <span class="mx-key mx-diff-lo">few changes</span>
+              <span class="mx-key mx-diff-hi">many changes</span>
+              <span class="mx-key mx-partial">partial inputs</span>
+              <span class="mx-key mx-stale">stale</span>
+              <span class="mx-key mx-missing">needs export</span>
+            </div>
+            <div class="matrix-wrap"><div class="matrix-grid" id="threeDayMatrixGrid"></div></div>
+          </div>
+
+          <div class="card-section actions-row">
+            <button class="btn btn-subtle btn-small" id="btnThreeDayBuildAll">
+              <svg class="ic"><use href="#i-layers"/></svg>Compare all
+            </button>
+            <button class="btn btn-subtle btn-small" id="btnThreeDayRebuildAll">
+              <svg class="ic"><use href="#i-refresh"/></svg>Rebuild stale
+            </button>
+            <button class="btn btn-subtle btn-small" id="btnOpenThreeDayComparisons">
+              <svg class="ic"><use href="#i-folder-open"/></svg>Open comparisons folder
+            </button>
+            <span class="spacer"></span>
+            <button class="btn btn-subtle btn-small hidden" id="btnThreeDayCancel">
+              <svg class="ic"><use href="#i-x"/></svg>Cancel
+            </button>
+          </div>
+        </div><!-- /threeDayMatrixSection -->
       </div>
 
       <!-- ArcGIS pane: the layer library and everything built FROM it, in four
@@ -1662,6 +1709,59 @@
           <div class="mx-toggles" id="twMatrixReportToggles"></div>
         </div>
       </div>
+
+      <!-- Three Days matrix config zone (v0.52.0): shown on the Compare tab's
+           "Three Days Matrix" sub-tab (body.matrix-wide.mw-td). The shared job
+           queue, the three day pickers that add a column, how to read a cell,
+           and the row show/hide toggles. -->
+      <div class="card matrix-config" id="threeDayMatrixConfig">
+        <div class="mc-head"><svg class="ic"><use href="#i-grid"/></svg>Matrix options</div>
+
+        <div class="mc-group mx-queue-group" id="threeDayQueueGroup" hidden>
+          <div class="mc-label">Queue <span class="mx-queue-count" id="threeDayQueueCount"></span></div>
+          <div class="mx-queue" id="threeDayQueue"></div>
+          <div class="mx-queue-actions">
+            <button class="btn btn-subtle btn-small" id="btnThreeDayQueueClear">
+              <svg class="ic"><use href="#i-trash"/></svg>Clear queued
+            </button>
+            <button class="btn btn-subtle btn-small" id="btnThreeDayQueueStopAll">
+              <svg class="ic"><use href="#i-x"/></svg>Stop all
+            </button>
+          </div>
+        </div>
+
+        <div class="mc-group">
+          <div class="mc-label">Three days to compare</div>
+          <div class="td-picks">
+            <span class="tb-select select-light"><select id="threeDayPickA" aria-label="First day"></select><svg class="ic"><use href="#i-chevron-down"/></svg></span>
+            <span class="tb-select select-light"><select id="threeDayPickB" aria-label="Second day"></select><svg class="ic"><use href="#i-chevron-down"/></svg></span>
+            <span class="tb-select select-light"><select id="threeDayPickC" aria-label="Third day"></select><svg class="ic"><use href="#i-chevron-down"/></svg></span>
+            <button class="btn btn-standard btn-small" id="btnThreeDayAddSet">
+              <svg class="ic"><use href="#i-check"/></svg>Add these three days
+            </button>
+          </div>
+          <p class="hint" id="threeDayPickHint" style="margin:6px 0 0"></p>
+          <p class="hint" style="margin:6px 0 0">Pick any three exported days — the
+            order does not matter, they are read oldest to newest. Each set is a
+            column; each cell compares that report's three exports (Excel with
+            Excel, PDF with PDF) exactly as <b>vs Baseline Matrix</b> compares two.</p>
+        </div>
+
+        <div class="mc-group">
+          <div class="mc-label">Reading a cell</div>
+          <p class="hint" style="margin:0">The big number is the cells that
+            <b>changed on the newest day</b>. Under it: the cells that changed on the
+            <b>middle day and stayed</b>, the ones that changed and went
+            <b>back</b>, the ones that changed <b>twice</b>, and the records
+            <b>+added</b> and <b>−removed</b>. The workbook lists every changed
+            cell with its value on each of the three days.</p>
+        </div>
+
+        <div class="mc-group">
+          <div class="mc-label">Reports</div>
+          <div class="mx-toggles" id="threeDayMatrixReportToggles"></div>
+        </div>
+      </div>
     </section>
   </main>
 
@@ -1699,6 +1799,7 @@
 <script src="ui-batch.js"></script>
 <script src="ui-compare.js"></script>
 <script src="ui-matrix.js"></script>
+<script src="ui-three-day.js"></script>
 <script src="ui-arcgis.js"></script>
 <script src="ui-arcgis-reports.js"></script>
 <script src="ui-arcgis-three-way.js"></script>

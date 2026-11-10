@@ -8,7 +8,7 @@ For the engine the GUI drives, see [engine-and-reliability.md](engine-and-reliab
 
 ## UI stack
 
-The packaged product is a **pywebview window using the Edge WebView2 backend**, rendering `scripts/ui/` — **plain HTML/CSS/JS, no framework and no build step**. As of v0.18.0 the front-end is split into `index.html` + `app.css` + `app.js` (orchestration) + `mock.js` (the `#mock` fixtures, a SEPARATE file — never edit fixtures in `app.js`) + `ui-dom.js` and the per-tab renderer modules (`ui-export.js` / `ui-batch.js` / `ui-compare.js` / `ui-matrix.js` / `ui-arcgis.js` / `ui-arcgis-reports.js` / `ui-settings.js`) + `contract.js` (the bridge enum mirror of `scripts/contract.py`). Static files ship in the bundle; end-user setup stays global-pip. This replaced the original Tkinter window (v0.8.0): Tk could neither match the approved design (Windows-11 look, dark titlebar, two-column layout) nor stop cutting off on small screens. A web layout is responsive (stacks + scrolls below ~980px wide; theme = System/Light/Dark header toggle persisted in `localStorage`, resolved to an effective `html[data-theme]` before first paint).
+The packaged product is a **pywebview window using the Edge WebView2 backend**, rendering `scripts/ui/` — **plain HTML/CSS/JS, no framework and no build step**. As of v0.18.0 the front-end is split into `index.html` + `app.css` + `app.js` (orchestration) + `mock.js` (the `#mock` fixtures, a SEPARATE file — never edit fixtures in `app.js`) + `ui-dom.js` and the per-tab renderer modules (`ui-export.js` / `ui-batch.js` / `ui-compare.js` / `ui-matrix.js` / `ui-three-day.js` / `ui-arcgis.js` / `ui-arcgis-reports.js` / `ui-arcgis-three-way.js` / `ui-settings.js`) + `contract.js` (the bridge enum mirror of `scripts/contract.py`). Static files ship in the bundle; end-user setup stays global-pip. This replaced the original Tkinter window (v0.8.0): Tk could neither match the approved design (Windows-11 look, dark titlebar, two-column layout) nor stop cutting off on small screens. A web layout is responsive (stacks + scrolls below ~980px wide; theme = System/Light/Dark header toggle persisted in `localStorage`, resolved to an effective `html[data-theme]` before first paint).
 
 WebView2 is a safe dependency here: it ships with Windows 10/11 and evergreen Edge — the same Edge this tool already requires. `tkinter`/`_tkinter` are **excluded** from the bundle.
 
@@ -424,6 +424,40 @@ day's PDF export against its Excel export. It was built ON the
 proved the wiring — a new matrix cost a table row per report instead of a fifth
 if-chain. Lives in `pdf_excel_matrix.py`; the sub-tab renders through the same
 `ui-matrix.js` as the other three.
+
+### The Compare-tab "Three Days Matrix" (v0.52.0)
+
+The seventh matrix and the fourth on the Compare tab (group id `three_days`), and
+the only one whose column is not one day: rows = the six Clean Road editions (`three_day_matrix.ROW_KEYS`),
+columns = the **sets of three exported days** the user adds, each cell = that report's
+three exports classified cell by cell (`three_day`). It is the vs Baseline matrix one
+day wider: each day loads through the row's own cross-environment adapter, so a record
+keys and compares exactly as a two-day comparison's does.
+
+- **Adding a column.** The config corner (`#threeDayMatrixConfig`, shown by
+  `body.matrix-wide.mw-td`) has three day pickers and *Add these three days*. Any
+  three exported days, in any order: `add_three_day_matrix_set` sorts them, so a set
+  is always oldest → middle → newest and its id is `<d1>_<d2>_<d3>`. The pickers
+  default to the three newest days; the line under them says what the picks will
+  compare, and the button is live only for three different days that are not a column
+  yet. Columns stay in date order (no drag); rows drag-reorder and hide like the
+  other matrices.
+- **A cell.** The big number is the cells that **changed on the newest day** (the same
+  on the two earlier days). Under it: the cells that changed on the middle day and
+  stayed, the ones that changed and went back, the ones that changed twice, and the
+  records `+added` / `−removed` (and any on or off the middle day only). The tooltip
+  carries all of it plus each pair of days as a two-day comparison counts it. Green =
+  nothing moved; amber/red by how much did (`MX_HI`); "needs export" names the days the
+  report is not exported on.
+- **Wiring.** `ui-three-day.js` (`renderThreeDayMatrix`, `tdCellContent`,
+  `updateThreeDayMatrixProgress`), `gui_three_day_api.py` (`GuiThreeDayMixin`), jobs
+  `which:"three_day"` → `ThreeDayMatrixCompareWorker` on the shared queue (a job's
+  `env` carries the set id). The Compare sub-tab strip locks while one runs
+  (`compareSubtabsShouldLock`). Values workbooks only, so there is no formulas toggle,
+  and no export actions: it compares days already exported.
+
+Engine + store: [comparison-engine.md](comparison-engine.md) §9p and §12f. Mock +
+bridge exercised at `/index.html#mock` (Compare ▸ Three Days Matrix).
 
 ### The ArcGIS tab (v0.29.0; Layers since v0.46.0; ArcGIS reports + Reports vs ArcGIS since v0.47.0; Three-way since v0.51.0)
 
