@@ -13,6 +13,11 @@ let _tdRenderSeq = 0;
 const _tdPick = { a: "", b: "", c: "" };   // the three pickers' current days
 let _tdPickSource = null;                  // the source those picks were made for
 
+// The matrix's OWN persisted live-formulas option (like every matrix's).
+function syncThreeDayMatrixFormulas() {
+  syncFormulasToggle("threeDayMatrixFormulas", "three_day_matrix_formulas");
+}
+
 function tdNum(n) {
   return Number.isFinite(n) ? n.toLocaleString() : "?";
 }
@@ -287,6 +292,7 @@ async function renderThreeDayMatrix() {
   });
 
   wireThreeDayFooter();
+  syncThreeDayMatrixFormulas();
   updateThreeDayMatrixProgress();
 }
 

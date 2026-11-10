@@ -1712,8 +1712,9 @@
 
       <!-- Three Days matrix config zone (v0.52.0): shown on the Compare tab's
            "Three Days Matrix" sub-tab (body.matrix-wide.mw-td). The shared job
-           queue, the three day pickers that add a column, how to read a cell,
-           and the row show/hide toggles. -->
+           queue, the three day pickers that add a column, the live-formulas
+           option (its OWN setting), how to read a cell, and the row show/hide
+           toggles. -->
       <div class="card matrix-config" id="threeDayMatrixConfig">
         <div class="mc-head"><svg class="ic"><use href="#i-grid"/></svg>Matrix options</div>
 
@@ -1745,6 +1746,20 @@
             order does not matter, they are read oldest to newest. Each set is a
             column; each cell compares that report's three exports (Excel with
             Excel, PDF with PDF) exactly as <b>vs Baseline Matrix</b> compares two.</p>
+        </div>
+
+        <div class="mc-group">
+          <div class="mc-label">Comparison output</div>
+          <label class="mc-fast" title="Also write a live-formulas (recalculating, auditable) copy beside each values comparison">
+            <input type="checkbox" id="threeDayMatrixFormulas">
+            <span class="checkbox" aria-hidden="true"><svg class="ic"><use href="#i-check"/></svg></span>
+            <svg class="ic"><use href="#i-file-text"/></svg>
+            <span>Also write a live-formulas copy</span>
+          </label>
+          <p class="hint" style="margin:6px 0 0">Saved beside each workbook as
+            <b>… (formulas).xlsx</b>: the same sheets, with every number calculated
+            in Excel from the three days' values. A cell that is already built gets
+            its copy when it is rebuilt.</p>
         </div>
 
         <div class="mc-group">

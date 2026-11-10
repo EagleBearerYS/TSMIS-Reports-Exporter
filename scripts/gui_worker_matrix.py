@@ -850,14 +850,16 @@ class ThreeDayMatrixCompareWorker(threading.Thread):
 
     `cells` is a list of (set id, row_key). No browser. Honors cancel BETWEEN
     cells (each finished cell is saved) and posts the same ('matrix_cell', …) /
-    ('matrix_done', …) events as the other compare workers."""
+    ('matrix_done', …) events as the other compare workers. `also_formulas`
+    also writes each cell's live-formulas copy."""
 
-    def __init__(self, source, cells, queue, cancel_event):
+    def __init__(self, source, cells, queue, cancel_event, also_formulas=False):
         super().__init__(daemon=True, name="three-day-matrix-compare")
         self.source = source
         self.cells = [(c[0], c[1]) for c in cells]   # (set id, row_key)
         self.q = queue
         self.cancel = cancel_event
+        self.also_formulas = also_formulas
 
     def run(self):
         import three_day_matrix                       # lazy: pulls the adapters
@@ -881,8 +883,9 @@ class ThreeDayMatrixCompareWorker(threading.Thread):
                 error_type = None
                 started = clock.start()
                 try:
-                    res = three_day_matrix.build_cell(self.source, set_key, row_key,
-                                                      events)
+                    res = three_day_matrix.build_cell(
+                        self.source, set_key, row_key, events,
+                        also_formulas=self.also_formulas)
                     attempt, why = _attempt_state(
                         res, cancelled=res.status == "cancelled")
                     status = res.status

@@ -1077,8 +1077,8 @@ def set_three_way_matrix_row_order(keys):
 
 # ---- Compare-tab "Three Days" matrix (v0.52.0) ------------------------------
 # A source, the SETS of three days the user added (each '<oldest>_<middle>_
-# <newest>', validated by three_day_matrix), hidden rows and a drag row order.
-# Values workbooks only, so no formulas toggle.
+# <newest>', validated by three_day_matrix), hidden rows, a drag row order and
+# its own live-formulas toggle.
 
 _DEFAULT_THREE_DAY_MATRIX_SOURCE = "ssor-prod"
 
@@ -1128,6 +1128,18 @@ def get_three_day_matrix_row_order():
 
 def set_three_day_matrix_row_order(keys):
     return _set_order("three_day_matrix_row_order", keys)
+
+
+def get_three_day_matrix_formulas():
+    """Whether the Three Days matrix ALSO writes a live-formulas copy of each
+    comparison (its own toggle, independent of the other matrices'; default
+    off)."""
+    return _get_flag("three_day_matrix_formulas")
+
+
+def set_three_day_matrix_formulas(on):
+    """Persist the Three Days matrix live-formulas toggle (cleared when off)."""
+    return _set_flag("three_day_matrix_formulas", on)
 
 
 def get_arcgis_python():

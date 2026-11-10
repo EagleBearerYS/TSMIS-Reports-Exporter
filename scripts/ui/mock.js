@@ -163,6 +163,7 @@ function makeMockApi() {
     three_day_matrix_sets: ["2026-06-11_2026-06-17_2026-06-18"],
     three_day_matrix_hidden: [],
     three_day_matrix_row_order: [],
+    three_day_matrix_formulas: false,
     evidence: {                  // v0.21.0 visual-evidence toggle (shared); v0.22.0 per-report;
       // v0.24.0 Highway Log (raw-sourced prints) + the named unsupported rows;
       // v0.25.0 Highway Sequence (raw-sourced like Highway Log);
@@ -2698,6 +2699,12 @@ function makeMockApi() {
     },
     // ---- the Compare tab: Three Days matrix (v0.52.0) ----
     three_day_matrix_info: async () => mockTdSnapshot(),
+    set_three_day_matrix_formulas: async (on) => {
+      st.three_day_matrix_formulas = !!on;
+      push({ t: "log", text: `Three Days live-formulas workbook ${on ? "on" : "off"}.` });
+      pushState();
+      return { ok: true, on: !!on };
+    },
     set_three_day_matrix_source: async (s) => {
       st.three_day_matrix_source = s;
       const avail = mockAvail(s);

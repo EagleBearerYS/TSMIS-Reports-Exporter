@@ -20,6 +20,8 @@ Drives the SHIPPED path on synthetic data (no corpus files):
   * text Excel would not read back as written (`_xHHHH_`, also where two share
     an underscore; a carriage return; a string that is only line feeds and
     tabs) is stored escaped;
+  * the matrix: a cell built with the option writes the copy in the store; the
+    option is the matrix's own persisted setting; the page state carries it;
   * IN EXCEL, when this PC has it (`tools/three_day_formulas_check.py`): the
     copy recalculates to the values workbook cell for cell — the hand fixture,
     random data with and without repeated keys, a report wide enough to need
@@ -54,18 +56,25 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 from openpyxl import load_workbook  # noqa: E402
 
+import artifact_store  # noqa: E402
 import check_three_day as base  # noqa: E402  (its fixtures and random data)
 import compare_core as core  # noqa: E402
+import compare_timings  # noqa: E402
 import consolidation_meta  # noqa: E402
+import gui_api  # noqa: E402
+import gui_three_day_api  # noqa: E402
+import paths  # noqa: E402
+import settings  # noqa: E402
 import three_day as td  # noqa: E402
 import three_day_formulas as live  # noqa: E402
 import three_day_formulas_check as oracle  # noqa: E402  (tools/: Excel's own answer)
+import three_day_matrix as tdm  # noqa: E402
 import three_day_workbook as book  # noqa: E402
 from errors import RunCancelled  # noqa: E402
 from events import Events  # noqa: E402
 
 c = Checker()
-DAYS = base.DAYS
+DAYS, SRC, SET = base.DAYS, base.SRC, base.SET
 META = {"inputs": ("one", "two", "three")}
 # Values chosen to trip a formula: what Excel might read as a formula, a number,
 # an error, an escape or one of the workbook's own marks — and plain awkwardness.
@@ -280,7 +289,66 @@ def test_text():
 
 
 # --------------------------------------------------------------------------- #
-# 3. in Excel: the copy calculates to the values workbook
+# 3. the matrix and the bridge
+# --------------------------------------------------------------------------- #
+def test_matrix(tmp):
+    print("the Three Days matrix's own live-formulas option:")
+    cfg = tmp / "cfg"
+    cfg.mkdir()
+    with patch(paths, "OUTPUT_ROOT", tmp / "output"), \
+            patch(settings, "CONFIG_FILE", cfg / "config.json"), \
+            patch(compare_timings, "_FILE", cfg / "compare_timings.json"), \
+            patch(gui_three_day_api, "ThreeDayMatrixCompareWorker", base._FakeWorker):
+        settings._cache = settings._cache_mtime = None
+        base._write_days(paths.OUTPUT_ROOT)
+        out = tdm.set_out_path(DAYS, SRC, "clean_ramp")
+        twin = td.formulas_sibling(out)
+        res = tdm.build_cell(SRC, SET, "clean_ramp", Events(), also_formulas=True)
+        c.check("a cell built with the option writes the copy beside its workbook",
+                res.status == "ok" and out.is_file() and twin.is_file()
+                and twin.parent == out.parent, res.message)
+        cell = tdm.matrix_snapshot(SRC, [SET], today="2099-01-01")[
+            "cells"]["clean_ramp"][SET]["cmp"]
+        c.check("...and the cell still reads fresh, from the values workbook",
+                cell["built"] and not cell["stale"] and "three_day" in cell, cell)
+        longest = td.formulas_sibling(tdm.set_out_path(
+            DAYS, "ssor-prod other-site", "clean_intersection_pdf"))
+        temp = artifact_store._producer_temp(
+            longest, "0" * artifact_store._PRODUCER_TEMP_TOKEN_HEX_CHARS)
+        c.check("the copy's longest path (its temp file, the longest row) stays "
+                "under 150 characters below output/comparisons/",
+                len(str(temp.relative_to(tdm.td_root().parent))) < 150,
+                len(str(temp.relative_to(tdm.td_root().parent))))
+        tdm.build_cell(SRC, SET, "clean_ramp", Events())
+        c.check("a rebuild without it removes the copy", out.is_file()
+                and not twin.exists())
+
+        api = gui_api.GuiApi()
+        api.set_three_day_matrix_source(SRC)
+        api.add_three_day_matrix_set(*DAYS)
+        c.check("the option is off until it is set",
+                settings.get_three_day_matrix_formulas() is False
+                and api._state_snapshot()["three_day_matrix_formulas"] is False)
+        c.check("setting it persists it and puts it in the page state",
+                api.set_three_day_matrix_formulas(True) == {"ok": True, "on": True}
+                and settings.get_three_day_matrix_formulas() is True
+                and api._state_snapshot()["three_day_matrix_formulas"] is True)
+        c.check("it is this matrix's own: no other matrix's option moved",
+                not settings.get_baseline_matrix_formulas()
+                and not settings.get_pve_matrix_formulas()
+                and not settings.get_day_matrix_formulas())
+        api.build_three_day_matrix_cell("clean_ramp", SET)
+        _args, kwargs = base._FakeWorker.last
+        c.check("a queued build hands the option to the worker",
+                kwargs.get("also_formulas") is True, kwargs)
+        api.set_three_day_matrix_formulas(False)
+        c.check("...and off again", settings.get_three_day_matrix_formulas() is False
+                and api._state_snapshot()["three_day_matrix_formulas"] is False)
+    settings._cache = settings._cache_mtime = None
+
+
+# --------------------------------------------------------------------------- #
+# 4. in Excel: the copy calculates to the values workbook
 # --------------------------------------------------------------------------- #
 def _pair(tmp, name, sc, rows):
     """(values workbook, its copy) for one comparison."""
@@ -528,7 +596,7 @@ def main():
     with pinned_site("dev"), temp_dir("tsmis_tdf_") as tmp:
         tmp = Path(tmp)
         for name, test in (("w", test_written), ("n", test_never_decides),
-                           ("f", test_file), ("x", test_excel)):
+                           ("f", test_file), ("m", test_matrix), ("x", test_excel)):
             sub = tmp / name
             sub.mkdir()
             test(sub)
