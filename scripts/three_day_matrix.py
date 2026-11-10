@@ -355,11 +355,14 @@ def _row(row_key):
     raise ValueError(f"unknown three-day matrix row: {row_key}")
 
 
-def build_cell(source, set_key, row_key, events, commit_guard=None):
+def build_cell(source, set_key, row_key, events, commit_guard=None,
+               also_formulas=False):
     """Build ONE (set of three days, edition) comparison: load the three days'
     per-route exports through the row's cross-environment adapter, classify them
-    and cache what the cell was built from. Returns the ConsolidateResult; raises
-    ValueError for a bad set, an unknown row or a day with no export."""
+    and cache what the cell was built from. `also_formulas` also writes the
+    live-formulas copy beside the workbook ('… (formulas).xlsx'); without it a
+    copy left from an earlier build is removed. Returns the ConsolidateResult;
+    raises ValueError for a bad set, an unknown row or a day with no export."""
     r = _row(row_key)
     days = parse_set(set_key)
     if days is None:
@@ -382,7 +385,7 @@ def build_cell(source, set_key, row_key, events, commit_guard=None):
     events.on_log(f"  {r.label}: {days[0]} → {days[1]} → {days[2]} ({source})")
     result = three_day.compare_days(
         r.adapter, [day_source_dir(d, source) for d in days], days, out_path,
-        events=events, commit_guard=commit_guard)
+        events=events, commit_guard=commit_guard, also_formulas=also_formulas)
     if result.status == "ok" and out_path.exists():
         record_result(days, source, row_key, matrix._safe_mtime(out_path),
                       result.completion,

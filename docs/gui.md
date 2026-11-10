@@ -453,8 +453,13 @@ keys and compares exactly as a two-day comparison's does.
   `updateThreeDayMatrixProgress`), `gui_three_day_api.py` (`GuiThreeDayMixin`), jobs
   `which:"three_day"` → `ThreeDayMatrixCompareWorker` on the shared queue (a job's
   `env` carries the set id). The Compare sub-tab strip locks while one runs
-  (`compareSubtabsShouldLock`). Values workbooks only, so there is no formulas toggle,
-  and no export actions: it compares days already exported.
+  (`compareSubtabsShouldLock`). No export actions: it compares days already exported.
+- **Comparison output.** The config corner carries the matrix's own *Also write a
+  live-formulas copy* option, as the other matrices do (`#threeDayMatrixFormulas` →
+  `set_three_day_matrix_formulas`; state key `three_day_matrix_formulas`, synced by
+  `syncThreeDayMatrixFormulas`). The copy is `… (formulas).xlsx` beside each
+  workbook; *Open comparisons folder* shows it. Evidence images are not offered: the
+  Clean Road prints are not among the reports evidence can illustrate.
 
 Engine + store: [comparison-engine.md](comparison-engine.md) §9p and §12f. Mock +
 bridge exercised at `/index.html#mock` (Compare ▸ Three Days Matrix).

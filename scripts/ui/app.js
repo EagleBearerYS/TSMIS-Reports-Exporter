@@ -1286,6 +1286,11 @@ function bindEvents() {
     if (r && r.error) showMessage("error", "Can't set formulas option", r.error);
     syncArcgisMatrixFormulas();
   });
+  $("threeDayMatrixFormulas")?.addEventListener("change", async (e) => {
+    const r = await api.set_three_day_matrix_formulas(e.target.checked);
+    if (r && r.error) showMessage("error", "Can't set formulas option", r.error);
+    syncThreeDayMatrixFormulas();
+  });
   // Evidence images — ONE shared persisted setting, surfaced on both matrix
   // pages (the checkboxes/counts are mirrors, resynced from each state push).
   // The per-cell camera (generate evidence) is gated on this toggle, so flipping

@@ -35,7 +35,9 @@ rather than classified on faith.
 
 The workbook (`three_day_workbook`) is values only. The counts are published in
 the outcome sidecar beside it (`SIDECAR_KEY`) — producer-owned truth the matrix
-reads. Console-free: progress via the Events sink, exceptions raised.
+reads. On request a live-formulas copy (`three_day_formulas`) is written beside
+it from the SAME computed comparison — an extra that never decides the result.
+Console-free: progress via the Events sink, exceptions raised.
 """
 from __future__ import annotations
 
@@ -54,6 +56,10 @@ log = logging.getLogger("tsmis.three_day")
 
 SIDECAR_KEY = "three_day"
 COUNTS_VERSION = 1
+# The live-formulas copy holds one formula per grid cell and per working column.
+# Past this many it is a file Excel takes minutes to open, so the copy is skipped
+# and the skip is said; the values workbook holds every value regardless.
+FORMULAS_MAX_CELLS = 8_000_000
 
 # Cell classes of a record present on all three days.
 NEWEST = "newest"
@@ -509,6 +515,22 @@ class Compared:
     lookalikes: tuple = ()       # export values that read like a workbook marker
 
 
+def counted_fields(sc):
+    """The header columns that are compared (every column but the key and the
+    ones that are shown only)."""
+    return tuple(f for f in sc.field_indices if not sc.is_context(f))
+
+
+def one_day_state(sc):
+    """The state string of a record only one day has: `.` under a compared
+    column, `k` under the key, `-` under a column that is shown only. Every
+    other record's state fills the `.` places in."""
+    base = ["k" if f == sc.key_field else "-" for f in range(len(sc.header))]
+    for f in counted_fields(sc):
+        base[f] = "."
+    return "".join(base)
+
+
 def _first_last(sc, rows, keys, trim, counted, events):
     """The first day against the last day, paired DIRECTLY as a two-day
     comparison "day 3 vs baseline day 1" pairs them — its counts, and the
@@ -550,17 +572,15 @@ def compute(sc, rows, events=None):
                               if t in (BLANK_MARK, ABSENT_MARK) or ARROW in t))
     del memo
     header = list(sc.header)
-    counted = tuple(f for f in sc.field_indices if not sc.is_context(f))
+    counted = counted_fields(sc)
     counts = ThreeDayCounts(counted_columns=len(counted), pairing_quality=quality)
     changed = {f: dict.fromkeys(CHANGED, 0) for f in counted}
     two = {p: dict.fromkeys(counted, 0) for p in TWO_DAY}
     pair_of = {two_day: pair for pair, two_day in _PAIR_TWO.items()}
     differs_in = {pair: frozenset(CODE[c] for c in classes)
                   for pair, classes in _PAIR_DIFFERS.items()}
-    base = ["k" if f == sc.key_field else "-" for f in range(len(header))]
-    for f in counted:
-        base[f] = "."
-    one_day = "".join(base)
+    one_day = one_day_state(sc)
+    base = list(one_day)
     unchanged = one_day.replace(".", CODE[SAME])
     states, locations = [], []
     for k, rec in enumerate(records):
@@ -637,11 +657,81 @@ def read_counts(path):
     return ThreeDayCounts.from_dict(consolidation_meta.read_extra(path, SIDECAR_KEY))
 
 
+def formulas_sibling(out_path):
+    """Where a workbook's live-formulas copy sits: beside it, under the name
+    every matrix gives that copy ('<name> (formulas).xlsx')."""
+    out_path = Path(out_path)
+    return out_path.with_name(f"{out_path.stem} (formulas){out_path.suffix}")
+
+
+def _write_formulas_copy(sc, rows, compared, days, out_path, meta, events,
+                         commit_guard):
+    """Write the live-formulas copy beside the values workbook that just landed.
+    True iff a fresh copy is in place. Never raises: the copy is an extra, and
+    the values workbook and its published counts stand whatever happens here."""
+    twin = formulas_sibling(out_path)
+    try:
+        import three_day_formulas as live    # lazy: the openpyxl writer
+
+        cells = live.formula_cells(sc, len(compared.records))
+        if cells > FORMULAS_MAX_CELLS:
+            events.on_log(f"  Skipping the live-formulas copy of {out_path.name}: "
+                          f"{cells:,} formulas, over the {FORMULAS_MAX_CELLS:,} this "
+                          "matrix writes. The values workbook has every value.")
+            return False
+        events.on_log(f"  writing {twin.name}…")
+        return bool(live.write_workbook(
+            sc, rows, compared, days, twin, meta, events,
+            proceed=lambda: consolidation_meta.guard_allows(commit_guard, twin)))
+    except RunCancelled:
+        events.on_log("  The live-formulas copy was cancelled. The values "
+                      "workbook is complete.")
+    except Exception as e:  # noqa: BLE001 - an optional copy must never fail the comparison
+        log.warning("three-day: live-formulas copy %s not written (%s: %s)",
+                    twin.name, type(e).__name__, e, exc_info=True)
+        events.on_log(f"  ⚠ The live-formulas copy was not written: "
+                      f"{str(e) or type(e).__name__}")
+    return False
+
+
+def _remove_stale_copy(out_path, events, commit_guard):
+    """Remove a live-formulas copy this build did not refresh: left in place it
+    would sit beside a newer values workbook and look current. One that is still
+    open in Excel cannot be removed, and that is said."""
+    twin = formulas_sibling(out_path)
+    try:
+        if not twin.exists():
+            return
+    except OSError:  # silent-ok: a path that cannot be read is treated as absent
+        return
+    if not consolidation_meta.guard_allows(commit_guard, twin):
+        log.warning("three-day: an earlier live-formulas copy %s was left (the "
+                    "destination changed owner)", twin.name)
+        return
+    try:
+        twin.unlink()
+    except FileNotFoundError:  # silent-ok: already gone is the goal
+        return
+    except OSError as e:
+        log.warning("three-day: could not remove the earlier live-formulas copy "
+                    "%s (%s: %s)", twin.name, type(e).__name__, e)
+        events.on_log(f"  ⚠ {twin.name} is from an earlier build and could not be "
+                      "removed (is it open in Excel?). It does not match this "
+                      "comparison.")
+        return
+    events.on_log(f"  Removed the earlier live-formulas copy {twin.name}: it was "
+                  "not refreshed and no longer matches.")
+
+
 def run(sc, rows, days, out_path, *, meta=None, events=None, commit_guard=None,
-        input_completion=None):
+        input_completion=None, also_formulas=False):
     """Compare three days' rows (oldest first), write the workbook and publish
     its counts beside it. Returns a ConsolidateResult (ok / cancelled / error); a
-    consumer reads the counts back through `read_counts`, the published truth."""
+    consumer reads the counts back through `read_counts`, the published truth.
+
+    `also_formulas` also writes the live-formulas copy beside the workbook, from
+    the same computed comparison. Without it, or when the copy is skipped or
+    fails, a copy left from an earlier build is removed."""
     import three_day_workbook as book        # lazy: the openpyxl writer
 
     events = events or Events()
@@ -688,11 +778,20 @@ def run(sc, rows, days, out_path, *, meta=None, events=None, commit_guard=None,
     if not consolidation_meta.write_outcome(
             out_path, result, extra=result.producer_extra,
             commit_guard=commit_guard):
+        # The new values workbook has landed; a copy from the build before it
+        # must not stay beside it.
+        _remove_stale_copy(out_path, events, commit_guard)
         return ConsolidateResult(
             status="error",
             message="The three-day workbook was written but its counts could not "
                     "be published beside it — rebuild the comparison.")
     result.sidecar_published = True
+    if also_formulas and _write_formulas_copy(sc, rows, compared, days, out_path,
+                                              meta, events, commit_guard):
+        result.summary_lines.append(
+            f"Live-formulas copy: {formulas_sibling(out_path).name}")
+    else:
+        _remove_stale_copy(out_path, events, commit_guard)
     return result
 
 
@@ -721,7 +820,7 @@ def _error(message):
 
 
 def compare_days(adapter, folders, days, out_path, *, events=None,
-                 commit_guard=None):
+                 commit_guard=None, also_formulas=False):
     """Build the three-day workbook for one report from three run folders.
 
     `adapter` is the report's `compare_env.EnvCompare` — the vs Baseline matrix's
@@ -729,7 +828,8 @@ def compare_days(adapter, folders, days, out_path, *, events=None,
     (`_side_loader_fn`) and records key and compare under the schema it builds
     (`_schema`), so this cannot key or read a file differently from the two-day
     comparison. `folders` / `days` are the three run folders and their dates,
-    OLDEST FIRST. Returns a ConsolidateResult (ok / cancelled / error)."""
+    OLDEST FIRST. `also_formulas` also writes the live-formulas copy (see `run`).
+    Returns a ConsolidateResult (ok / cancelled / error)."""
     events = events or Events()
     folders = [Path(f) for f in folders]
     days = tuple(days)
@@ -758,8 +858,11 @@ def compare_days(adapter, folders, days, out_path, *, events=None,
                        for b in identities[i + 1:])):
             return _error("Pick three DIFFERENT days — two of them resolve to "
                           f"the same {name} files.")
+        # The copy's path is guarded whether or not this build writes it: an
+        # earlier copy at that path is removed when it is not refreshed.
         artifact_store.ensure_outputs_do_not_alias_sources(
-            (Path(out_path),), (*folders, *(p for found in files for p in found)))
+            (Path(out_path), formulas_sibling(out_path)),
+            (*folders, *(p for found in files for p in found)))
     except ValueError as e:
         return _error(str(e))
 
@@ -837,11 +940,13 @@ def compare_days(adapter, folders, days, out_path, *, events=None,
         meta["partial_reasons"] = tuple(warnings)
     return run(sc, rows, days, out_path, meta=meta, events=events,
                commit_guard=commit_guard,
-               input_completion=outcome.PARTIAL if incomplete else None)
+               input_completion=outcome.PARTIAL if incomplete else None,
+               also_formulas=also_formulas)
 
 
 __all__ = ["BACK", "BOTH", "CHANGED", "CLASSES", "Compared", "MIDDLE", "NEWEST",
            "PAIRS", "PRESENCE", "SAME", "SIDECAR_KEY", "TWO_DAY", "ThreeDayCounts",
            "align", "class_label", "class_short", "classify", "compare_days",
-           "compute", "day_keys", "is_flat", "presence_label", "presence_of",
-           "presence_short", "read_counts", "run", "schema_problem", "texts_of"]
+           "compute", "counted_fields", "day_keys", "formulas_sibling", "is_flat",
+           "one_day_state", "presence_label", "presence_of", "presence_short",
+           "read_counts", "run", "schema_problem", "texts_of"]

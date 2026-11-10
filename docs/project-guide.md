@@ -607,6 +607,9 @@ scripts/                     the engine (console-free) + console & GUI drivers +
                              each pair's two-day counts, the counts in its sidecar
   three_day_workbook.py      its values workbook (Summary, Routes, Changes, Added &
                              removed, the record grid, Notes)
+  three_day_formulas.py      its live-formulas copy (v0.52.1): the same sheets with
+                             every number an Excel formula over the three days' values,
+                             filled down as shared formulas
   three_day_matrix.py        the Compare-tab Three Days matrix (sets of three days)
   highway_log_columns.py intersection_detail_columns.py highway_detail_columns.py   the per-report column labels
   highway_summary_columns.py the Highway Summary layout SoT: sections/codes + the ONE

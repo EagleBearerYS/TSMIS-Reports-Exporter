@@ -90,6 +90,7 @@ FROZEN_API = {
     "set_three_day_matrix_report", "set_three_day_matrix_row_order",
     "build_three_day_matrix_cell", "rebuild_three_day_matrix",
     "open_three_day_cell_comparison", "open_three_day_comparisons_folder",
+    "set_three_day_matrix_formulas",
     "three_way_matrix_info", "set_three_way_matrix_source", "add_three_way_matrix_day",
     "remove_three_way_matrix_day", "set_three_way_matrix_report",
     "set_three_way_matrix_row_order", "set_three_way_matrix_day_order",

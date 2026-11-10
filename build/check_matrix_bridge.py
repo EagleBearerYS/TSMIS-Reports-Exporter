@@ -418,6 +418,17 @@ def main():
               and settings.get_matrix_formulas() is True
               and settings.get_day_matrix_formulas() is False)
         a.set_matrix_formulas(False)
+        # The PDF vs Excel matrix has its own too, and the state has to CARRY it:
+        # the page ticks the box from the state, so a flag the state never carried
+        # un-ticked the box the moment it was ticked.
+        check("PDF vs Excel formulas off by default, and in the snapshot",
+              settings.get_pve_matrix_formulas() is False
+              and a._state_snapshot().get("pve_matrix_formulas") is False)
+        check("PDF vs Excel formulas persists + snapshot reflects it",
+              a.set_pve_matrix_formulas(True).get("on") is True
+              and settings.get_pve_matrix_formulas() is True
+              and a._state_snapshot().get("pve_matrix_formulas") is True)
+        a.set_pve_matrix_formulas(False)
         # Two real exportable sides so row/column export resolves >=1 step.
         _touch(dest / "ssor-prod" / "ramp_detail" / "r1.xlsx")
         rr = a.refresh_row_export("ramp_detail")

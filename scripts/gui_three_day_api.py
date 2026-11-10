@@ -6,8 +6,9 @@ three exported days the user adds, each cell = that report's three exports
 classified cell by cell (`three_day`) — changed on the newest day, changed on the
 middle day and kept, changed and back, changed both times. Each day loads through
 the row's own cross-environment adapter, so nothing here has a control of its
-own beyond the source and the sets. Engine: `three_day_matrix`; compares ride the
-shared matrix queue (`which:"three_day"`). Composition only — every `self._*` it
+own beyond the source, the sets and the live-formulas option (its own setting,
+like every matrix's). Engine: `three_day_matrix`; compares ride the shared
+matrix queue (`which:"three_day"`). Composition only — every `self._*` it
 touches lives on GuiApi.
 """
 import logging
@@ -207,6 +208,17 @@ class GuiThreeDayMixin:
         return self._enqueue_matrix_job(job)
 
     @_api_method
+    def set_three_day_matrix_formulas(self, on):
+        """Toggle the Three Days matrix's OWN live-formulas option (persisted,
+        independent of the other matrices')."""
+        val = settings.set_three_day_matrix_formulas(bool(on))
+        self._emit_log("Three Days live-formulas workbook " + ("on" if val else "off")
+                       + (" — each comparison also writes a '… (formulas).xlsx'."
+                          if val else "."))
+        self._push_state()
+        return {"ok": True, "on": val}
+
+    @_api_method
     def open_three_day_cell_comparison(self, row_key, set_key):
         """Open ONE three-day workbook."""
         import three_day_matrix
@@ -261,5 +273,6 @@ class GuiThreeDayMixin:
                     "workers": 1})
         ThreeDayMatrixCompareWorker(
             self._three_day_source(), cells,
-            self._gated_queue(), self.cancel_event).start()
+            self._gated_queue(), self.cancel_event,
+            also_formulas=settings.get_three_day_matrix_formulas()).start()
         return True
