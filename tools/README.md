@@ -44,6 +44,25 @@ a person to open and read. Clean Road reports (Highway, Intersection, Ramp). Det
 and the 2026-11-09 numbers: [docs/comparison-engine.md](../docs/comparison-engine.md)
 §9p.
 
+## three_day_formulas_check.py
+
+Checks a three-day comparison's live-formulas copy (`… (formulas).xlsx`, written
+when *Also write a live-formulas copy* is ticked on Compare ▸ Three Days Matrix)
+against its values workbook. It opens the copy in Excel, recalculates it, and holds
+every cell of the six shared sheets against the values workbook:
+
+```bash
+python tools/three_day_formulas_check.py "output/comparisons/three-days/<d3>/clean_highway_three_days <d1> <d2> <d3> <source>.xlsx" --out formulas-check.txt
+```
+
+The copy is found beside the workbook; name it as a second argument when it is
+somewhere else. It passes when every cell is equal (a number for a number, text for
+text), no cell holds an Excel error and every line under the Summary's *Live
+formulas* heading reads OK. It needs Excel on the PC (exit code 2 without it): only
+Excel can say what a formula calculates to. It shares no code with the comparison or
+with either writer. Detail: [docs/comparison-engine.md](../docs/comparison-engine.md)
+§9p.
+
 ## screenshots.py
 
 Regenerates the marketing screenshots and the social/OG card by rendering the

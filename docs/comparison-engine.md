@@ -1740,6 +1740,87 @@ row), **Added & removed** (one row per record not on all three days), **Three da
 an empty cell; a shown-only column shows the newest day's value) and **Notes**. Every
 value shown is the text the classes were decided on.
 
+**The live-formulas copy** (`three_day_formulas.py`, v0.52.1;
+`run(..., also_formulas=True)`). The same six sheets with every number an Excel
+formula, then **As built**: the Summary as the app computed it. It is written beside
+the values workbook as `<name> (formulas).xlsx`, the name every matrix gives that
+copy, from the SAME computed comparison: no second load, no second pairing. It never
+decides a result. The values workbook and its sidecar are committed first, and a skip,
+a writer failure or a cancel leaves them standing. A copy that this build did not
+refresh is removed, so one never sits beside a newer values workbook looking current;
+one that Excel still holds open cannot be removed, and the log says so.
+
+- **Where the days are.** On the grid sheet itself, to the right of the grid: one
+  block of columns per day (`On <day>`: `yes` or `—`, then every column as exported),
+  then the working columns: the record's number, the days it is on as a code (4 for the
+  first day + 2 for the middle + 1 for the newest), one **state letter per column**
+  (the letters `compute` gives: `=` `N` `M` `B` `X`; `E` / `D` for a record on two
+  days; `.` `-` `k`), how many of each letter, and the cells that differ for each pair
+  of days. Each row holds one record's three days. Excel's outline folds everything
+  right of the grid away.
+- **Why one sheet.** Every formula on the grid sheet reads its OWN ROW ONLY, so each
+  column's formula is written once and filled down as an OOXML **shared formula**, the
+  form Excel itself saves a filled-down column in. Excel has no shared form for a
+  formula that reaches another sheet: it writes such a column as one formula text per
+  cell, and it refuses to open a file that shares one (measured on this PC's Excel).
+  Day sheets of their own would therefore have meant about five million formula texts
+  on the statewide Highway report. Reading its own row also means the grid can be
+  filtered or sorted without a formula losing its record. openpyxl has no shared
+  formula of its own; `SharedFormula` subclasses its `ArrayFormula`, whose attributes
+  the writer puts on the cell's `<f>` element, and the check reads every column back
+  from the file to hold that.
+- **The formulas.** A state letter is `EXACT(TRIM(a),TRIM(b))`, nested the way
+  `classify` branches and chosen by the days code. The letters are built in runs of
+  columns short enough for one formula (`_plan_state`: under Excel's 8,192 characters
+  and its 255-character text literal). A grid cell shows the three days in order where
+  its letter is a change, else the newest day the record is on. The Summary counts the
+  letters (`COUNTIF`, `SUM` and `SUMPRODUCT` over the working columns), Routes totals
+  each route's run of grid rows (the grid sorts by route first), and the two lists
+  read the grid sheet cell by cell. Colours are conditional formatting on the letters.
+- **What is not a formula.** Which rows are one record (the pairing is the engine's);
+  which cells the Changes sheet lists and which records Added & removed lists (settled
+  when the workbook is built, their contents read live); and the first-day-vs-last-day
+  row of the Summary when a repeated key pairs differently once the middle day is
+  skipped (`first_last_differs`). The grid holds the pairing through the middle day,
+  so that row carries the numbers the app computed by pairing the two days directly.
+- **Its own checks**, at the foot of the Summary: every number equals the As built
+  sheet's; the grid sheet is in the order it was built in (Routes and the lists read
+  its rows by position); the Changes sheet lists every changed cell; Added & removed
+  lists every record that is not on all three days. Change a day's value in Excel and
+  everything recalculates, and the first check then reads DIFFERS, because the
+  workbook no longer describes the exports.
+- **Text Excel would not read back as written** (each measured on this PC's Excel).
+  It decodes `_xHHHH_` in a stored string as the character with that code, left to
+  right, so two tokens that share an underscore decode as one and a half. It reads a
+  bare carriage return as a line feed. And a string that is nothing but line feeds,
+  tabs and spaces arrives empty. The Clean Road exports carry such text (`_x000d_`),
+  so a day block stores it escaped (`excel_text`: `_x005F_` in place of an underscore
+  that would start a token, and `_x000D_`, `_x000A_`, `_x0009_` for the three
+  characters) and a formula sees exactly the text the app compared. 392 compositions
+  of tokens, underscores and white space read back whole.
+
+Measured on the three Clean Road reports (10-30 → 11-03 → 11-06, this PC):
+
+| Report | Records × columns | Formulas | The copy | Written in | Excel opens it in |
+|---|---|---|---|---|---|
+| Ramp | 15,215 × 34 | 775,965 | 6.6 MB | 17 s | 4 s |
+| Intersection | 16,384 × 55 | 1,212,416 | 12.2 MB | 31 s | 6 s |
+| Highway | 53,822 × 74 | 5,059,268 | 52.6 MB | 2 min 3 s | 30 s |
+
+A full recalculation takes under 3 seconds on each, so the copy opens in automatic
+calculation with nothing to press. Excel (64-bit) holds the Highway copy in about
+1.2 GB of memory. Saved again from Excel the formulas stay shared (the Ramp copy
+becomes 10.6 MB, with Excel's cached values in it). Past `FORMULAS_MAX_CELLS`
+(8 million) the copy is skipped and the log says so; the values workbook holds every
+value regardless.
+
+Each copy was recalculated in Excel and every cell of the six shared sheets held
+against the values workbook (`tools/three_day_formulas_check.py`): 608,680 /
+999,546 / 4,305,920 grid cells, the Changes sheet's 385,041 on Highway, the Routes
+sheets and every Summary count, all equal, and every check line OK. The refactor that
+lets both writers share one set of sheet headings left the values workbooks cell for
+cell what v0.52.0 wrote (4,721,401 Highway cells compared).
+
 **Publication.** The counts ride the outcome sidecar beside the workbook (key
 `three_day`, `read_counts`), bound to it the way every consolidation outcome is: a
 workbook rewritten after publication reads as unknown. `ThreeDayCounts.from_dict`
@@ -1816,7 +1897,19 @@ character, a locked destination, a day that is a link to another day; Clean Road
 end to end through the matrix with each pair equal to `compare_folders` on the same
 folders; the raw-file tool passing on that workbook and going red on a tampered file
 and on a look-alike value; the bridge and the worker). Twelve ways of breaking the
-engine each turn the check red.
+engine each turn the check red. The live-formulas copy is locked by
+`build/check_three_day_formulas.py`: where Excel is installed it recalculates the
+copy of the fixture, of 20 random datasets and of a 62-column report and holds every
+cell against the values workbook and each day's block, as Excel reads it, against
+the exports; changes a value in Excel and requires a fresh comparison's numbers;
+sorts the grid sheet from a header; and reads the class colours. Everywhere it holds
+what the file contains (one shared formula per column, none reaching another sheet,
+the days as exported, the formula and literal limits) and that the copy never
+decides a result. Thirty-one ways of breaking the writer or its hand-off each turn
+it red. An independent review of the change found the escape missing a token that
+shares its underscore with the one before it, a stale copy surviving a failed
+counts publication, and the Excel check passing a sheet with extra rows; all three
+are fixed and held by that check.
 
 ## 10. Internal mechanics (quick reference)
 
@@ -2305,9 +2398,18 @@ consolidation, no TSN dataset and no baseline to pick.
   `add_/remove_three_day_matrix_set`, `set_three_day_matrix_report`,
   `set_three_day_matrix_row_order`, `build_three_day_matrix_cell`,
   `rebuild_three_day_matrix`, `open_three_day_cell_comparison`,
-  `open_three_day_comparisons_folder`. Settings:
-  `three_day_matrix_source/sets/hidden/row_order`. Values workbooks only, so no
-  formulas toggle. A Highway cell takes about two minutes.
+  `open_three_day_comparisons_folder`, `set_three_day_matrix_formulas`. Settings:
+  `three_day_matrix_source/sets/hidden/row_order/formulas`. A Highway cell takes
+  about two minutes.
+- **The live-formulas option** is the matrix's own (`three_day_matrix_formulas`,
+  default off), like every matrix's. With it on, `build_cell(..., also_formulas=True)`
+  also writes `… (formulas).xlsx` beside the cell's workbook (§9p), about two more
+  minutes on Highway; a build without it removes a copy left from an earlier build.
+  The option applies to the cells built from then on, and a cell's freshness is read
+  from the values workbook alone, as on the other matrices. Unlike their copy it is not
+  capped at 12,000 rows (`matrix._FORMULAS_TWIN_MAX_ROWS`, which leaves every Clean
+  Road report without one): filled-down formulas keep the statewide Highway copy to
+  53 MB.
 - **Locked by** `build/check_three_day.py` (the rows, the set helpers, the buildable
   and missing-day states, `build_cell` into the store, the published counts, staleness
   for each of the three days, a deleted route, a lost cache and a rewritten workbook,

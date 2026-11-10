@@ -110,6 +110,7 @@ APP_MODULES = [
     "gui_three_way_api",                 # the ArcGIS ▸ Three-way endpoints
     "three_day",                         # the three-export-days engine (v0.52.0)
     "three_day_workbook",                # its values workbook
+    "three_day_formulas",                # its live-formulas copy (v0.52.1)
     "three_day_matrix",                  # the Compare tab's Three Days matrix
     "gui_three_day_api",                 # the Compare ▸ Three Days endpoints
     # v0.46.0 — the in-app layer refresh: ArcGIS Pro discovery + worker sessions,
