@@ -12,7 +12,12 @@ touching.
 
 ## Current status and work
 
-**Current release: v0.52.0 (2026-11-09)** — a **three-day comparison**. Compare ▸
+**Current release: v0.52.1 (2026-11-09)** — the Three Days Matrix gets the
+**Comparison output** option the other matrices have: *Also write a live-formulas
+copy* writes `… (formulas).xlsx` beside each three-day workbook, the same sheets with
+every number calculated in Excel from the three days' values, and
+`tools/three_day_formulas_check.py` holds a copy against its values workbook in
+Excel. v0.52.0 added the **three-day comparison** itself. Compare ▸
 **Three Days Matrix** compares one report's exports on three days at once and sorts
 every changed cell by when it changed: on the newest day, on the middle day and
 kept, changed and back, or changed both times; records are added, removed, or on the

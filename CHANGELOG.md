@@ -3,6 +3,52 @@
 All notable changes to TSMIS Reports Exporter, newest first. Each GitHub
 release shows only its own section (see `build/gen_release_notes.py`).
 
+## v0.52.1 — 2026-11-09
+
+The Three Days Matrix gets the Comparison output option the other matrices have.
+
+- **Compare ▸ Three Days Matrix ▸ Matrix options ▸ Comparison output ▸ Also write a
+  live-formulas copy.** With it ticked, each cell also writes `… (formulas).xlsx`
+  beside its workbook: the same Summary, Routes, Changes, Added & removed and record
+  grid, with every number calculated by Excel from the three days' values. Click a
+  cell of the grid, or a count on the Summary or Routes sheet, to see the formula and
+  the cells it reads. The option is this matrix's own and is off until ticked. It
+  applies to the cells built from then on: rebuild a cell to get its copy.
+- **Where the three days are.** On the copy's Three days sheet, to the right of the
+  grid: one block of columns per day, as exported, then the working columns (which
+  days a record is on, and one letter per column saying how its three days compare).
+  The + and − buttons above the columns fold them away. Each row holds one record's
+  three days, so the sheet can be filtered without a formula losing its record.
+- **It checks itself.** The foot of the copy's Summary holds the live numbers against
+  the ones the app computed, which an As built sheet keeps. Change a day's value and
+  everything recalculates, and that line then says the workbook no longer describes
+  the exports.
+- **Statewide reports get a copy.** The other matrices skip their live-formulas copy
+  past 12,000 rows, which leaves every Clean Road report without one. This copy stores
+  each column's formula once and fills it down, the way Excel saves a filled-down
+  column, so the Highway report's five million formulas are a 53 MB file. It is
+  written from the comparison already computed, with no second read of the exports.
+- **`tools/three_day_formulas_check.py`** opens a copy in Excel, recalculates it and
+  holds every cell against the values workbook.
+- **Fixed: PDF vs Excel Matrix.** Its *Also write a live-formulas copy* box un-ticked
+  itself as soon as it was ticked and showed un-ticked after a restart, although the
+  setting was saved and used. The page state never carried it.
+
+Evidence images stay off this matrix: they illustrate the prints of five report
+families, and Clean Road is not one of them.
+
+Measured on the dev-site exports of 2026-10-30 → 11-03 → 11-06:
+
+| Report | Records × columns | The copy | Extra build time | Excel opens it in | Cells equal to the values workbook |
+|---|---|---|---|---|---|
+| Clean Road Highway | 53,822 × 74 | 52.6 MB | 2 min 3 s | 30 s | 4,721,472 of 4,721,472 |
+| Clean Road Intersection | 16,384 × 55 | 12.2 MB | 31 s | 6 s | 1,002,871 of 1,002,871 |
+| Clean Road Ramp | 15,215 × 34 | 6.6 MB | 17 s | 4 s | 610,847 of 610,847 |
+
+Each copy was recalculated in Excel and every cell of its six shared sheets compared
+with the values workbook; every check line read OK. The values workbooks themselves
+are cell for cell what v0.52.0 wrote.
+
 ## v0.52.0 — 2026-11-09
 
 A three-day comparison. A two-day comparison says what differs between two exports; a
