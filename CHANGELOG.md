@@ -3,6 +3,59 @@
 All notable changes to TSMIS Reports Exporter, newest first. Each GitHub
 release shows only its own section (see `build/gen_release_notes.py`).
 
+## v0.52.0 — 2026-11-09
+
+A three-day comparison. A two-day comparison says what differs between two exports; a
+third export says when each difference appeared and whether it stayed.
+
+- **Compare ▸ Three Days Matrix.** Pick any three exported days of a source and add
+  them as a column; each report's cell compares its three exports. Every compared cell
+  of a record that is on all three days is sorted into: **changed on the newest day**
+  (the same on the two earlier days), **changed on the middle day and kept**, **changed
+  and back** (the first and last day agree, the middle day stands alone), **changed
+  both times**, or the same. Every record is on all three days, **added** or
+  **removed** (on the middle or the newest day), missing on the middle day only, or
+  only on the middle day. The cell shows the newest day's changes large, the rest
+  under it. Rows are the six Clean Road editions (Highway, Intersection and Ramp,
+  Excel and PDF).
+- **The workbook** has a Summary (the counts, each pair of days, every column), a
+  Routes sheet (the same per route), a **Changes** sheet with one row per changed cell
+  and its value on each of the three days, an **Added & removed** sheet with one row
+  per record that is not on all three days, and the record grid, where a changed cell
+  reads `2 → 3 → 3` in its class's colour. The two lists link to the record's grid row.
+- **It is the two-day comparison, one day wider.** Each day is read by the report's own
+  cross-environment adapter, the one vs Baseline Matrix uses; records are keyed and
+  paired by the same rules, the middle day paired with the day before and the day after
+  exactly as their two-day comparisons pair them; a cell is equal exactly when a
+  two-day comparison says so. So the Summary's line for each pair of days is that
+  two-day comparison's own count of records on both, records only one day has, records
+  that differ and differing cells. A report whose equality is not plain text (Highway
+  Log's dittos and Med Wid) is refused rather than guessed at, which is why the matrix
+  offers the Clean Road rows.
+- **`tools/three_day_check.py`** checks a three-day workbook against the three days'
+  raw per-route files with none of the comparison's code: every raw row of each day
+  must be in the grid exactly once with its values unaltered, a location on one row a
+  day must be one grid record, and the Summary and both lists must re-derive from the
+  grid. `--spot N` prints random changed cells with each day's file, Excel row and raw
+  cell. Run it before a three-day workbook is delivered.
+
+Measured on the dev-site exports of 2026-10-30 → 11-03 → 11-06:
+
+| Report | On all three days | Added · removed | Changed 11-06 | Changed 11-03, kept | Changed and back | Changed twice |
+|---|---|---|---|---|---|---|
+| Clean Road Highway | 50,492 | 2,543 · 470 | 41,355 | 1,354 | 4,896 | 68 |
+| Clean Road Intersection | 16,384 | 0 · 0 | 0 | 4 | 0 | 0 |
+| Clean Road Ramp | 15,214 | 1 · 0 | 5 | 18 | 0 | 0 |
+
+Every pair of days in all three equals the app's two-day comparison of the same
+folders (Highway: 6,407 differing cells 10-30 vs 11-03, 46,601 for 11-03 vs 11-06,
+42,862 for 10-30 vs 11-06), and all three workbooks pass the raw-file check (155,985
+Highway rows accounted for). A second set of days (10-02 → 10-22 → 11-06) and a set
+of Ramp prints (10-22 → 10-30 → 11-03) equal their two-day comparisons too. The Highway export of 11-06 no longer leaves the median
+and the right roadbed blank on routes 101 and 099 (roadmap TW1): that is 40,800 of the
+41,355 cells. Route 096 had the same blanks on 11-03 only, which is 4,649 of the 4,896
+cells that changed and went back.
+
 ## v0.51.2 — 2026-11-04
 
 The Clean Road Highway build is taken to the raw layers' own values. Of the 1.46 million

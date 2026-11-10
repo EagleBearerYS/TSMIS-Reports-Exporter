@@ -588,6 +588,12 @@ route / county / postmile columns.
   (TSN and the layers agree, the report does not), *ArcGIS differs*, *all differ*,
   *TSN differs* (expected drift), with every column traced to its ArcGIS layer — see
   [comparison-engine.md](comparison-engine.md) §9o.
+- **Three days** (v0.52.0). Three exports of one file compare at once on Compare ▸
+  Three Days Matrix, every changed cell sorted by when it changed (on the newest day, on
+  the middle day and kept, changed and back, changed both times) and every record as
+  added, removed or on the middle day only. Each pair of days reads exactly as the
+  vs Baseline comparison of those two days — see
+  [comparison-engine.md](comparison-engine.md) §9p.
 
 Evidence images are not wired for these prints.
 

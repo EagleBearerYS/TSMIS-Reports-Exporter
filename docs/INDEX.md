@@ -12,8 +12,18 @@ touching.
 
 ## Current status and work
 
-**Current release: v0.51.2 (2026-11-04)** — the Clean Road Highway build from the
-ArcGIS layers now differs from its own layers on 2 cells of the 1.46 million the
+**Current release: v0.52.0 (2026-11-09)** — a **three-day comparison**. Compare ▸
+**Three Days Matrix** compares one report's exports on three days at once and sorts
+every changed cell by when it changed: on the newest day, on the middle day and
+kept, changed and back, or changed both times; records are added, removed, or on the
+middle day only. It loads each day through the vs Baseline matrix's own adapter, so
+each pair of days reads exactly as its two-day comparison does, and
+`tools/three_day_check.py` checks a workbook against the raw per-route files with
+none of the comparison's code. Rows: the six Clean Road editions
+([comparison-engine.md](comparison-engine.md) §9p, §12f; [gui.md](gui.md)).
+
+Since v0.51.2 the Clean Road Highway build from the
+ArcGIS layers differs from its own layers on 2 cells of the 1.46 million the
 raw-layer check can judge (458 in v0.51.1): a span's part stays off another visit of
 the same postmiles, every layer's odometer comes from Highway Group at its AR, a
 prefix change runs through a third space of its county window by window, and the Left
