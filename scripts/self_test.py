@@ -115,7 +115,11 @@ _DYNAMIC_REPORT_MODULES = ("matrix", "day_matrix", "pdf_excel_matrix",
                            # v0.51.0: the Three-way matrix and its Clean Road
                            # adapters, imported inside its endpoints and worker.
                            "three_way", "three_way_matrix",
-                           "compare_clean_road_three_way")
+                           "compare_clean_road_three_way",
+                           # v0.52.0: the Three Days matrix, its engine and
+                           # the workbook writer the engine imports on use.
+                           "three_day", "three_day_workbook",
+                           "three_day_matrix")
 
 
 def run(emit=None):

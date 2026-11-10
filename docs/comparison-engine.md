@@ -1679,6 +1679,145 @@ layer and link, the grid texts and fills, the missing-from-report record, the ro
 the sidecar binding, the pairing equal to both two-sided comparisons; every column of all
 three reports traced to library layers; the matrix).
 
+### 9p. Three-day comparisons — one report on three export days (`three_day.py`, v0.52.0)
+
+A two-day comparison (§12c, vs Baseline) says what differs between two pulls. A third
+pull turns each difference into a history, and the history is the finding. `three_day`
+compares one report's records on **three exported days of the same source** and sorts
+every compared cell of a record that is on all three:
+
+| Class | Days | Reading |
+|---|---|---|
+| **changed on the newest day** | d1 = d2 ≠ d3 | fresh: new since the middle day |
+| **changed on the middle day** | d1 ≠ d2 = d3 | an edit that stuck |
+| **changed and back** | d1 = d3 ≠ d2 | the middle day stands alone: changed and put back, or that day's file had it wrong |
+| **changed both times** | three values | still moving |
+| same | d1 = d2 = d3 | |
+
+and every record by the days it is on: all three, added on the middle or the newest day,
+removed on either, missing on the middle day only, or only on the middle day. A record
+on two days still has its two days' cells compared.
+
+**Nothing is re-decided.** The comparison owns no loader, key, pairing or equality rule:
+
+- **Sides.** `compare_days(adapter, folders, days, out)` takes the report's
+  cross-environment adapter (`compare_env.EnvCompare`, the vs Baseline matrix's) and
+  loads each day through the loader `compare_folders` itself resolves
+  (`_side_loader_fn`), under the schema it builds (`_schema`). Flat adapters only
+  (`is_flat`: the per-route Excel exports and the flat print editions; a
+  one-row-per-route summary loads another shape and is refused). The three headers
+  must be one layout.
+- **Keys and pairing.** `compare_core.keys_for` + `pair_occurrences_by_similarity`
+  under that schema, the later day as the comparison's first side, as on the vs
+  Baseline matrix. **The middle day anchors:** day 2 pairs with day 1 exactly as
+  "day 2 vs baseline day 1" pairs them, day 3 pairs with day 2 as "day 3 vs baseline
+  day 2" does, and what paired with no day-2 row pairs day 3 with day 1. Records keep
+  day 2's order; one with no day-2 row sits after the day-2 row its nearest preceding
+  same-route row paired with.
+- **Equality.** The TRIMmed text, the relation `compare_core.compared_cell` decides a
+  plain cell by; a context column (the Clean Road extract date) is shown and never
+  counted. Equality has to be ONE relation across three days for the classes to
+  partition every cell, so `schema_problem` **refuses** a schema with non-asserting
+  dittos (Highway Log), a Med Wid column, an unavailable-anchor token, or two columns
+  of one name, rather than classify on faith.
+
+**The same numbers as the two-day comparisons.** `ThreeDayCounts.pairs()` gives, for
+each pair of days, what a two-day comparison of the later day against the earlier one
+reports: records on both, records only each day has, records that differ, differing
+cells, and the differing cells per column. The two consecutive pairs are read off the
+classes (`through_middle()`), and because their pairing is the two-day comparison's
+own they ARE its counts. First-vs-last is paired directly too (`first_last`), since
+reading it through the middle day can pair a repeated key differently; where the two
+readings part, the Summary says so (`first_last_differs`).
+
+**Workbook** (`three_day_workbook.py`, values only, six sheets): **Summary** (the
+inputs, records by the days they are on, cells by class, each pair of days, every
+column's classes), **Routes** (the same per route), **Changes** (one row per changed
+cell: route, location, column, its value on each day, the change, a link to its grid
+row), **Added & removed** (one row per record not on all three days), **Three days**
+(the record grid: every record and column; a changed cell shows its history
+`2 → 3 → 3` in its class's colour, `—` for a day the record is not on, `(blank)` for
+an empty cell; a shown-only column shows the newest day's value) and **Notes**. Every
+value shown is the text the classes were decided on.
+
+**Publication.** The counts ride the outcome sidecar beside the workbook (key
+`three_day`, `read_counts`), bound to it the way every consolidation outcome is: a
+workbook rewritten after publication reads as unknown. `ThreeDayCounts.from_dict`
+checks every field, so a damaged record reads as unknown too and never raises into a
+snapshot.
+
+**What a reader cannot be misled by.** The grid writes a changed cell as `a → b → c`,
+an empty cell as `(blank)` and a day a record is not on as `—`. An export value that
+already reads like one of those marks is still compared as the text it is, and
+`compute` lists such values (`Compared.lookalikes`) so the Summary names them in red
+instead of leaving a cell ambiguous. Formula-looking text stays text, each row of the
+lists gets its own cell for it, and a value Excel cannot store at all (a control
+character) or a destination that cannot be written (the workbook open in Excel) ends
+the build with a result that says so, with the unsaved workbook discarded cleanly.
+`compare_days` refuses three folders that are not three datasets (the same resolved
+folder or the same discovered files, the two-day comparison's guard across all three).
+
+**Measured (2026-11-09), the three Clean Road reports, dev-site exports of 10-30 →
+11-03 → 11-06**, built through the matrix worker:
+
+| Report | Records d1 · d2 · d3 | On all three | Added · removed · 11-03 only | Changed 11-06 | Changed 11-03, kept | Changed and back | Changed twice |
+|---|---|---|---|---|---|---|---|
+| Highway | 51,138 · 51,636 · 53,211 | 50,492 | 2,543 · 470 · 317 | 41,355 | 1,354 | 4,896 | 68 |
+| Intersection | 16,384 · 16,384 · 16,384 | 16,384 | 0 · 0 · 0 | 0 | 4 | 0 | 0 |
+| Ramp | 15,214 · 15,215 · 15,215 | 15,214 | 1 · 0 · 0 | 5 | 18 | 0 | 0 |
+
+Each pair, as records on both · only earlier / only later · differing cells:
+
+| Report | 10-30 vs 11-03 | 11-03 vs 11-06 | 10-30 vs 11-06 |
+|---|---|---|---|
+| Highway | 50,739 · 399 / 897 · 6,407 | 51,248 · 388 / 1,963 · 46,601 | 50,668 · 470 / 2,543 · 42,862 |
+| Intersection | 16,384 · 0 / 0 · 4 | 16,384 · 0 / 0 · 0 | 16,384 · 0 / 0 · 4 |
+| Ramp | 15,214 · 0 / 1 · 18 | 15,215 · 0 / 0 · 5 | 15,214 · 0 / 1 · 23 |
+
+Two things back those numbers:
+
+1. **Every pair equals the app's own two-day comparison** of the same two folders
+   (`compare_folders`, counts only): records on both, one-sided each way, records that
+   differ, differing cells and every column's count, in both orientations (later day
+   first, as the matrix runs it, and earlier day first) — 18 comparisons, 18 equal.
+   A second set of days, 10-02 → 10-22 → 11-06, equals its nine too, and its
+   10-02 vs 10-22 pairs reproduce the two-day results recorded for v0.51.0 (§9o):
+   Highway 2,027 cells on 51,136 paired segments, Ramp 20 cells, Intersection 1 cell
+   and the 76 intersections only 10-02 has. The print edition was held the same way
+   on real prints (Ramp, 10-22 → 10-30 → 11-03: three pairs, three equal).
+2. **`tools/three_day_check.py`**, which shares none of the comparison's code, reads
+   the raw per-route files and the workbook's own sheets: every raw row of each day is
+   in the grid exactly once with its values unaltered (155,985 Highway rows, 49,152
+   Intersection, 45,644 Ramp); a location on one row a day is one grid record (52,910
+   of Highway's 53,822 records; the other 912 are at a location that repeats within a
+   day, whose twins pair by likeness); the Summary's classes, per-column counts,
+   record counts and all three pairs of days re-derive from the grid's own values;
+   the Routes sheet and the grid's tallies agree with them; and the Changes sheet
+   lists exactly the changed cells (48,129 on Highway).
+
+What the Highway numbers say: the cells changed on 11-06 are routes 101 (31,065) and
+099 (9,735) going from blank to a value in the median and right-roadbed columns. The
+blanks the three-way comparison found on those two routes (§9o; roadmap TW1) are gone
+from the 11-06 export: route 101 had the median blank on 2,277 of 2,931 rows and the
+right roadbed's lanes on 2,100 on both earlier days and has neither blank on any of
+its 4,124 rows on 11-06; route 099 went from 901 and 518 of 1,495 to none of 1,800.
+The cells that changed and went back are route 096 (4,649 of 4,896): the 11-03 export
+alone leaves its median and most of its right-roadbed columns blank on every row, and
+has 273 rows where the other two days have 323.
+
+Locked by `build/check_three_day.py` (the classes; a hand fixture with every class
+and presence — counts, every sheet, both lists, the grid's texts, tallies, order and
+links, formula-looking text kept as text, the sidecar binding; **120 random datasets,
+with and without repeated keys, where all three pairs equal
+`compare_core.run_compare`'s counts and every cell's class agrees with
+`compared_cell`**; the gate; the edges above — a formula-looking location with
+several changed cells, a mark look-alike, fourteen damaged counts records, a control
+character, a locked destination, a day that is a link to another day; Clean Road Ramp
+end to end through the matrix with each pair equal to `compare_folders` on the same
+folders; the raw-file tool passing on that workbook and going red on a tampered file
+and on a look-alike value; the bridge and the worker). Twelve ways of breaking the
+engine each turn the check red.
+
 ## 10. Internal mechanics (quick reference)
 
 - **`union_keys(keys_t, keys_n)`** — union in DOCUMENT order, grouped by route: side-A routes in
@@ -2125,6 +2264,56 @@ build, the user's `matrix_tsn_files` pick honoured), the ArcGIS build is
   states, `build_cell` through the real consolidation and comparison, a fresh cell with the
   published counts, staleness on a moved TSN token / a refreshed build / a new export route,
   the scoped rebuild list, the refusal of an edition not exported that day).
+
+### 12f. The Compare-tab "Three Days" matrix (`scripts/three_day_matrix.py`, v0.52.0)
+
+The **seventh** matrix, on the Compare tab after PDF vs Excel. **Rows = the report
+editions whose three-day comparison has been held against their two-day comparison on
+real exports** (`ROW_KEYS` — the six Clean Road editions; the engine reads any flat
+cross-environment adapter, and a report joins the list once it has had the §9p pass),
+**columns = the sets of three exported days the user adds**, **each cell = that
+report's three exports classified by `three_day`** (§9p). Each day loads through the
+row's own `compare_env` adapter from its run folder (`day_source_dir`), so there is no
+consolidation, no TSN dataset and no baseline to pick.
+
+- **A set** is three different real dates, oldest first: `make_set` sorts any three,
+  `set_id` is `<d1>_<d2>_<d3>`, `parse_set` refuses anything else, and `clean_sets`
+  keeps the saved list valid and in date order.
+- **Cell state** rides the shared `matrix._staleness` with three sources (`day1`,
+  `day2`, `day3`: each day's export folder) and one fingerprint over the three folders,
+  so a route added to, removed from or re-exported on ANY of the three days reads the
+  cell stale. It is stricter than the shared reader in one place: a built workbook
+  whose results-cache record is gone or is another build's reads
+  `cache_missing_or_mismatched`, never fresh. The counts come only from the workbook's
+  sidecar (`three_day.read_counts`); `missing_days` names the days with no export.
+- **Store:** `output/comparisons/three-days/<d3>/<row>_three_days <d1> <d2> <d3>
+  <source>.xlsx`, filed under the newest day. The name carries all three days and the
+  matrix source in its explicit site form (`ssor-prod dev-site`), so two sets sharing a
+  newest day never overwrite each other, and neither do the same days read as two
+  sources (which a folder from before the site was recorded can serve to both). The
+  folder is the bare date to keep the path short: the sidecar beside the workbook is
+  the longest path a cell writes, and it is no longer than the Three-way matrix's. The
+  freshness cache is `_state/_results.json` (identity `three-days`: built-at mtime,
+  completion, input fingerprint, producer version), keyed
+  `<d1>|<d2>|<d3>|<source>|<row>`, with the attempts overlay beside it. The grid, Add
+  and Build all read ONE source (`GuiThreeDayMixin._three_day_source`: the saved one
+  while it is still offered, else the default), and `build_cell` takes a source in
+  either form and refuses anything that is not one.
+- **Queue:** compare Jobs carry `which:"three_day"` (their `env` is the set id) →
+  `ThreeDayMatrixCompareWorker`. Bridge (`gui_three_day_api`):
+  `three_day_matrix_info`, `set_three_day_matrix_source`,
+  `add_/remove_three_day_matrix_set`, `set_three_day_matrix_report`,
+  `set_three_day_matrix_row_order`, `build_three_day_matrix_cell`,
+  `rebuild_three_day_matrix`, `open_three_day_cell_comparison`,
+  `open_three_day_comparisons_folder`. Settings:
+  `three_day_matrix_source/sets/hidden/row_order`. Values workbooks only, so no
+  formulas toggle. A Highway cell takes about two minutes.
+- **Locked by** `build/check_three_day.py` (the rows, the set helpers, the buildable
+  and missing-day states, `build_cell` into the store, the published counts, staleness
+  for each of the three days, a deleted route, a lost cache and a rewritten workbook,
+  the scoped rebuild list, the refusals, the two-source and bare-source cases, the
+  sidecar path's length; the bridge's set validation, source fallback, queued job and
+  dispatch; the worker run to completion and cancelled).
 
 ## 13. Visual evidence (`scripts/visual_evidence.py` + the per-report adapters, v0.21.0; Intersection Detail joined in v0.22.0, Highway Log in v0.24.0, Highway Sequence in v0.25.0, Ramp Detail in v0.26.0; the exact-source rebuild + the cross-environment lane in RB-4/HF-05+HF-10)
 

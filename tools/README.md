@@ -22,6 +22,28 @@ a person to read. The as-of is the library's export date
 (`arcgis_layers/_refresh/last_run.json`). Detail and the 2026-11-03 numbers:
 [docs/comparison-engine.md](../docs/comparison-engine.md) §9o.
 
+## three_day_check.py
+
+Checks a three-day comparison workbook (Compare ▸ Three Days Matrix) against the
+three days' raw per-route export files directly, with none of the comparison's
+loading, keying, pairing or classing code. Run it before a three-day workbook is
+delivered:
+
+```bash
+python tools/three_day_check.py "output/comparisons/three-days/<d3>/clean_highway_three_days <d1> <d2> <d3> <source>.xlsx" "output/<d1 run>/clean_highway" "output/<d2 run>/clean_highway" "output/<d3 run>/clean_highway" --spot 12 --out check.txt
+```
+
+It proves that every raw row of each day is in the workbook's grid exactly once with
+its values unaltered, that a location on one row a day is one grid record, that the
+Summary's classes, counts and pairs of days re-derive from the grid's own values, and
+that the Routes, Changes and Added & removed sheets say exactly what the grid shows.
+It fails closed on what it cannot read: a route file the comparison skipped, or an
+export value that reads like one of the workbook's own marks. `--spot N`
+prints N random changed cells with the file, Excel row and raw cell of each day, for
+a person to open and read. Clean Road reports (Highway, Intersection, Ramp). Detail
+and the 2026-11-09 numbers: [docs/comparison-engine.md](../docs/comparison-engine.md)
+§9p.
+
 ## screenshots.py
 
 Regenerates the marketing screenshots and the social/OG card by rendering the
