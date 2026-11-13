@@ -5,6 +5,13 @@ Corpus root: `C:\Users\Yunus\Downloads\TSMIS` (local only; never copy corpus mem
 Purpose: bind the exact real bytes used to approve comparison behavior before any
 semantic re-bless
 
+The oracle / gate identities below are those of the files on the day each section was
+written. Two later edits changed files named here, so their current hashes differ:
+`build/phase8_ramp_summary_comparison.py` on 2026-08-18, and on 2026-11-13 both Stage-8
+summary oracles and their gates, which now match the cover page's submitter by its shape
+and require one submitter across the pull. On the bound 7.9 PDFs the edited oracles read
+every route, count and provenance digest unchanged.
+
 ## Trust policy
 
 - Read the corpus `_INDEX.md` for routing, but do not treat the index, an agent report,

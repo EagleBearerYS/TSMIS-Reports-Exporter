@@ -594,6 +594,13 @@ version.py`), then the pure-Python golden guards:
 
 - Product-name guard: `check_no_misspelling.py` (fails the build if the product
   name is ever mis-typed — it is always TSMIS)
+- Account-name guard: `check_no_account_names.py` (fails on any e-mail address,
+  and on any value given for a report's submitter, in a file git would commit,
+  bar a few made-up placeholders). The release's `-batch-source.zip` is
+  `git archive HEAD`, so anything tracked is published, and every report prints
+  the account that asked for it: a pin, a fixture or a note copied from a real
+  page can carry a person's account. Match the shape or read it from the source
+  at run time; never write the name.
 - Export-engine: `check_export_engine.py`, `check_parallel_reconcile.py`,
   `check_intersection_gate.py`
 - GUI bridge + diagnostics: `check_gui_bridge.py`, `check_a2_compare_filter.py`,

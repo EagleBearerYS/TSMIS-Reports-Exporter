@@ -541,14 +541,14 @@ def test_source_claims():
     print("TSN source claims (CMP-AUD-144/145/146):")
     import compare_tsn_common as ctc
     text = ("OTM22250\nREPORT DATE : 09/15/2025\nREFERENCE DATE : 09/15/2025\n"
-            "SUBMITTOR : TRLBUGNI\nREPORT TITLE : ' T '\nEVENT ID :\n4843738\n"
+            "SUBMITTOR : TRXXXXXX\nREPORT TITLE : ' T '\nEVENT ID :\n4843738\n"
             "LOCATION CRITERIA:\nSTATEWIDE\n04:53 PM\n")
     ident = ctc.tsn_print_identity(text, "t.pdf")
     check("identity extracted (incl. next-line EVENT ID)",
           ident["event_id"] == "4843738" and ident["report_id"] == "OTM22250"
           and ident["generated_time"] == "04:53 PM")
     try:
-        ctc.tsn_print_identity(text.replace("SUBMITTOR : TRLBUGNI\n", ""), "t.pdf")
+        ctc.tsn_print_identity(text.replace("SUBMITTOR : TRXXXXXX\n", ""), "t.pdf")
         check("a missing identity field refuses", False)
     except ValueError as e:
         check("a missing identity field refuses", "submitter not found" in str(e))

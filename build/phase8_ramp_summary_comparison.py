@@ -348,6 +348,23 @@ class AuditError(ValueError):
     pass
 
 
+# Every cover page prints the account that was signed in for the pull. The audit
+# needs "one account made all of it", not who: the address is matched by its shape
+# and must be the same on every file, and results name it by this label.
+SUBMITTER_ADDRESS = re.compile(r"[A-Za-z0-9._%+-]+@dot\.ca\.gov")
+SUBMITTER_LABEL = "submitter address"
+SUBMITTER_PROBE = (SUBMITTER_LABEL, SUBMITTER_ADDRESS)
+
+
+def _one_submitter(submitters: Iterable[str]) -> str:
+    """The single account that printed every file of the pull."""
+    distinct = set(submitters)
+    if len(distinct) != 1:
+        raise AuditError(
+            f"summary PDF submitter is not one account across the pull: {len(distinct)}")
+    return next(iter(distinct))
+
+
 @dataclass(frozen=True)
 class FileEntry:
     name: str
@@ -497,6 +514,7 @@ def _parse_summary_pdfs(root: Path) -> dict[str, object]:
     geometry_rows: list[tuple[object, ...]] = []
     metadata_counts: Counter[tuple[tuple[str, str], ...]] = Counter()
     metadata_rows = []
+    submitters = []
     for path in sorted(root.glob("*.pdf"), key=lambda item: item.name):
         route = _route_from_name(path, ".pdf")
         if route in records:
@@ -524,12 +542,11 @@ def _parse_summary_pdfs(root: Path) -> dict[str, object]:
                 raise AuditError(f"{path.name}: PDF creation/modification metadata drift")
             metadata_rows.append((route, *signature))
             cover = pdf.pages[0].extract_text() or ""
-            required = (
-                f"All Ramps on Route {route}", f"ROUTE {route}",
-                "Yunus.Shaikh@dot.ca.gov",
-            )
-            if not all(token in cover for token in required):
+            required = (f"All Ramps on Route {route}", f"ROUTE {route}")
+            submitter = SUBMITTER_ADDRESS.search(cover)
+            if submitter is None or not all(token in cover for token in required):
                 raise AuditError(f"{path.name}: cover provenance/route claim drift")
+            submitters.append(submitter.group(0))
             if not re.search(r"REPORT DATE\s*:\s*07/09/2026", cover):
                 raise AuditError(f"{path.name}: report-date drift")
             if not re.search(r"REFERENCE DATE\s*:\s*07/10/2026", cover):
@@ -574,6 +591,7 @@ def _parse_summary_pdfs(root: Path) -> dict[str, object]:
         raise AuditError(
             f"summary PDF universe/metadata drift: routes={len(records)} "
             f"metadata_signatures={len(metadata_counts)}")
+    _one_submitter(submitters)
     return {
         "records": records,
         "routes": list(records),
@@ -1021,6 +1039,24 @@ def _workbook_strings(workbook: openpyxl.Workbook) -> list[str]:
     ]
 
 
+def _token_presence(
+        tokens: Sequence[str | tuple[str, str | re.Pattern[str]]],
+        strings: Sequence[str]) -> dict[str, bool]:
+    """Which printed source claims a product workbook still carries.
+
+    A plain token is looked for as written. An account is never named: it is a
+    (label, needle) pair, reported under its label, whose needle is the shape of
+    an address or a value read from the bound source at run time."""
+    presence: dict[str, bool] = {}
+    for token in tokens:
+        label, needle = token if isinstance(token, tuple) else (token, token)
+        if isinstance(needle, re.Pattern):
+            presence[label] = any(needle.search(value) for value in strings)
+        else:
+            presence[label] = any(needle in value for value in strings)
+    return presence
+
+
 def _expected_product_formulas(row_number: int) -> dict[str, str]:
     return {
         "Sum Hwy": f"=SUM(C{row_number}:H{row_number})",
@@ -1134,13 +1170,10 @@ def _inspect_production_consolidated(
 
         strings = _workbook_strings(workbook)
         provenance_tokens = (
-            "07/09/2026", "07/10/2026", "Yunus.Shaikh@dot.ca.gov",
+            "07/09/2026", "07/10/2026", SUBMITTER_PROBE,
             "Generated:", "Reference Date:", "REPORT DATE", "REFERENCE DATE",
         )
-        provenance_presence = {
-            token: any(token in value for value in strings)
-            for token in provenance_tokens
-        }
+        provenance_presence = _token_presence(provenance_tokens, strings)
         cf_ranges = sorted(str(item.sqref) for item in ws.conditional_formatting)
     finally:
         workbook.close()
@@ -1387,13 +1420,10 @@ def _inspect_production_comparison(
 
         all_strings = _workbook_strings(values)
         printed_tokens = (
-            "07/09/2026", "07/10/2026", "Yunus.Shaikh@dot.ca.gov",
+            "07/09/2026", "07/10/2026", SUBMITTER_PROBE,
             "REPORT DATE", "REFERENCE DATE", "Generated:",
         )
-        printed_presence = {
-            token: any(token in value for value in all_strings)
-            for token in printed_tokens
-        }
+        printed_presence = _token_presence(printed_tokens, all_strings)
         source_note = str(values["Summary"]["B5"].value or "")
         familiar_source_note = str(familiar["A3"].value or "")
     finally:

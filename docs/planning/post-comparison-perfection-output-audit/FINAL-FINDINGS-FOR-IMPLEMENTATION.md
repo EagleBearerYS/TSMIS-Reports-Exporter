@@ -187,7 +187,7 @@ identity anywhere. Direct-lane workbooks: **0**.
 **Controlled differential.** The same library workbooks compared through the
 classic Direct path minutes later print the real identity for all four
 comparators that expose one: `OTM22270 · Event 4843742 · reference 09/15/2025 ·
-TRLBUGNI` (Ramp Summary), `OTM22250 · Event 4843738 · 09/15/2025` (Intersection
+<user ID>` (Ramp Summary), `OTM22250 · Event 4843738 · 09/15/2025` (Intersection
 Summary), `OTM52010 California State Highway Log · report 09/15/25`,
 `OTM22025 Highway Locations · report 15-SEP-25`.
 

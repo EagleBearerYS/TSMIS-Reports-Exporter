@@ -139,11 +139,15 @@ PAGE_BINDINGS = (
     },
 )
 
+# The print names the mainframe account that requested it. That value is read from
+# the bound page at run time (see _report_provenance); it is never written here.
+SUBMITTER_ID = re.compile(r"SUBMITTOR\s*:\s*([A-Z][A-Z0-9]{5,7})\b")
+
 REPORT_PROVENANCE = {
     "report_id": "OTM22250",
     "report_date": "09/15/2025",
     "reference_date": "09/15/2025",
-    "submitter": "TRLBUGNI",
+    "submitter": None,
     "report_title": "Intersection Summary Statewide",
     "event_id": "4843738",
     "location_criteria": "STATEWIDE",
@@ -152,6 +156,12 @@ REPORT_PROVENANCE = {
     "printed_report_page": 1,
     "total_intersections": 16_626,
 }
+
+
+def _report_provenance(submitter: str) -> dict[str, object]:
+    """REPORT_PROVENANCE with the submitter the bound print names, in its place."""
+    return {**REPORT_PROVENANCE, "submitter": submitter}
+
 
 SECTION_ORDER = (
     "HIGHWAY GROUP",
@@ -496,11 +506,12 @@ def _extract_pdf(payload: bytes) -> dict[str, object]:
             page_words.append(words)
 
     page2 = page_texts[1]
+    submitter = SUBMITTER_ID.search(page2)
     provenance_checks = {
         "report_id": "OTM22250" in page2,
         "report_date": re.search(r"REPORT DATE\s*:\s*09/15/2025", page2) is not None,
         "reference_date": re.search(r"REFERENCE DATE\s*:\s*09/15/2025", page2) is not None,
-        "submitter": re.search(r"SUBMITTOR\s*:\s*TRLBUGNI", page2) is not None,
+        "submitter": submitter is not None,
         "title": "Intersection Summary Statewide" in page2,
         "event_id": re.search(r"EVENT ID\s*:\s*4843738", page2) is not None,
         "statewide": "STATEWIDE" in page2,
@@ -607,7 +618,7 @@ def _extract_pdf(payload: bytes) -> dict[str, object]:
     return {
         "metadata": metadata,
         "pages": pages,
-        "report_provenance": REPORT_PROVENANCE,
+        "report_provenance": _report_provenance(submitter.group(1)),
         "parameter_checks": provenance_checks,
         "report_page_header_checks": header_checks,
         "raw_category_rows": records,
@@ -1550,7 +1561,7 @@ def run() -> dict[str, object]:
             "event_id", "location_criteria", "printed_generation_time",
         ],
         "source_values": {
-            key: REPORT_PROVENANCE[key]
+            key: pdf_result["report_provenance"][key]
             for key in (
                 "report_id", "report_date", "reference_date", "submitter", "report_title",
                 "event_id", "location_criteria", "printed_generation_time",

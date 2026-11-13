@@ -167,6 +167,28 @@ class AuditError(ValueError):
     pass
 
 
+# Every cover page prints the account that was signed in for the pull. The audit
+# needs "one account made all of it", not who: the address is matched by its shape
+# and must be the same on every file, and results name it by this label.
+SUBMITTER_ADDRESS = re.compile(r"[A-Za-z0-9._%+-]+@dot\.ca\.gov")
+SUBMITTER_LABEL = "submitter address"
+SUBMITTER_PROBE = (SUBMITTER_LABEL, SUBMITTER_ADDRESS)
+
+# The TSN print names the mainframe account that requested it. It is read from the
+# bound print at run time and reported under this label; it is never written here.
+TSN_SUBMITTER_ID = re.compile(r"SUBMITTOR : ([A-Z][A-Z0-9]{5,7})\b")
+TSN_SUBMITTER_LABEL = "TSN submitter id"
+
+
+def _one_submitter(submitters: Iterable[str]) -> str:
+    """The single account that printed every file of the pull."""
+    distinct = set(submitters)
+    if len(distinct) != 1:
+        raise AuditError(
+            f"TSMIS PDF submitter is not one account across the pull: {len(distinct)}")
+    return next(iter(distinct))
+
+
 @dataclass(frozen=True)
 class FileEntry:
     name: str
@@ -690,12 +712,14 @@ def _validate_pdf_provenance(page1_text: str, page2_text: str,
     required_page1 = (
         "REPORT DATE : 07/09/2026",
         "REFERENCE DATE : 07/10/2026",
-        "SUBMITTOR : Yunus.Shaikh@dot.ca.gov",
         "REPORT TITLE : TSAR - Intersection Summary",
         f"ROUTE {route}",
         "PM ALL",
     )
-    if any(token not in page1_text for token in required_page1):
+    submitter = re.search(
+        rf"SUBMITTOR : ({SUBMITTER_ADDRESS.pattern})", page1_text)
+    if submitter is None or any(
+            token not in page1_text for token in required_page1):
         raise AuditError(f"{filename}: page-1 provenance/route drift")
     required_page2 = (
         "TSAR – Intersection Summary",
@@ -713,7 +737,7 @@ def _validate_pdf_provenance(page1_text: str, page2_text: str,
         raise AuditError(f"{filename}: page-2 section heading drift")
     return {
         "report_date": "07/09/2026", "reference_date": "07/10/2026",
-        "submitter": "Yunus.Shaikh@dot.ca.gov", "route": route,
+        "submitter": submitter.group(1), "route": route,
         "creation": creation,
     }
 
@@ -796,6 +820,7 @@ def _parse_tsmis_pdfs(root: Path) -> dict[str, object]:
     if len(geometry_signatures) != 1:
         raise AuditError(
             f"TSMIS PDF numeric geometry signatures differ: {len(geometry_signatures)}")
+    _one_submitter(row[3] for row in provenance_rows)
     return {
         "routes": list(records), "records": records, "files": len(records),
         "pages": len(records) * 2,
@@ -894,21 +919,22 @@ def _load_tsn_raw_pdf(path: Path) -> dict[str, object]:
                  for page in pdf.pages]
         required = (
             "OTM22250", "REPORT DATE : 09/15/2025",
-            "REFERENCE DATE : 09/15/2025", "SUBMITTOR : TRLBUGNI",
+            "REFERENCE DATE : 09/15/2025",
             "EVENT ID : 4843738", "STATEWIDE", "04:53 PM",
             "Total Intersections = 16626",
             "F-FOUR WAY FLASHER (RED ON ALL)",
             "G-FOUR WAY FLASHER (RED ON ALL)",
         )
         joined = "\n".join(texts)
-        if any(token not in joined for token in required):
+        submitter = TSN_SUBMITTER_ID.search(joined)
+        if submitter is None or any(token not in joined for token in required):
             raise AuditError("TSN raw PDF provenance/Control-F text drift")
         return {
             "pages": 3, "metadata": metadata,
             "page_text_sha256": [_sha_bytes(text.encode("utf-8")) for text in texts],
             "report_provenance": {
                 "report_id": "OTM22250", "report_date": "09/15/2025",
-                "reference_date": "09/15/2025", "submitter": "TRLBUGNI",
+                "reference_date": "09/15/2025", "submitter": submitter.group(1),
                 "report_title": "Intersection Summary Statewide",
                 "event_id": "4843738", "location": "STATEWIDE",
                 "printed_generation_time": "04:53 PM",
@@ -1169,6 +1195,24 @@ def _workbook_strings(workbook: openpyxl.Workbook) -> list[str]:
     ]
 
 
+def _token_presence(
+        tokens: Sequence[str | tuple[str, str | re.Pattern[str]]],
+        strings: Sequence[str]) -> dict[str, bool]:
+    """Which printed source claims a product workbook still carries.
+
+    A plain token is looked for as written. An account is never named: it is a
+    (label, needle) pair, reported under its label, whose needle is the shape of
+    an address or a value read from the bound source at run time."""
+    presence: dict[str, bool] = {}
+    for token in tokens:
+        label, needle = token if isinstance(token, tuple) else (token, token)
+        if isinstance(needle, re.Pattern):
+            presence[label] = any(needle.search(value) for value in strings)
+        else:
+            presence[label] = any(needle in value for value in strings)
+    return presence
+
+
 def _inspect_production_consolidated(
         path: Path, raw_records: dict[str, dict[str, int]],
         aggregate: dict[str, int]) -> dict[str, object]:
@@ -1240,13 +1284,10 @@ def _inspect_production_consolidated(
             raise AuditError(f"product Combined row cursor drift: {row_number}")
         strings = _workbook_strings(workbook)
         provenance_tokens = (
-            "07/09/2026", "07/10/2026", "Yunus.Shaikh@dot.ca.gov",
+            "07/09/2026", "07/10/2026", SUBMITTER_PROBE,
             "REPORT DATE", "REFERENCE DATE", "SUBMITTOR", "CreationDate",
         )
-        provenance_presence = {
-            token: any(token in value for value in strings)
-            for token in provenance_tokens
-        }
+        provenance_presence = _token_presence(provenance_tokens, strings)
     finally:
         workbook.close()
     if mismatches:
@@ -1355,7 +1396,7 @@ EXPECTED_GAP_PROBES = (
 def _inspect_production_comparison(
         formulas_path: Path, values_path: Path, truth: dict[str, object],
         tsmis_aggregate: dict[str, int], tsn_counts: dict[str, int],
-        helper: dict[str, object]) -> dict[str, object]:
+        helper: dict[str, object], tsn_submitter: str) -> dict[str, object]:
     expected_sheets = [
         "Summary", "Spot Check", "Comparison", "Only in TSMIS", "Only in TSN",
         "TSMIS", "TSN", "Summary by Category",
@@ -1549,14 +1590,12 @@ def _inspect_production_comparison(
 
         strings = _workbook_strings(values)
         provenance_tokens = (
-            "07/09/2026", "07/10/2026", "Yunus.Shaikh@dot.ca.gov",
-            "OTM22250", "09/15/2025", "TRLBUGNI", "4843738", "04:53 PM",
+            "07/09/2026", "07/10/2026", SUBMITTER_PROBE,
+            "OTM22250", "09/15/2025", (TSN_SUBMITTER_LABEL, tsn_submitter),
+            "4843738", "04:53 PM",
             "F-FOUR WAY FLASHER (RED ON ALL)",
         )
-        provenance_presence = {
-            token: any(token in value for value in strings)
-            for token in provenance_tokens
-        }
+        provenance_presence = _token_presence(provenance_tokens, strings)
         source_note = str(summary["B5"].value or "")
         familiar_source_note = str(familiar["A3"].value or "")
     finally:
@@ -1682,8 +1721,8 @@ def _parse_helper_stdout(stdout: str) -> dict[str, object]:
 def _run_product_once(
         run_root: Path, xlsx_root: Path, tsn_xlsx: Path,
         raw_records: dict[str, dict[str, int]], truth: dict[str, object],
-        tsmis_aggregate: dict[str, int], tsn_counts: dict[str, int]
-        ) -> dict[str, object]:
+        tsmis_aggregate: dict[str, int], tsn_counts: dict[str, int],
+        tsn_submitter: str) -> dict[str, object]:
     completed = subprocess.run(
         [
             sys.executable, str(PRODUCT_HELPER_PATH),
@@ -1714,7 +1753,7 @@ def _run_product_once(
         expected_paths["consolidated"], raw_records, tsmis_aggregate)
     comparison = _inspect_production_comparison(
         expected_paths["formulas"], expected_paths["values"], truth,
-        tsmis_aggregate, tsn_counts, payload)
+        tsmis_aggregate, tsn_counts, payload, tsn_submitter)
     product_code = payload.get("loaded_product_code")
     if not isinstance(product_code, dict) or not product_code.get("entries"):
         raise AuditError("product helper loaded-code manifest missing")
@@ -1728,14 +1767,14 @@ def _run_product_once(
 def _run_product(
         work_root: Path, xlsx_root: Path, tsn_xlsx: Path,
         raw_records: dict[str, dict[str, int]], truth: dict[str, object],
-        tsmis_aggregate: dict[str, int], tsn_counts: dict[str, int]
-        ) -> dict[str, object]:
+        tsmis_aggregate: dict[str, int], tsn_counts: dict[str, int],
+        tsn_submitter: str) -> dict[str, object]:
     first = _run_product_once(
         work_root / "product_a", xlsx_root, tsn_xlsx, raw_records, truth,
-        tsmis_aggregate, tsn_counts)
+        tsmis_aggregate, tsn_counts, tsn_submitter)
     second = _run_product_once(
         work_root / "product_b", xlsx_root, tsn_xlsx, raw_records, truth,
-        tsmis_aggregate, tsn_counts)
+        tsmis_aggregate, tsn_counts, tsn_submitter)
     if first != second:
         left = _sha_bytes(json.dumps(
             first, sort_keys=True, ensure_ascii=False,
@@ -2054,7 +2093,8 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         product = _run_product(
             transaction / "product", xlsx_root,
             private_files["tsn_normalized_xlsx"], tsmis_xlsx["records"], truth,
-            aggregate, tsn["counts"])
+            aggregate, tsn["counts"],
+            str(tsn_raw["report_provenance"]["submitter"]))
 
     mutations = _mutation_probes(truth)
     mutation_gate = _run_gate(SELF_GATE_PATH)

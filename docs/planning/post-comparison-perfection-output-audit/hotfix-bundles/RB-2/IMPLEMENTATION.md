@@ -1560,7 +1560,7 @@ the finding demanded, on the real corpus rather than a fixture:
 
 | Oracle | Pre-fix (audited) | This run |
 |---|---|---|
-| `Summary by Category!A6` | *"TSN print: no source-claims record beside this normalized workbook (older normalization) — rebuild the TSN library to capture the print identity."* | **`TSN print identity: OTM22270 · Event 4843742 · reference 09/15/2025 · submitted by TRLBUGNI · generated 05:10 PM (STATEWIDE).`** — the exact line the audit's Direct-lane controlled differential recorded |
+| `Summary by Category!A6` | *"TSN print: no source-claims record beside this normalized workbook (older normalization) — rebuild the TSN library to capture the print identity."* | **`TSN print identity: OTM22270 · Event 4843742 · reference 09/15/2025 · submitted by <user ID> · generated 05:10 PM (STATEWIDE).`** — the exact line the audit's Direct-lane controlled differential recorded |
 | occurrences of "rebuild the TSN library" | 1 | **0** |
 | `%TEMP%` strings anywhere in the workbook | present | **0** |
 | `.provenance.json` TSN `selection` | `…\AppData\Local\Temp\tsmis-tsn-consumer-…\tsn_ramp_summary_normalized.xlsx` | `…\tsn_library\ramp_summary\consolidated\tsn_ramp_summary_normalized.xlsx` — **exists and is readable after the run**, with `read_via: verified private copy of the selection` |
@@ -1592,7 +1592,7 @@ for the Direct lane, family by family:
 | Highway Log (both editions) | `OTM52010` | `OTM52010 California State Highway Log · report 09/15/25` |
 | Highway Sequence | `OTM22025` | `OTM22025 Highway Locations · report 15-SEP-25` |
 | Intersection Summary | `OTM22250` | `OTM22250 · Event 4843738 · 09/15/2025` |
-| Ramp Summary | `OTM22270` | `OTM22270 · Event 4843742 · reference 09/15/2025 · TRLBUGNI` |
+| Ramp Summary | `OTM22270` | `OTM22270 · Event 4843742 · reference 09/15/2025 · <user ID>` |
 | Intersection Detail | *(none)* | identity-silent **by design** — the contract requires it gain the honest provenance path but **no invented identity line**, and it has |
 
 **HF-03 criterion 2, as written — the SAME LINE on all three lanes.** Not the
@@ -1601,8 +1601,8 @@ between the Direct-lane control and both matrix lanes.
 
 | Family | The line, identical on Direct · Everything · By Day |
 |---|---|
-| Ramp Summary | `TSN print identity: OTM22270 · Event 4843742 · reference 09/15/2025 · submitted by TRLBUGNI · generated 05:10 PM (STATEWIDE).` |
-| Intersection Summary | `TSN print identity: OTM22250 · Event 4843738 · reference 09/15/2025 · submitted by TRLBUGNI · generated 04:53 PM (STATEWIDE).` |
+| Ramp Summary | `TSN print identity: OTM22270 · Event 4843742 · reference 09/15/2025 · submitted by <user ID> · generated 05:10 PM (STATEWIDE).` |
+| Intersection Summary | `TSN print identity: OTM22250 · Event 4843738 · reference 09/15/2025 · submitted by <user ID> · generated 04:53 PM (STATEWIDE).` |
 | Highway Sequence | `TSN print identity: OTM22025 Highway Locations · report 15-SEP-25 · reference 15 SEP 2025 · 12 district print(s).` |
 | Highway Log | `TSN print identity: OTM52010 California State Highway Log · report 09/15/25 · cover year 2025 · 12 district print(s).` |
 

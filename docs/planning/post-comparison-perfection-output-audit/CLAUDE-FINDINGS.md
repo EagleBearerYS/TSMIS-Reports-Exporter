@@ -404,7 +404,7 @@ audit-REQUIRED PDF/PDF cells. Every defect reported below was found that way.
   > normalization) — rebuild the TSN library to capture the print identity.`
 * **Controlled differential (VC-8)** — the same library workbooks, compared through the
   classic Direct path minutes later, print the real identity for all four comparators
-  that expose it: `OTM22270 · Event 4843742 · reference 09/15/2025 · TRLBUGNI`
+  that expose it: `OTM22270 · Event 4843742 · reference 09/15/2025 · <user ID>`
   (Ramp Summary), `OTM22250 · Event 4843738 · 09/15/2025` (Intersection Summary),
   `OTM52010 California State Highway Log · report 09/15/25` (Highway Log),
   `OTM22025 Highway Locations · report 15-SEP-25` (Highway Sequence).
