@@ -189,9 +189,10 @@ class GuiSettingsMixin:
             return {"error": "Some addresses couldn't be set — see the log.",
                     "site_urls": self._site_url_rows()}
         self._emit_log("All site addresses set to the "
-                       + ("development site (tsmis-dev.dot.ca.gov) — Intersection "
-                          "reports are available there." if preset == "dev"
-                          else "built-in production addresses."))
+                       + ("development site (tsmis-dev.dot.ca.gov), where reports "
+                          "are released before they are approved for the main site."
+                          if preset == "dev"
+                          else "built-in main site (tsmis.dot.ca.gov)."))
         self._push_state()
         return {"ok": True, "site_urls": self._site_url_rows()}
 
@@ -223,7 +224,7 @@ class GuiSettingsMixin:
         select it — browsers are probed at startup."""
         if self._chromium_state()["downloaded"]:
             return {"error": "A downloaded Built-in Chromium is already here. "
-                             "Delete it first to re-download."}
+                             "Remove it first to download it again."}
         ui_log.info("chromium: user started download")
         return self._start_chromium(
             "download", "Downloading the Built-in Chromium (~170 MB)…")
@@ -434,7 +435,9 @@ class GuiSettingsMixin:
         devtools ▸ Sources walk, one click). Signs in with the saved session
         (or device sign-in) and runs on the shared single-task slot so
         progress shows in the activity log like any other run."""
-        err = self._claim_task_error("consolidate")
+        # Runs under the consolidate slot but drives a browser, so — unlike a
+        # real consolidation — it must wait out the background sign-in check.
+        err = self._claim_task_error("consolidate", needs_browser=True)
         if err:
             return err
         self.cancel_event.clear()

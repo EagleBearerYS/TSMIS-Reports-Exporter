@@ -349,10 +349,15 @@ function showRoutePicker(current) {
   actions.className = "modal-actions";
   const selAll = document.createElement("button");
   selAll.className = "btn btn-subtle"; selAll.textContent = "Select all";
-  selAll.onclick = () => { routes.forEach((r) => chosen.add(r)); cells.forEach((c) => c.classList.add("on")); meta.textContent = metaText(); };
+  // Both keep aria-checked in step with the highlight, as a single cell's toggle does.
+  const markAll = (on) => cells.forEach((c) => {
+    c.classList.toggle("on", on);
+    c.setAttribute("aria-checked", on ? "true" : "false");
+  });
+  selAll.onclick = () => { routes.forEach((r) => chosen.add(r)); markAll(true); meta.textContent = metaText(); };
   const clear = document.createElement("button");
   clear.className = "btn btn-subtle"; clear.textContent = "Clear";
-  clear.onclick = () => { chosen.clear(); cells.forEach((c) => c.classList.remove("on")); meta.textContent = metaText(); };
+  clear.onclick = () => { chosen.clear(); markAll(false); meta.textContent = metaText(); };
   const cancel = document.createElement("button");
   cancel.className = "btn btn-subtle"; cancel.textContent = "Cancel";
   cancel.onclick = () => closeModal(null);

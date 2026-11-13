@@ -128,6 +128,121 @@ built — a new dynamic control must do one or the other. Together these took
 > of a frame. They are in isolated layout scopes, so the textbook concern does
 > not apply. Left alone deliberately; see [lessons.md](lessons.md) #16.
 
+### Where the time went when the app felt slow (2026-11-12)
+
+Three separate causes, each measured before it was touched. None of them was the
+render path above.
+
+**1. Opening a matrix tab re-hashed every built comparison.** Every `*_matrix_info`
+snapshot asked the strict generation reader about every built cell, and that reader
+hashes each member workbook (three times, as written) and decodes its whole typed
+payload — with no memo. With three day columns on the vs TSN matrix (20 built
+cells) one tab open was **6.6 s, re-reading 2.7 GB of workbooks, 14 s the first
+time**; the page re-fetches on every entry to the tab and after every toggle. Three
+things now answer the same questions without redoing settled work, and each skips
+only what a change token proves unnecessary (the CMP-AUD-080 rule
+`artifact_store.content_digest` already followed):
+
+- **One digest memo** (`content_token`) shared by the source-folder fingerprint,
+  the published-member digest (`consolidation_meta._bound_file_digest`) and the TSN
+  library identity (`tsn_library.normalized_workbook_identity`, which `status()`
+  asks for three times a call). A folder fingerprint reads each file's token
+  through one handle instead of two (`content_token.path_token`, used only after it
+  has reproduced `os.stat`'s token on this interpreter).
+- **`consolidation_meta.read_comparison_headline`** — the strict reader's verdict,
+  reduced to what a cell renders, kept against the change token of EVERY file the
+  strict reader consulted (the workbook, its sidecar, each peer and its pair, the
+  payload chunks) plus the absence of each one it found absent. The readers record
+  those files as they open them, so the dependency set cannot drift from the code.
+  `matrix_state._staleness` reads the headline; a build, evidence and
+  `require_published_comparison` still run the strict reader.
+- **`artifact_store.read_scope`** — one read of each folder per snapshot (the
+  `_snapshot_endpoint` decorator opens it around every `*_matrix_info`). Never
+  entered by a build.
+
+Both memos are kept across launches in `data\cache\` (`paths.CACHE_DIR`; next to
+the repo's `config.json` in dev), so the first open after a start is not the slow
+one. Nothing new is trusted: an entry is served only while its files carry the
+same token, the headline file is bound to the app version that wrote it, and
+deleting the folder costs one slower read. Same simulated setup after: **0.9 s**
+for the vs TSN matrix (what is left is the change-token read of ~2,900 export
+files), **0.13–0.18 s** for the PDF vs Excel and ArcGIS matrices.
+`check_snapshot_memo` holds all of it, including the audit's tamper (same size,
+same mtime, same file id, different bytes) against each memo and across a restart.
+
+**2. A running job starved the window.** Comparisons, consolidations and builds ran
+as threads inside the window's process. They are pure Python and CPU-bound, so the
+thread behind each click, the pump and the sender queued behind the job for the
+interpreter. `job_host.hosted(Worker, …)` now runs the matrix compare workers, the
+TSN consolidate worker and the ArcGIS report build in a **child process**: same
+worker class, same arguments, same files; a relay thread forwards its messages onto
+the epoch-stamped queue, forwards Stop the other way, and replays its log records
+through this process's logging. Measured on a real two-cell job with a 5 ms timer
+standing in for the window's threads: worst stall **228 ms in-process, 5 ms
+hosted**, workbooks byte-identical. It is deliberately conservative:
+
+- OFF unless `gui_api.run()` enables it — the check suite, the console flow and
+  anything that patches a worker's collaborators in-process keep plain threads;
+- only for workers whose arguments are plain data (the queue and the cancel event
+  are swapped for stand-ins; anything else that will not pickle keeps its thread);
+- if the child cannot be started or does not report ready in 90 s — a locked-down
+  PC may refuse the spawn — the job runs in-process as before and hosting stays off
+  for the session; a child that dies mid-job still ends it with one terminal
+  message. `TSMIS_INPROCESS_WORKERS=1` forces the old path.
+
+A frozen exe starts a child by re-launching itself, so `gui_main` calls
+`multiprocessing.freeze_support()` before anything else, and `--self-test` proves
+the real artifact can do it (step 5c). The classic Consolidate / Compare tabs and
+the evidence camera still run in-process: their workers carry callables and typed
+results that do not cross a process boundary as they stand.
+
+**3. One finished job refreshed the grid several times.** `run_ended` and
+`matrix_refresh` each re-fetched and rebuilt the visible grid; both now ASK for a
+refresh (`requestViewRefresh`) and the asks inside one 40 ms window are answered by
+a single render. The tab-pane entrance is a 120 ms opacity fade (it was a 240 ms
+fade-and-rise that every tab click waited on), log lines no longer animate, and
+state pushes skip the ArcGIS tab's controls while it is hidden.
+
+**4. The page could come up half built, silently.** Found while gating this work,
+and older than it. pywebview serves `ui/` from a wsgiref server whose listen queue
+holds **five** connections (socketserver's default); the page asks for its
+stylesheet and twelve scripts **six** at a time. Whenever this process was a few
+milliseconds late accepting the first one — another thread holding the interpreter
+on a cold start — the sixth was refused: Chromium's net log shows
+`ERR_CONNECTION_REFUSED` on `ui-compare.js`, always the page's sixth file, 2 ms
+after it was requested. `boot()` then died inside `buildStatic` on a missing
+global, with nothing on screen and nothing in the log. The packaged self-test lost
+that race two runs in three on this branch and "flaked under memory pressure"
+before it.
+
+- `gui_api` sets `WSGIServer.request_queue_size` to `PAGE_SERVER_BACKLOG` (128) at
+  import, on the one class pywebview derives its server from, so every
+  `webview.start` in the process gets it. `check_page_server_backlog` holds the
+  behaviour: a burst of 24 connections waits while the accept loop is held and
+  every one is then served, and the same burst against the stock queue is refused
+  (7 of 24 connect), so the check is known to see the fault.
+- `boot()` catches a failure in its first build, shows the full-window banner
+  ("The app's interface didn't finish loading") and logs the cause through
+  `log_js_error`.
+- The self-test's window step now names the cause when the page never boots (the
+  files that did not load, the banner's text, whether the bridge arrived) in place
+  of `Cannot read properties of undefined (reading 'test_state')`.
+
+Packaged self-test after: 12 of 12 runs, and 6 of 6 with half the CPUs busy. To
+see the browser's own account of a load failure, run the exe with
+`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--log-net-log="<file>"` — the default
+capture mode; `Everything` slows the page enough to hide a race like this one.
+
+Also: a consolidation, comparison or validation no longer gets "Checking the
+sign-in status in the background — try again in a few seconds". That exclusion
+protects the Edge sign-in profile, which those tasks never touch
+(`GuiApi._LOCAL_TASKS`); browser tasks, Reset and the website capture still wait.
+
+**Still one task at a time.** The task gate is unchanged: a second action queues
+(matrix jobs) or is refused. Running an export while a comparison builds, or
+several cells at once, needs the gate split into a browser lane and a compute lane
+— designed in [roadmap.md](roadmap.md), not built.
+
 ## UI layering: Python owns state, JS owns presentation
 
 **Python owns all app state** (auth, task, checks, days, batch, update, env-access) and pushes **full snapshots** (`_state_snapshot()` → `{t:"state", s:…}`, sent on every `_push_state()`). `app.js` owns ONLY presentation + form fields and **never invents log lines** — everything shown in the log pane originates in Python so the `tsmis.ui` file-log mirror stays complete. The mirror: `_emit_log(text)` logs the line to the `tsmis.ui` logger AND emits it to JS; `_emit_modal` and `ui_event` likewise log every dialog and user UI event. So `tsmis.log` carries the user's view of a run (what was clicked, what was reported) next to the engine's own diagnostics — the "one log upload answers it" contract.
@@ -188,6 +303,101 @@ Two traps worth knowing before you re-run any of this:
   not — they are wrapped in `<label>`. Splitting the stylesheet on the first
   `prefers-reduced-motion` finds the small matrix-only block and misses the global
   one below it. Check the DOM or the source before believing either.
+
+## What a first-time user needed (the 2026-11-13 readiness pass)
+
+The app had one user for five months. Before handing it to others it was walked
+screen by screen three ways, and each way found things the others could not:
+
+- **`tools/ui_walk.py`** photographs every view of the `#mock` in a headless
+  browser and lists what overflows (a container that scrolls sideways, text cut
+  without an ellipsis, text running past the window). Run it at 1164×741 (the
+  default window's page area) and 910×512 (a 1366×768 work PC at 150% DPI), in
+  both themes.
+- **The real window, fresh.** Copy `dist\TSMIS Exporter` (the exe, `_internal`
+  and the two text files — nothing else) into an empty folder and start it with
+  `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333`;
+  `playwright.chromium.connect_over_cdp("http://127.0.0.1:9333")` then attaches
+  to the live page, bridge and all. That is how every button was clicked with
+  nothing prepared (no login, no exports, no TSN files, no ArcGIS Pro) and each
+  answer read. A deep scratch folder doubles as the long-path test.
+- **The real bridge on real data, with a copied config.** Construct `GuiApi`
+  in-process with `settings.CONFIG_FILE` pointed at a copy and the matrix
+  workers stubbed: every snapshot reads the owner's real output while nothing is
+  built and the real settings are never written.
+
+What it changed, and the rule behind each change:
+
+- **Add all / Remove all on every matrix's Reports group** (`mxReportToggles`,
+  one endpoint: `set_matrix_reports_all(which, visible)`). Narrowing a 22-row
+  matrix to three reports took nineteen clicks and nineteen re-renders. A matrix
+  may now have NO rows — the old "keep at least one report" refusal is gone from
+  all seven per-row endpoints — and says so (`mxNoRows`). An action that would
+  resolve to nothing must say so too: *Export today* with no report on the matrix
+  used to queue a job, drop it silently and leave an empty column
+  (`export_day_column` now refuses with the reason).
+- **Only a pane's own action bar sticks.** The rule was `.pane .actions-row`,
+  which also caught the button rows INSIDE sections; Settings has five, so the
+  buttons of sections further down floated over the section being read and hid
+  the whole Debugging group on a default-size window. It is
+  `.card-section.actions-row` now. A new in-section button row is plain content.
+- **A sub-tab strip wraps.** Seven Compare sub-tabs and five ArcGIS ones are wider
+  than half a default window; the strip widened its column, which then scrolled
+  sideways to reach the last tabs. `flex-wrap`, each tab growing from its own
+  width.
+- **The ArcGIS tab's non-matrix sub-tabs get a wider column** (`body.table-wide`,
+  set by `applyMatrixWide` from `arcgisTableActive`): on Layers and ArcGIS reports
+  the status text ran under the Refresh buttons and the last column was cut off,
+  and the five-tab strip fits one row at that width.
+- **Nothing in an options corner may widen it.** The add-day `<select>` is as
+  wide as its longest option (day · site · every report code) and a hint can hold
+  a folder path; both now fit the corner (`.dm-toolbar .tb-select`,
+  `overflow-wrap: anywhere`).
+- **A path that matters wraps; it is never cut.** The pre-flight card's
+  *Saves to* was one line with an ellipsis, which hid the run folder behind a
+  long install path (and, through a grid track that could not shrink, ran past
+  the card). It also named a folder the app stopped using in v0.49.0: the state
+  now carries `site_hosts` so the line shows the real `<date> <src>-<env>
+  <site>-site`.
+- **A row label wraps instead of losing its end.** `TSAR: Ramp Su…` /
+  `TSAR: Ramp De…`, and the `(PDF)` that tells two editions apart, were being
+  cut at the default window size.
+- **"Not built" is its own state** (`mx-unbuilt`), not `mx-stale`: a stale cell
+  strikes its number through, and a struck-through *compare* read as "cannot
+  compare". Every legend has the key, and the keys explain themselves on hover.
+- **Every tab opens at its top** (`setTab` resets the shared column's scroll).
+- **A card that was hidden is redrawn when it comes back.** The right-hand card
+  is hidden on the two ArcGIS matrix sub-tabs; entering the tab on one of them
+  and then opening Layers showed whatever tab had drawn the card last ("Ready to
+  export …"). `setArcgisSub` now calls `updateActivityCards`, as `setEverySub`
+  always did. Found only by driving the real window in an order the mock walk
+  does not take.
+- **Bulk actions ask first; single ones do not.** *Export today* (every report on
+  the matrix), *Stop all* (the running job and the queue) and *Discard* (a
+  resumable batch) confirm. A trash can on a column says it deletes nothing, and
+  shows the bridge's refusal (`mxRemoveColumnBtn`).
+- **A snapshot that failed says so** (`mxSnapshotFailed`) instead of leaving a
+  blank grid with nothing wired.
+- **Where the copy lives is checked at start-up** (`install_location_notes`):
+  a data folder longer than `LONG_DATA_ROOT` gets a note naming its length and a
+  short alternative, and a read-only app folder is told where its data went.
+- **The title bar names the browser that will really export.** With no pick it
+  said *Google Chrome* even where Chrome is not installed; once the readiness
+  checks have answered, `_export_browser_view` follows them.
+- **Opening a folder must not create one the app then refuses.** *Open
+  comparisons folder* made a plain `comparisons` folder under the Export
+  Everything destination, and the matrix worker writes there only into a folder
+  it created and marked itself — one early click blocked every later comparison
+  until the folder was deleted by hand. It is created through
+  `owned_dir.ensure_owned_dir` now (`check_matrix_bridge`).
+
+Wording rules that came out of the same pass, for anything new on screen: say
+what the user can DO next; name a control by the label it carries; never show a
+module, finding ID or exception class where a sentence will do; and state plainly
+when something is kept (a tooltip on a trash can, the line under *Delete all
+reports*). `build/check_shipped_readmes.py` holds the two text files that ship
+beside the exe to the same standard — every label the quick start quotes must
+still exist in the window.
 
 ## The FIVE pywebview traps (all hit in the field)
 
@@ -310,7 +520,7 @@ queue, and the **fast-mode browser-count spinner** (`#matrixWorkers`, the `.mc-w
 shared `fast_workers` setting via `set_setting`, so the matrix corner, the Export pane
 (`#fastWorkers`) and the Settings tab (`#setFastWorkers`) stay on one value; `syncMatrixFast`
 reflects it (and greys the row when fast mode is off). A baseline `<select>` (switch → confirm →
-`set_matrix_baseline` + `recompute_matrix("all")`), Refresh-stale (also the **resume**
+`set_matrix_baseline` + `recompute_matrix("all")`), Rebuild stale (also the **resume**
 after a **Cancel**), Open-comparisons-folder, and a Cancel button live in the actions
 row. `updateMatrixProgress()` greys all matrix controls live + toggles the Cancel
 button; the grid re-renders on `run_ended` / `matrix_refresh`. The mock returns the

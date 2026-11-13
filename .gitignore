@@ -134,3 +134,6 @@ spike/
 # exceed the legacy path limit before CMP-AUD-242 shortened them. Audit
 # instruments live in build/ (phase*.py); only their OUTPUT lands here.
 /tmp/
+
+# Re-derivable speed caches (dev data root = the repo root; see paths.CACHE_DIR).
+/cache/

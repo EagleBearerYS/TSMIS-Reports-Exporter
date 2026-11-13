@@ -342,6 +342,32 @@ for each topic + internals doc: **[docs/INDEX.md](INDEX.md)**.
   each cell owns its `StyleArray`; the streamed package reader never decides a REFUSAL
   (openpyxl still does). Prove any change here with
   `build/benchmark_vs_tsn_speed.py --writer historical` on the real corpus.
+- **The big sheets are written as row XML, and the lock covers it** (2026-11-12).
+  `compare_core._SheetRows` serializes the data, snapshot, comparison and one-sided
+  sheets (and the three-day grid) straight to the sheet stream through
+  `xlsx_fast_rows`; openpyxl still writes anything it declines (dates, rich text, a
+  patched `_styled_cell`). The bar is unchanged: every package member byte-identical
+  against `main` on real exports, with `check_xlsx_fast_rows` holding each cell
+  shape. **Measure on the interpreter that ships**: the frozen bundle has no lxml,
+  the dev box's system Python does, and the two serializers have different costs —
+  benchmark with `build\.venv\Scripts\python.exe`, interleaved A/B.
+  `TSMIS_CLASSIC_XLSX=1` forces openpyxl's own path.
+- **A matrix snapshot re-reads nothing a change token proves unchanged**
+  (2026-11-12). `content_token` is the one digest memo; `read_comparison_headline`
+  keeps the strict reader's verdict against the token of every file that reader
+  opened. Both are READ-side only: a build, evidence and
+  `require_published_comparison` still run the strict reader, and neither memo may
+  ever be keyed on size and mtime alone (CMP-AUD-080, held by `check_snapshot_memo`).
+- **A worker that should not starve the window takes plain data** (2026-11-12).
+  `job_host.hosted(Worker, …)` runs it in a child process only when its arguments
+  pickle; its messages must too, and its `__init__` runs in BOTH processes, so it
+  only stores its arguments. Anything the worker needs from the window has to arrive
+  as an argument or be on disk: the child shares no module state with it (the site,
+  the log level and the cache folder are the three things passed for it). A worker
+  whose run has its own name sets `JOB_LABEL`. Hosting is switched on by `gui_api.run()` alone, so
+  checks and the console flow keep threads — and a check that patches a worker's
+  collaborators in-process stays valid. A hosted job must never be able to fail
+  because the child could not start: the fallback is the same worker on a thread.
 - **A counts-only PREVIEW certifies nothing** (v0.41.0). `mode="preview"` runs the
   whole comparison and returns its typed truth without writing a workbook (~9x
   faster). It commits no artifact, so it has no `artifact_generation` — keep it
@@ -569,6 +595,15 @@ scripts/                     the engine (console-free) + console & GUI drivers +
   export_*.py                one thin ReportSpec per report type (incl. *_pdf editions)
   consolidate_*.py           per-route exports → one workbook (+ TSN / TSMIS-PDF parsers)
   compare_core.py            the correctness-locked comparison-workbook engine
+  xlsx_fast_rows.py xlsx_fast_read.py   the direct row serializer the big comparison sheets write
+                             through (openpyxl's bytes, checked member by member) and the
+                             opt-in cheap sizing/inline-string shortcuts for read-only loads
+  content_token.py           the change token + the ONE digest memo (CMP-AUD-080 rule) the
+                             fingerprint, the published-member digest and the TSN library
+                             identity share; kept across launches in data\cache\
+  job_host.py                runs a GUI worker in a child process (matrix jobs, TSN
+                             consolidate, ArcGIS builds) and relays its messages, log
+                             records and Stop; falls back to the thread, never fails a job
   compare_tsn_common.py      the shared FILE-comparator substrate (P5b; every comparator rides it since v0.19.0)
   compare_env.py compare_highway_log*.py compare_*_tsn.py compare_*_pdf.py   the comparison families over compare_core
   visual_evidence.py evidence_*.py       the evidence-images engine + adapters (HD, ID, HL, HSL, RD)
@@ -635,9 +670,11 @@ scripts/                     the engine (console-free) + console & GUI drivers +
   self_test.py evidence.py pdf_row_oracle.py owned_dir.py safe_delete.py   self-test / the work-PC diagnostic bundle (--collect-evidence) / safety
   updater.py login.py logging_setup.py batch_manifest.py report_library.py
 build/                       build.ps1, app.spec, prune_bundle.ps1, full_smoke.py, check_*.py
+                             (run_checks.py discovers every check_*.py — a new check needs no list)
   gen_release_notes.py release_notes_header.md backfill_release_notes.ps1   per-version release notes
 CHANGELOG.md                 user-facing changelog (one section per version; source of release bodies)
 tools/                       dev utilities (not shipped) — screenshots.py regenerates the site/README shots;
+                             ui_walk.py photographs every screen of the #mock and lists what overflows (2026-11-13);
                              clean_road_layer_check.py checks a Clean Road build or comparison against the raw layers (v0.51.1)
 docs/                        the knowledge library (start at docs/INDEX.md)
 output/                      generated data (git-ignored except .gitkeep stubs)

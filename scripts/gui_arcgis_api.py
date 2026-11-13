@@ -30,7 +30,8 @@ import logging
 from pathlib import Path
 
 import settings
-from gui_endpoint import _api_method
+import job_host
+from gui_endpoint import _api_method, _snapshot_endpoint
 from gui_worker import ConsolidateWorker
 from gui_worker_arcgis import ArcgisReportBuildWorker
 from gui_worker_matrix import ArcgisMatrixCompareWorker
@@ -143,7 +144,7 @@ class GuiArcgisMixin:
             return "Refresh stale Reports-vs-ArcGIS comparisons"
         return "Rebuild all Reports-vs-ArcGIS comparisons"
 
-    @_api_method
+    @_snapshot_endpoint
     def arcgis_matrix_info(self):
         """The Reports-vs-ArcGIS snapshot (incl. the library) + the add-day
         picker's available days."""
@@ -200,7 +201,7 @@ class GuiArcgisMixin:
 
     @_api_method
     def set_arcgis_matrix_report(self, row_key, visible):
-        """Show/hide a report ROW. At least one stays on."""
+        """Show/hide a report ROW."""
         import arcgis_matrix
 
         keys = arcgis_matrix.row_keys()
@@ -211,8 +212,6 @@ class GuiArcgisMixin:
             hidden.discard(row_key)
         else:
             hidden.add(row_key)
-        if len(hidden & keys) >= len(keys):
-            return {"error": "Keep at least one report on the matrix."}
         settings.set_arcgis_matrix_hidden(sorted(hidden))
         self._push_state()
         return {"ok": True, "hidden": sorted(hidden)}
@@ -320,7 +319,9 @@ class GuiArcgisMixin:
             return {"error": "Unknown cell."}
         path = arcgis_matrix.day_out_path(date, snap["source"], row_key)
         if not path.exists():
-            return {"error": "No comparison built yet — use “⟳ rebuild” first."}
+            return {"error": "There is no comparison workbook for this cell yet. "
+                             "Build it first (point at the cell and click its "
+                             "build button)."}
         self._open_file(path)
         return {"ok": True}
 
@@ -373,7 +374,7 @@ class GuiArcgisMixin:
         self._set_dot("busy", "Comparing…")
         self._emit({"t": "run_started", "mode": "consolidate", "label": "Comparing…",
                     "workers": 1})
-        ArcgisMatrixCompareWorker(
+        job_host.hosted(ArcgisMatrixCompareWorker,
             source, cells, self._gated_queue(), self.cancel_event,
             force_consolidate=job.get("force", False),
             also_formulas=settings.get_arcgis_matrix_formulas()).start()
@@ -393,7 +394,7 @@ class GuiArcgisMixin:
         self._set_dot("busy", "Building the ArcGIS reports from the layers…")
         self._emit({"t": "run_started", "mode": "consolidate",
                     "label": job["label"] + "…", "workers": 1})
-        ArcgisReportBuildWorker(rows, job.get("asof"), self._gated_queue(),
+        job_host.hosted(ArcgisReportBuildWorker, rows, job.get("asof"), self._gated_queue(),
                                 self.cancel_event).start()
         return True
 

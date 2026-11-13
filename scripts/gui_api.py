@@ -50,6 +50,7 @@ from common import (
     require_valid_auth, set_preferred_channel, set_site,
 )
 from paths import EDGE_LOGIN_PROFILE_DIR
+from site_target import host_kind_for
 from reports import (COMPARE_DISPLAY, COMPARE_GROUPS, COMPARE_KEYS, COMPARE_REPORTS,
                      CONSOLIDATE_DISPLAY, CONSOLIDATE_KEYS,
                      CONSOLIDATE_REPORTS, EXPORT_DISPLAY, EXPORT_ONLY_KEYS,
@@ -58,6 +59,7 @@ from reports import (COMPARE_DISPLAY, COMPARE_GROUPS, COMPARE_KEYS, COMPARE_REPO
                      export_reports_status, matrix_rows)
 import outcome
 import consolidation_meta
+import job_host
 from gui_endpoint import _api_method, pick_path   # the shared js_api decorator + dialog unwrap
 import contract
 import gui_win32
@@ -80,6 +82,73 @@ ui_log = logging.getLogger("tsmis.ui")
 
 _CHANNEL_SHORT = {"chromium": "Chromium", "msedge": "Edge", "chrome": "Chrome"}
 _SHUTDOWN = object()
+
+# The data folder's own path length above which a start-up note is shown.
+# Windows stops at 260 characters for a full path and Excel at 218 for a
+# workbook; the app's longest names (a by-day comparison's files, a three-day
+# workbook, a per-route export inside its run folder) add about 130-145 to the
+# folder they live in. A copy unzipped onto a OneDrive-redirected Desktop
+# ("C:\Users\First.Last\OneDrive - <organisation>\Desktop\<zip name>\TSMIS
+# Exporter") is already near this, and nothing said so until a save failed.
+LONG_DATA_ROOT = 100
+
+
+def install_location_notes(data_root=None, exe_dir=None, frozen=None):
+    """Activity-log lines about WHERE this copy lives, shown once at start-up
+    and only when there is something to act on: a path long enough to break
+    saving, or a read-only app folder (data then lives under %LOCALAPPDATA%,
+    which the footer shows but nothing ever explained). Arguments are for the
+    check; the app passes none."""
+    from paths import DATA_ROOT, is_frozen
+    data_root = Path(DATA_ROOT if data_root is None else data_root)
+    frozen = is_frozen() if frozen is None else frozen
+    notes = []
+    if frozen:
+        if exe_dir is None:
+            import sys
+            exe_dir = Path(sys.executable).resolve().parent
+        if Path(exe_dir) != data_root:
+            notes.append(
+                "Note: this app's folder can't be written to, so everything is "
+                f"saved under {data_root} instead, and the app can't update "
+                "itself from here. Move the app folder somewhere you can write "
+                "to (Desktop or Documents, for example) to keep it all together.")
+    if len(str(data_root)) > LONG_DATA_ROOT:
+        notes.append(
+            f"Note: this app's folder has a long path ({len(str(data_root))} "
+            "characters). Windows and Excel limit how long a file's full path "
+            "can be, so exports and comparisons can fail to save or open from "
+            "here. If that happens, move the whole app folder somewhere short, "
+            "such as C:\\TSMIS.")
+    return notes
+
+
+# How many connections the window's page server keeps waiting to be accepted.
+PAGE_SERVER_BACKLOG = 128
+
+
+def _widen_page_server_backlog():
+    """Let the page's opening burst of connections wait instead of being refused.
+
+    pywebview serves ui/ from a wsgiref server, and the page asks for its
+    stylesheet and twelve scripts six connections at a time. socketserver's
+    stock listen queue holds five, so whenever this process was a few
+    milliseconds late accepting the first of them — another thread holding the
+    interpreter on a cold start, during a job, under an on-access scan — the
+    sixth was refused outright (Chromium's net log: ERR_CONNECTION_REFUSED on
+    the page's sixth file, 2 ms after it was requested). That one script never
+    ran, the page came up half built, and nothing said why.
+
+    The queue length is read when the server starts listening, so it is set
+    here, at import, on the one class pywebview derives its server from:
+    every `webview.start` in this process (the app's and the packaged
+    self-test's) gets it. `check_page_server_backlog` holds the behaviour."""
+    from wsgiref.simple_server import WSGIServer
+    if WSGIServer.request_queue_size < PAGE_SERVER_BACKLOG:
+        WSGIServer.request_queue_size = PAGE_SERVER_BACKLOG
+
+
+_widen_page_server_backlog()
 
 class _StampedQueue:
     """Wraps the worker->GUI message queue to tag each TERMINAL message with the claim
@@ -415,8 +484,15 @@ class GuiApi(GuiExportMixin, GuiAuthMixin, GuiCompareMixin,
         three_day_matrix_formulas = settings.get_three_day_matrix_formulas()
         arcgis_matrix_formulas = settings.get_arcgis_matrix_formulas()
         evidence = self._evidence_view()
+        # '<src>-<env>' -> which TSMIS site its next export comes from ('main' /
+        # 'dev' / 'other'): the tag today's run folder will carry, so the Export
+        # tab's "Saves to" line can name the real folder. Settings can re-point
+        # any pair, hence part of every snapshot rather than the initial state.
+        site_hosts = {f"{s}-{e}": host_kind_for(s, e)
+                      for s in DATA_SOURCES for e in ENVIRONMENTS}
         with self._lock:
             return {
+                "site_hosts": site_hosts,
                 "task": self._task,
                 "fast_run": self._fast_run,
                 "paused": self.pause_event.is_set(),
@@ -489,6 +565,15 @@ class GuiApi(GuiExportMixin, GuiAuthMixin, GuiCompareMixin,
         chromium_present = "chromium" in BROWSER_CHANNELS
         cls = pick if pick in ("chrome", "chromium") else (
             "chromium" if chromium_present else "chrome")
+        # The readiness checks know which browsers actually open on this PC.
+        # Once they have answered, name the one an export will really use: on
+        # an Edge-only PC (most work PCs have Edge, not all have Chrome) the
+        # indicator used to read "Google Chrome". Same order as the engine's own
+        # fallback and as _on_checks_done's note.
+        def _probe(ch):
+            return (self._checks.get(f"browser_{ch}") or {}).get("status")
+        if _probe(cls) not in ("ok", "busy", None):
+            cls = next((ch for ch in BROWSER_CHANNELS if _probe(ch) == "ok"), cls)
         cls_label = CHANNEL_LABELS.get(cls, cls)
         if self._authed:
             normal, dot = f"{cls_label} · saved login", "ok"
@@ -571,6 +656,7 @@ class GuiApi(GuiExportMixin, GuiAuthMixin, GuiCompareMixin,
         self.login_done.set()
         self._out.put(_SHUTDOWN)
         self._ready.set()                    # never leave the sender parked
+        consolidation_meta.flush_persistent_caches(force=True)
 
     # ---- auth status ----------------------------------------------------------
 
@@ -794,7 +880,12 @@ class GuiApi(GuiExportMixin, GuiAuthMixin, GuiCompareMixin,
         workers."""
         return self._coord.try_claim(name)
 
-    def _claim_task_error(self, name):
+    # Task kinds that never start a browser: they read and write workbooks only,
+    # so the background sign-in check (which holds the Edge profile, not the
+    # task gate) has nothing to collide with.
+    _LOCAL_TASKS = frozenset({"consolidate", "compare", "validate"})
+
+    def _claim_task_error(self, name, needs_browser=None):
         """Claim the single task slot, or return WHY it can't be claimed
         (None on success). The quiet background env check deliberately does NOT
         hold the task gate (that would lock the whole UI for its ~20-60 s on
@@ -802,9 +893,19 @@ class GuiApi(GuiExportMixin, GuiAuthMixin, GuiCompareMixin,
         Edge sign-in profile, so a user task launched mid-check used to fail
         with a bare browser-launch error (the one-way exclusion, B8). Now the
         user gets a soft busy message and the check is SUPERSEDED so a retry a
-        few seconds later wins."""
+        few seconds later wins.
+
+        That exclusion is about the BROWSER, so it applies only to tasks that
+        use one. A consolidation, a comparison or a validation run touches no
+        browser and no sign-in profile, and used to be turned away with "try
+        again in a few seconds" for up to a minute after every launch and every
+        site switch for no reason. `needs_browser` overrides the kind's default
+        for the one local-named task that does drive a browser (the website
+        source capture)."""
+        if needs_browser is None:
+            needs_browser = name not in self._LOCAL_TASKS
         with self._lock:
-            active = self._active_check
+            active = self._active_check and needs_browser
         if active:
             self._active_check_supersede.set()
             log.info("claim %s deferred: background env check running "
@@ -1041,8 +1142,15 @@ class GuiApi(GuiExportMixin, GuiAuthMixin, GuiCompareMixin,
         sel = self._channel
         if sel and results.get(sel) != "ok":
             if usable:
-                self._emit_log(f"Note: {CHANNEL_LABELS[sel]} can't be used right now — "
-                               f"exports will use {CHANNEL_LABELS[usable[0]]} instead.")
+                # Only a browser the user PICKED "can't be used right now". With
+                # no pick, `sel` is just the first in the default order, and on
+                # an Edge-only PC that line read like a fault at every launch.
+                picked = settings.get_export_browser() in ("chrome", "chromium")
+                self._emit_log(
+                    (f"Note: {CHANNEL_LABELS[sel]} can't be used right now — "
+                     if picked else
+                     f"{CHANNEL_LABELS[sel]} isn't available on this PC — ")
+                    + f"exports will use {CHANNEL_LABELS[usable[0]]} instead.")
             else:
                 self._emit_log("Warning: no usable web browser was found. Install Microsoft "
                                "Edge (or Google Chrome) before running an export.")
@@ -1321,6 +1429,8 @@ class GuiApi(GuiExportMixin, GuiAuthMixin, GuiCompareMixin,
             self._start_checks_locked()
             self._start_update_check()       # quiet unless an update exists
             self._batch_resume = self._pending_batch()   # offer to resume an interrupted batch
+            for note in install_location_notes():
+                self._emit_log(note)
         return {
             "app_name": APP_NAME,
             "version": __version__,
@@ -1505,9 +1615,26 @@ def _fatal_box(text):
         pass
 
 
+def _load_persistent_caches():
+    """Read last session's digest + headline memos (off the startup path: the
+    first snapshot simply misses whatever has not loaded yet)."""
+    try:
+        from paths import CACHE_DIR
+        consolidation_meta.enable_persistent_caches(CACHE_DIR)
+    except Exception as e:                                  # noqa: BLE001
+        log.info("persistent caches unavailable (%s: %s)", type(e).__name__,
+                 (str(e).splitlines() or [""])[0])
+
+
 def run():
     """Create the window and run the GUI (blocks until the window closes)."""
     api = GuiApi()
+    threading.Thread(target=_load_persistent_caches, daemon=True,
+                     name="gui-caches").start()
+    # Comparison / build jobs run in a worker process from here on, so they stop
+    # competing with this window for the interpreter (see job_host). Only the
+    # real app turns this on; the check suite and the console flow keep threads.
+    job_host.enable(job_host._child_context)
     index = _ui_index_path()
     if not index.exists():
         log.critical("UI assets missing: %s", index)

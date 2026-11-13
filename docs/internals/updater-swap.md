@@ -25,7 +25,7 @@ The matching `UpdateInfo` object is held Python-side in `GuiApi._update_info` (n
 **Constants worth pinning (`updater.py:69–83, 446–449`):**
 
 ```
-GITHUB_REPO   = "yunusshaikh7/TSMIS-Reports-Exporter"
+GITHUB_REPO   = "EagleBearerYS/TSMIS-Reports-Exporter"
 RELEASES_PAGE = https://github.com/<repo>/releases/latest
 _API_LATEST   = https://api.github.com/repos/<repo>/releases/latest
 _API_RELEASES = https://api.github.com/repos/<repo>/releases?per_page=100
@@ -38,7 +38,7 @@ _SWAP_TIMEOUT_S = 120    # max wait for the old PID to exit
 _RETRY_ATTEMPTS = 12     _RETRY_DELAY_S = 0.5  # Defender/slow-handle retry cadence
 ```
 
-> **`GITHUB_REPO` is the single source of truth.** `GITHUB_REPO = "yunusshaikh7/TSMIS-Reports-Exporter"` (`updater.py:69`) drives both the GitHub API calls and `safe_release_url`'s host allowlist. The docs all use this same owner; if the repo ever moves, this one line is the place to change for both the API and the URL gate.
+> **`GITHUB_REPO` is the single source of truth.** `GITHUB_REPO = "EagleBearerYS/TSMIS-Reports-Exporter"` (`updater.py`; the repository's CURRENT owner and name, never a renamed account's old one — `check_updater` compares it with the `origin` remote) drives both the GitHub API calls and `safe_release_url`'s host allowlist. The docs all use this same owner; if the repo ever moves, this one line is the place to change for both the API and the URL gate.
 
 ---
 

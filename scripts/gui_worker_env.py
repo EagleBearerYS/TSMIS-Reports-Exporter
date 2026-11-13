@@ -595,7 +595,9 @@ class LoginWorker(threading.Thread):
                 self.q.put(("error", ("general",
                             "No usable web browser was found to sign in. Install "
                             "Google Chrome or Microsoft Edge, then try again.")))
-        except BrowserNotFoundError as e:
+        except (BrowserNotFoundError, PreflightError) as e:
+            # Both carry a message written for the user (PreflightError covers
+            # "the TSMIS site could not be reached").
             self.q.put(("error", ("general", str(e))))
         except Exception as e:
             log.exception("login worker crashed")
@@ -608,14 +610,15 @@ class LoginWorker(threading.Thread):
             ctx, cdp_url = launch_edge_login_context(p)
         except Exception as e:
             log.info("login: experimental Edge launch unavailable (%s)", type(e).__name__)
-            self.q.put(("log", "Experimental Edge sign-in could not open; "
-                               "using Google Chrome fallback."))
+            # Reached only after Chrome and the Built-in Chromium both failed to
+            # open, so there is no Chrome to fall back to (the old line said so).
+            self.q.put(("log", "Microsoft Edge could not be opened for sign-in."))
             return None
 
         self.done.clear()
         self.q.put(("login_open", None))
-        self.q.put(("log", "Experimental Edge sign-in opened. Finish signing in, "
-                           "then click \"I've finished logging in.\""))
+        self.q.put(("log", "Microsoft Edge sign-in window opened. Finish signing in, "
+                           "then click \"I've finished logging in\"."))
         log.info("login: experimental Edge persistent profile opened")
 
         while not self.done.wait(0.2):
@@ -663,7 +666,23 @@ class LoginWorker(threading.Thread):
         # login is never detected (see common.LOGIN_BROWSER_ARGS).
         ctx = new_login_context(browser)
         page = ctx.new_page()
-        page.goto(get_url())
+        try:
+            page.goto(get_url())
+        except Exception as e:
+            # Off the network / VPN this is the first thing a new user meets, and
+            # it used to reach them as "Error: Page.goto: net::ERR_NAME_NOT_
+            # RESOLVED at https://… Call log: …". Say what the engine's own
+            # sign-in says (auth_nav.navigate_with_auth), and close the window
+            # that opened on an error page.
+            reason = str(e).splitlines()[0] if str(e) else type(e).__name__
+            log.warning("login: could not open %s: %s", get_url(), reason)
+            try:
+                browser.close()
+            except Exception:  # silent-ok: closing a failed sign-in window is best-effort
+                pass
+            raise SiteUnreachableError(
+                f"The TSMIS site could not be reached ({reason}). Check the "
+                "network / VPN connection, then try again.") from e
         self.done.clear()
         self.q.put(("login_open", None))
         self.q.put(("log", f"Sign-in window opened in {label}."))

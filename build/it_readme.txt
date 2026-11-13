@@ -17,8 +17,8 @@ IN ONE PARAGRAPH
   this folder. The source is open and inspectable (see VERIFY IT YOURSELF).
 
   App:     TSMIS Exporter
-  Version: 0.14.2
-  Source:  https://github.com/yunusshaikh7/TSMIS-Reports-Exporter  (public)
+  Version: shown in the app's title bar and under Settings > About
+  Source:  https://github.com/EagleBearerYS/TSMIS-Reports-Exporter  (public)
 
 
 WHAT IT DOES NOT DO
@@ -36,19 +36,22 @@ WHAT IT DOES NOT DO
   * It does not collect the user's password. Sign-in happens in a normal
     browser window with full MFA; the app only keeps the resulting session,
     the same way a browser keeps you signed in. (See SAVED LOGIN.)
-  * No inbound network service. The one exception is a short-lived loopback
-    (127.0.0.1) port during interactive sign-in -- see BROWSER AUTOMATION.
-    Nothing listens for off-box connections.
+  * No inbound network service. Nothing listens for off-box connections. Two
+    loopback-only (127.0.0.1) ports exist: the app's own window loads its
+    interface from a small page server inside the app (port 42001, open while
+    the app is open), and a short-lived debug port is used during interactive
+    Edge sign-in -- see BROWSER AUTOMATION.
   * It does not scan, map, or probe the local network.
 
 
 NETWORK CONNECTIONS IT MAKES
   Outbound only, and only these:
 
-  1. The TSMIS site (tsmis.dot.ca.gov, or the per-environment *.ca.gov host)
-     -- on every sign-in and export. This is the whole point of the tool: load
-     the report page and pull report data using the user's Caltrans SSO
-     session. (The page itself fetches its data from a Caltrans intranet host.)
+  1. The TSMIS site (tsmis.dot.ca.gov, or tsmis-dev.dot.ca.gov when the user
+     selects the development site in Settings) -- on every sign-in and export.
+     This is the whole point of the tool: load the report page and pull report
+     data using the user's Caltrans SSO session. (The page itself fetches its
+     data from a Caltrans intranet host.)
   2. The Caltrans sign-in provider (the ArcGIS portal / Azure AD identity
      provider) -- during sign-in only. Standard OAuth/SAML: the same hosts a
      browser hits to log in to TSMIS by hand.
@@ -58,6 +61,11 @@ NETWORK CONNECTIONS IT MAKES
   4. (Only on request) Playwright's Chromium download -- only if someone uses
      the optional "Download Built-in Chromium" action or the developer .bat
      setup. The normal app download never fetches a browser.
+  5. (Only on request, and only on a PC with ArcGIS Pro) The Caltrans ArcGIS
+     server (rhapps-prod.dot.ca.gov) -- when someone uses the ArcGIS tab's
+     layer refresh. The app starts ArcGIS Pro's own Python, which reads the
+     TSMIS map layers from that server with ArcGIS Pro's own sign-in. See
+     OTHER PROGRAMS IT STARTS.
 
   There are no other destinations. The tool honors the system proxy and works
   through corporate TLS inspection, because its update check validates TLS
@@ -65,18 +73,23 @@ NETWORK CONNECTIONS IT MAKES
 
 
 DATA AND FILES
-  Everything the tool reads or writes lives in THIS folder (or, if this folder
-  is read-only, under %LOCALAPPDATA%\TSMIS Exporter). It never writes outside
-  its own area.
+  Everything the tool keeps lives in THIS folder (or, if this folder is
+  read-only, under %LOCALAPPDATA%\TSMIS Exporter). The only writes outside it
+  are short-lived scratch files in the user's %TEMP% while a comparison runs,
+  and files the user saves somewhere else on purpose through a Save dialog (a
+  comparison workbook, a support bundle, a different "Export Everything"
+  folder).
 
-  * output\    -- the PDF / Excel reports it produces, plus optional run-report
-    CSVs. This is the tool's actual product.
-  * input\     -- optional district PDFs a user drops in to be combined.
-  * data\      -- the app's own working data: rotating logs (plain text), the
-    settings file, and the Edge WebView2 / sign-in browser profiles.
-  * _internal\ -- the bundled runtime that lets the app run without installing
-    anything: the Python interpreter, support DLLs, and the browser-automation
-    driver (node.exe). Treat it as program files; it is not user data.
+  * output\        -- the PDF / Excel reports it produces, the combined and
+    comparison workbooks, and run-report CSVs. This is the tool's product.
+  * tsn_library\   -- TSN reference files the user imports for comparisons.
+  * arcgis_layers\ -- map layers exported through ArcGIS Pro (ArcGIS tab only).
+  * data\          -- the app's own working data: rotating logs (plain text),
+    the settings file, and the Edge WebView2 / sign-in browser profiles.
+  * _internal\     -- the bundled runtime that lets the app run without
+    installing anything: the Python interpreter, support DLLs, and the
+    browser-automation driver (node.exe). Treat it as program files; it is
+    not user data.
 
   The reports never leave the PC on their own. The only outbound traffic is the
   list in NETWORK CONNECTIONS above.
@@ -118,9 +131,10 @@ UPDATES (why a self-updating .exe is safe here)
     prereleases or drafts.
   * It downloads the update and verifies its SHA-256 checksum against the
     published value BEFORE doing anything; a mismatch refuses the update.
-  * It replaces only its own known program files (the .exe and the _internal
-    runtime). User data (output\, input\, data\) is never part of an update
-    and is never touched. A failed swap rolls back to the previous version.
+  * It replaces only its own known program files (the .exe, the _internal
+    runtime and the two text files in this folder). User data (output\,
+    tsn_library\, arcgis_layers\, data\) is never part of an update and is
+    never touched. A failed swap rolls back to the previous version.
   * If the folder is read-only (locked down), it cannot self-update at all --
     it just opens the release page in the browser.
 
@@ -136,6 +150,20 @@ KNOWN: THE .EXE IS NOT CODE-SIGNED YET
   to avoid antivirus false positives.
 
 
+OTHER PROGRAMS IT STARTS
+  * A web browser already on the PC (Google Chrome or Microsoft Edge), or the
+    app's own Chromium where that variant is used -- to sign in and to export.
+    It is driven by the bundled automation driver (node.exe under _internal\).
+  * A second "TSMIS Exporter.exe" under the first, while a comparison or build
+    runs -- see VERIFY IT YOURSELF.
+  * ArcGIS Pro's own Python (python.exe under the ArcGIS Pro install), only
+    when the ArcGIS tab's layer refresh or "Check ArcGIS Pro" is used, and
+    only if ArcGIS Pro is installed. It is started directly, with no shell
+    and no window, runs one script shipped in _internal\, and exits when the
+    refresh ends.
+  Nothing is started with a command shell, PowerShell, or elevation.
+
+
 VERIFY IT YOURSELF
   You do not have to take this page's word for any of it:
   * The source is open. The full code is in the GitHub repo listed at the top;
@@ -145,6 +173,12 @@ VERIFY IT YOURSELF
   * Watch it live. Resource Monitor / netstat will show the outbound
     connections above and nothing else; Process Explorer will show it running
     as the user, with no service and no driver.
+  * A second "TSMIS Exporter.exe" under the first is expected while a
+    comparison or build runs. The app starts a copy of itself to do that work
+    so its window stays responsive. It is the same program, running as the
+    same user with the same files, and it exits when the job ends. If policy
+    blocks an app from starting itself, nothing breaks: the job runs inside
+    the main process instead and the log says so.
   * The diagnostic "support bundle" the app can produce (logs + settings, no
     credentials) is a quick way to see exactly what it has been doing.
 

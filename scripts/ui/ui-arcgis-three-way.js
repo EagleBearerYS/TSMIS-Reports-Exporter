@@ -35,7 +35,7 @@ function twCellContent(cmp) {
       : missing.includes("tsn") ? "needs TSN" : "needs ArcGIS";
     return { cls: "mx-missing", main, sub: missing.map((m) => names[m] || m).join(" · ") };
   }
-  if (!cmp.built) return { cls: "mx-stale", main: "compare", sub: "not built yet" };
+  if (!cmp.built) return { cls: "mx-unbuilt", main: "not built", sub: "build it to compare" };
   const tw = cmp.three_way;
   if (!tw) return { cls: "mx-stale", main: "re-run", sub: "outcome unknown" };
   const rd = tw.report, miss = tw.missing_from_report || 0;
@@ -148,16 +148,16 @@ async function renderThreeWayMatrix() {
     await renderThreeWayMatrix();
   });
 
-  const rtog = $("twMatrixReportToggles");
-  rtog.textContent = "";
-  const hidden = new Set(snap.hidden || []);
-  (snap.all_rows || []).forEach((r) => {
-    const isOn = !hidden.has(r.key);
-    rtog.appendChild(mxToggleChip(r.label, isOn, (isOn ? "Hide " : "Show ") + r.label, locked,
-      (next) => api.set_three_way_matrix_report(r.key, next), renderThreeWayMatrix));
-  });
+  mxReportToggles("twMatrixReportToggles", "three_way", snap, locked,
+    (key, next) => api.set_three_way_matrix_report(key, next), renderThreeWayMatrix);
 
   grid.textContent = "";
+  if (!snap.rows.length) {
+    mxNoRows(grid);
+    wireThreeWayFooter();
+    updateThreeWayMatrixProgress();
+    return;
+  }
   if (!days.length) {
     grid.style.gridTemplateColumns = ""; grid.style.gridTemplateRows = "";
     const empty = document.createElement("div");
@@ -192,9 +192,7 @@ async function renderThreeWayMatrix() {
           if (r && r.nothing) showMessage("info", "Nothing to rebuild", "No cell of this day has all three sides yet.");
           else if (r && r.error) showMessage("error", "Can't rebuild", r.error);
         }),
-      mxHeadBtn("i-trash", `Remove the ${d} column`, "mxch-rm", async () => {
-        await api.remove_three_way_matrix_day(d); await renderThreeWayMatrix();
-      }));
+      mxRemoveColumnBtn(d, () => api.remove_three_way_matrix_day(d), renderThreeWayMatrix));
     h.appendChild(btns);
     dndAttach(h, h, d, "tw-day", "x", () => days.slice(), async (order) => {
       const r = await api.set_three_way_matrix_day_order(order);
@@ -287,8 +285,8 @@ async function renderThreeWayMatrix() {
 function wireThreeWayFooter() {
   $("btnTwMxBuildAll").onclick = async () => {
     const r = await api.rebuild_three_way_matrix("all");
-    if (r && r.nothing) showMessage("info", "Nothing to compare", "Add an exported day, and make sure each report has its TSN extract and its ArcGIS build.");
-    else if (r && r.error) showMessage("error", "Can't compare", r.error);
+    if (r && r.nothing) showMessage("info", "Nothing to build", "Add an exported day, and make sure each report has its TSN extract and its ArcGIS build.");
+    else if (r && r.error) showMessage("error", "Can't build", r.error);
   };
   $("btnTwMxRebuildAll").onclick = async () => {
     const r = await api.rebuild_three_way_matrix("stale");

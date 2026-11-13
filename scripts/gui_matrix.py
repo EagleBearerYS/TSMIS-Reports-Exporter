@@ -18,7 +18,8 @@ import matrix
 import pdf_excel_matrix
 import settings
 from exporter_parallel import MAX_WORKERS, default_worker_count
-from gui_endpoint import _api_method, pick_path, pick_paths
+import job_host
+from gui_endpoint import _api_method, _snapshot_endpoint, pick_path, pick_paths
 from gui_worker import (BaselineMatrixCompareWorker, ConsolidateWorker,
                         DayMatrixCompareWorker, MatrixBatchExportWorker,
                         MatrixCompareWorker, MatrixEvidenceWorker,
@@ -72,7 +73,7 @@ class GuiMatrixMixin:
             row_order=settings.get_matrix_row_order(),
             env_order=settings.get_matrix_env_order())
 
-    @_api_method
+    @_snapshot_endpoint
     def matrix_info(self, baseline=None):
         """The comparison-matrix snapshot for the Everything tab — a pure
         filesystem read (per-cell export + comparison freshness, cached verdict +
@@ -90,7 +91,8 @@ class GuiMatrixMixin:
     @_api_method
     def set_matrix_report(self, row_key, visible):
         """Show/hide a report ROW on the matrix (hidden rows aren't rendered or
-        refreshed). Persisted as the hidden-set; at least one row must stay on."""
+        refreshed). Persisted as the hidden-set. Every row may be off: the grid
+        then says so and the options corner still lists them."""
         keys = {r[0] for r in matrix_rows()}
         if row_key not in keys:
             return {"error": "Unknown report for the matrix."}
@@ -99,9 +101,56 @@ class GuiMatrixMixin:
             hidden.discard(row_key)
         else:
             hidden.add(row_key)
-        if len(hidden & keys) >= len(keys):
-            return {"error": "Keep at least one report on the matrix."}
         settings.set_matrix_hidden_reports(sorted(hidden))
+        self._push_state()
+        return {"ok": True, "hidden": sorted(hidden)}
+
+    def _matrix_row_store(self, which):
+        """(every row key, read the hidden list, write it) for one matrix, or
+        None for an unknown name. The three ArcGIS / three-day engines are
+        imported only when asked for, as their own mixins do."""
+        if which == "everything":
+            return ({r[0] for r in matrix_rows()},
+                    settings.get_matrix_hidden_reports,
+                    settings.set_matrix_hidden_reports)
+        if which == "day":
+            return (day_matrix.row_keys(), settings.get_day_matrix_hidden,
+                    settings.set_day_matrix_hidden)
+        if which == "baseline":
+            return (baseline_matrix.row_keys(), settings.get_baseline_matrix_hidden,
+                    settings.set_baseline_matrix_hidden)
+        if which == "pve":
+            return (pdf_excel_matrix.row_keys(), settings.get_pve_matrix_hidden,
+                    settings.set_pve_matrix_hidden)
+        if which == "arcgis":
+            import arcgis_matrix
+            return (arcgis_matrix.row_keys(), settings.get_arcgis_matrix_hidden,
+                    settings.set_arcgis_matrix_hidden)
+        if which == "three_way":
+            import three_way_matrix
+            return (three_way_matrix.row_keys(), settings.get_three_way_matrix_hidden,
+                    settings.set_three_way_matrix_hidden)
+        if which == "three_day":
+            import three_day_matrix
+            return (three_day_matrix.row_keys(), settings.get_three_day_matrix_hidden,
+                    settings.set_three_day_matrix_hidden)
+        return None
+
+    @_api_method
+    def set_matrix_reports_all(self, which, visible):
+        """Show or remove EVERY report row of one matrix in a single step — the
+        options corner's Add all / Remove all. `which` names the matrix
+        (everything / day / baseline / pve / arcgis / three_way / three_day).
+        Removing all leaves an empty grid on purpose: the usual next step is to
+        add back the two or three reports wanted, which used to take one click
+        per report to clear. Display only — no export or comparison is touched."""
+        store = self._matrix_row_store(which)
+        if store is None:
+            return {"error": "Unknown matrix."}
+        keys, get_hidden, set_hidden = store
+        hidden = set(get_hidden())
+        hidden = (hidden - keys) if visible else (hidden | keys)
+        set_hidden(sorted(hidden))
         self._push_state()
         return {"ok": True, "hidden": sorted(hidden)}
 
@@ -177,7 +226,7 @@ class GuiMatrixMixin:
         if scope == "column":
             return f"{verb} all reports — {el}"
         if scope == "stale":
-            return "Refresh stale comparisons"
+            return "Rebuild stale comparisons"
         return f"{verb} all comparisons"
 
     def _make_job(self, kind, scope, label, row=None, env=None, subdir=None,
@@ -355,7 +404,7 @@ class GuiMatrixMixin:
         self._set_dot("busy", "Comparing…")
         self._emit({"t": "run_started", "mode": "consolidate", "label": "Comparing…",
                     "workers": 1})
-        BaselineMatrixCompareWorker(
+        job_host.hosted(BaselineMatrixCompareWorker,
             source, cells, baseline_id, settings.get_batch_dest(),
             self._gated_queue(), self.cancel_event,
             also_formulas=settings.get_baseline_matrix_formulas(),
@@ -388,7 +437,7 @@ class GuiMatrixMixin:
         self._set_dot("busy", "Comparing…")
         self._emit({"t": "run_started", "mode": "consolidate", "label": "Comparing…",
                     "workers": 1})
-        MatrixCompareWorker(dest, base, cells, self._gated_queue(), self.cancel_event,
+        job_host.hosted(MatrixCompareWorker, dest, base, cells, self._gated_queue(), self.cancel_event,
                             tsn_files=self._matrix_tsn_selections(),
                             force_consolidate=job.get("force", False),
                             also_formulas=settings.get_matrix_formulas(),
@@ -409,7 +458,7 @@ class GuiMatrixMixin:
         self._set_dot("busy", "Comparing…")
         self._emit({"t": "run_started", "mode": "consolidate", "label": "Comparing…",
                     "workers": 1})
-        DayMatrixCompareWorker(source, cells, dest, self._gated_queue(), self.cancel_event,
+        job_host.hosted(DayMatrixCompareWorker, source, cells, dest, self._gated_queue(), self.cancel_event,
                                tsn_files=self._matrix_tsn_selections(),
                                force_consolidate=job.get("force", False),
                                also_formulas=settings.get_day_matrix_formulas(),
@@ -447,7 +496,7 @@ class GuiMatrixMixin:
         self._set_dot("busy", "Comparing…")
         self._emit({"t": "run_started", "mode": "consolidate", "label": "Comparing…",
                     "workers": 1})
-        PdfExcelMatrixCompareWorker(
+        job_host.hosted(PdfExcelMatrixCompareWorker,
             source, cells, dest, self._gated_queue(), self.cancel_event,
             force_consolidate=job.get("force", False),
             also_formulas=settings.get_pve_matrix_formulas()).start()
@@ -677,7 +726,7 @@ class GuiMatrixMixin:
         self._set_dot("busy", "Consolidating TSN…")
         self._emit({"t": "run_started", "mode": "consolidate",
                     "label": "Consolidating TSN…", "workers": 1})
-        MatrixTsnConsolidateWorker(dest, job["subdir"], self._gated_queue(),
+        job_host.hosted(MatrixTsnConsolidateWorker, dest, job["subdir"], self._gated_queue(),
                                    self.cancel_event, origin=origin).start()
         return True
 
@@ -824,7 +873,9 @@ class GuiMatrixMixin:
         dest = settings.get_batch_dest()
         path = matrix.out_path_for_cell(dest, base, row_key, env_key, mode)
         if path is None or not path.exists():
-            return {"error": "No comparison built yet — use “↻ compare” first."}
+            return {"error": "There is no comparison workbook for this cell yet. "
+                             "Build it first (point at the cell and click its "
+                             "build button)."}
         self._open_file(path)
         return {"ok": True}
 
@@ -846,7 +897,10 @@ class GuiMatrixMixin:
         import visual_evidence                       # lazy: pulls PIL/pdfium
         ev_wb = visual_evidence.sibling_paths(path)[0]
         if not ev_wb.exists():
-            return {"error": "No evidence images yet — use the camera to generate them."}
+            return {"error": "There are no evidence images for this comparison yet. "
+                             "Tick Evidence images under Matrix options, then click "
+                             "the camera on this cell (rebuild the cell first if it "
+                             "is out of date)."}
         self._open_file(ev_wb)
         return {"ok": True}
 
@@ -1356,8 +1410,18 @@ class GuiMatrixMixin:
         TSN / PDF-vs-Excel self-check tree (comparisons/tsn/) are reachable.
         CMP-AUD-101: the old per-baseline root hid a row's active TSN/self
         artifact, sending the user to an unrelated tree."""
-        dest = settings.get_batch_dest()
-        self._open_folder(matrix.comparisons_common_root(dest))
+        root = matrix.comparisons_common_root(settings.get_batch_dest())
+        if not root.is_dir():
+            # Nothing has been built yet. Make the folder the way a build would —
+            # marked as this app's own — or not at all. A plain `comparisons`
+            # folder is one the matrix worker then refuses to write into ("could
+            # not be proven app-created"), so opening this folder before the
+            # first comparison used to block every comparison after it until
+            # someone deleted the folder by hand.
+            import owned_dir
+            if owned_dir.ensure_owned_dir(root, kind="comparisons") is None:
+                root = root.parent
+        self._open_folder(root)
         return {"ok": True}
 
     # ----- Compare-tab "TSN by day" matrix -----------------------------------
@@ -1393,7 +1457,7 @@ class GuiMatrixMixin:
             return "Refresh stale by-day comparisons"
         return "Rebuild all by-day comparisons"
 
-    @_api_method
+    @_snapshot_endpoint
     def day_matrix_info(self):
         """The by-day matrix snapshot for the Compare tab — a pure filesystem read
         plus the add-day picker's available days for the current source. Also
@@ -1466,7 +1530,7 @@ class GuiMatrixMixin:
 
     @_api_method
     def set_day_matrix_report(self, row_key, visible):
-        """Show/hide a report ROW on the by-day matrix. At least one stays on."""
+        """Show/hide a report ROW on the by-day matrix."""
         keys = day_matrix.row_keys()
         if row_key not in keys:
             return {"error": "Unknown report for the matrix."}
@@ -1475,8 +1539,6 @@ class GuiMatrixMixin:
             hidden.discard(row_key)
         else:
             hidden.add(row_key)
-        if len(hidden & keys) >= len(keys):
-            return {"error": "Keep at least one report on the matrix."}
         settings.set_day_matrix_hidden(sorted(hidden))
         self._push_state()
         return {"ok": True, "hidden": sorted(hidden)}
@@ -1518,6 +1580,12 @@ class GuiMatrixMixin:
         snap = self._day_matrix_snapshot()
         if not snap.get("exportable"):
             return {"error": self._day_export_site_error(snap["source"])}
+        # The job exports the VISIBLE reports. With none on the matrix it would
+        # resolve to no steps and be dropped without a word, leaving an empty
+        # column behind — say so instead.
+        if not any(snap.get("row_supported", {}).get(rk) for rk in snap["rows"]):
+            return {"error": "There is no report on the matrix to export. Add the "
+                             "ones you want under Matrix options ▸ Reports."}
         today = snap["today"]
         self._ensure_day_column(today)
         job = self._make_job("export", "column", f"Export all reports — {today}",
@@ -1655,7 +1723,9 @@ class GuiMatrixMixin:
             return {"error": "Unknown cell."}
         path = day_matrix.day_out_path(date, snap["source"], row_key)
         if not path.exists():
-            return {"error": "No comparison built yet — use “⟳ rebuild” first."}
+            return {"error": "There is no comparison workbook for this cell yet. "
+                             "Build it first (point at the cell and click its "
+                             "build button)."}
         self._open_file(path)
         return {"ok": True}
 
@@ -1670,7 +1740,10 @@ class GuiMatrixMixin:
         import visual_evidence                       # lazy: pulls PIL/pdfium
         ev_wb = visual_evidence.sibling_paths(path)[0]
         if not ev_wb.exists():
-            return {"error": "No evidence images yet — use the camera to generate them."}
+            return {"error": "There are no evidence images for this comparison yet. "
+                             "Tick Evidence images under Matrix options, then click "
+                             "the camera on this cell (rebuild the cell first if it "
+                             "is out of date)."}
         self._open_file(ev_wb)
         return {"ok": True}
 
@@ -1708,7 +1781,7 @@ class GuiMatrixMixin:
             return "Refresh stale PDF-vs-Excel comparisons"
         return "Rebuild all PDF-vs-Excel comparisons"
 
-    @_api_method
+    @_snapshot_endpoint
     def pve_matrix_info(self):
         """The PDF-vs-Excel matrix snapshot + the add-day picker's available days."""
         snap = self._pve_matrix_snapshot()
@@ -1757,7 +1830,7 @@ class GuiMatrixMixin:
 
     @_api_method
     def set_pve_matrix_report(self, row_key, visible):
-        """Show/hide a family ROW on the PDF-vs-Excel matrix. At least one stays on."""
+        """Show/hide a family ROW on the PDF-vs-Excel matrix."""
         keys = pdf_excel_matrix.row_keys()
         if row_key not in keys:
             return {"error": "Unknown report for the matrix."}
@@ -1766,8 +1839,6 @@ class GuiMatrixMixin:
             hidden.discard(row_key)
         else:
             hidden.add(row_key)
-        if len(hidden & keys) >= len(keys):
-            return {"error": "Keep at least one report on the matrix."}
         settings.set_pve_matrix_hidden(sorted(hidden))
         self._push_state()
         return {"ok": True, "hidden": sorted(hidden)}
@@ -1851,7 +1922,9 @@ class GuiMatrixMixin:
             return {"error": "Unknown cell."}
         path = pdf_excel_matrix.day_out_path(date, snap["source"], row_key)
         if not path.exists():
-            return {"error": "No comparison built yet — use “⟳ rebuild” first."}
+            return {"error": "There is no comparison workbook for this cell yet. "
+                             "Build it first (point at the cell and click its "
+                             "build button)."}
         self._open_file(path)
         return {"ok": True}
 
@@ -1897,7 +1970,7 @@ class GuiMatrixMixin:
             return "Refresh stale vs-baseline comparisons"
         return "Rebuild all vs-baseline comparisons"
 
-    @_api_method
+    @_snapshot_endpoint
     def baseline_matrix_info(self):
         """The vs-Baseline matrix snapshot for the Compare tab — a pure
         filesystem read plus the add-day picker's available days and the
@@ -1979,7 +2052,7 @@ class GuiMatrixMixin:
 
     @_api_method
     def set_baseline_matrix_report(self, row_key, visible):
-        """Show/hide a report ROW on the vs-Baseline matrix. At least one stays on."""
+        """Show/hide a report ROW on the vs-Baseline matrix."""
         keys = baseline_matrix.row_keys()
         if row_key not in keys:
             return {"error": "Unknown report for the matrix."}
@@ -1988,8 +2061,6 @@ class GuiMatrixMixin:
             hidden.discard(row_key)
         else:
             hidden.add(row_key)
-        if len(hidden & keys) >= len(keys):
-            return {"error": "Keep at least one report on the matrix."}
         settings.set_baseline_matrix_hidden(sorted(hidden))
         self._push_state()
         return {"ok": True, "hidden": sorted(hidden)}
@@ -2124,7 +2195,9 @@ class GuiMatrixMixin:
             return {"error": "Pick a baseline first."}
         path = baseline_matrix.out_path(date, snap["source"], row_key, baseline_id)
         if not path.exists():
-            return {"error": "No comparison built yet — use “⟳ rebuild” first."}
+            return {"error": "There is no comparison workbook for this cell yet. "
+                             "Build it first (point at the cell and click its "
+                             "build button)."}
         self._open_file(path)
         return {"ok": True}
 
@@ -2142,7 +2215,10 @@ class GuiMatrixMixin:
         ev_wb = baseline_matrix.evidence_path(date, snap["source"], row_key,
                                               baseline_id)
         if ev_wb is None or not ev_wb.exists():
-            return {"error": "No evidence images yet — use the camera to generate them."}
+            return {"error": "There are no evidence images for this comparison yet. "
+                             "Tick Evidence images under Matrix options, then click "
+                             "the camera on this cell (rebuild the cell first if it "
+                             "is out of date)."}
         self._open_file(ev_wb)
         return {"ok": True}
 

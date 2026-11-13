@@ -2,7 +2,7 @@
 
 > Bulk-export Caltrans TSMIS reports for every California state route — from a single click.
 
-[![Version](https://img.shields.io/github/v/release/yunusshaikh7/TSMIS-Reports-Exporter?label=version&color=blue)](https://github.com/yunusshaikh7/TSMIS-Reports-Exporter/releases/latest)
+[![Version](https://img.shields.io/github/v/release/EagleBearerYS/TSMIS-Reports-Exporter?label=version&color=blue)](https://github.com/EagleBearerYS/TSMIS-Reports-Exporter/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078D6?logo=windows)](#)
 [![Python](https://img.shields.io/badge/python-3.11-3776AB?logo=python&logoColor=white)](#)
 [![Automation](https://img.shields.io/badge/automation-Playwright-2EAD33?logo=microsoftedge&logoColor=white)](#)
@@ -12,14 +12,17 @@ A portable Windows desktop tool that bulk-exports reports from the Caltrans
 **Transportation System Management Information System (TSMIS)** for every
 California state route. Pick the report types you want, sign in once, and the
 tool walks every route for you — no copy-pasting route numbers, no babysitting
-the browser.
+the browser. It also combines the per-route files into one workbook per report
+and compares the results: against TSN (the older system TSMIS replaced), between
+environments, between export days, PDF against Excel, and against the ArcGIS
+layers.
 
 It is distributed as a single zip — unzip, double-click, done — in two flavors:
-the standard build drives the **Microsoft Edge or Google Chrome already on the
+the standard build drives the **Google Chrome or Microsoft Edge already on the
 machine** (nothing extra to install), and a *with-browser* build ships its own
-**Built-in Chromium** and uses it by default (Edge/Chrome stay selectable) for
-PCs where managed browsers get in the way. The same engine also runs from a set
-of `.bat` scripts for development and as a fallback.
+**Built-in Chromium** and uses it by default, for PCs where managed browsers get
+in the way. The same engine also runs from a set of `.bat` scripts for
+development and as a fallback.
 
 <p align="center">
   <picture>
@@ -49,25 +52,46 @@ of `.bat` scripts for development and as a fallback.
 ## Features
 
 - **Eleven reports, twenty-two editions, any combination.** Every report the site
-  offers, each in both its Excel and print-layout PDF form — export one, several, or
-  all at once. Tick both editions of a report and it's generated once, saved both ways.
-- **One login for everything.** A single SSO + MFA sign-in covers every report.
+  can export, each as an Excel file and as a print-layout PDF — export one, several,
+  or all at once. Tick both editions of a report and it's generated once, saved both ways.
+- **One login for everything.** A single SSO + MFA sign-in covers every report. On
+  a Caltrans PC, an export with no saved login first tries to sign in by itself
+  through Microsoft Edge.
 - **Pick your routes.** Run all routes by default, or narrow to a subset
   (`5, 99, 101` — any casing/zero-padding, suffixes like `101U` accepted).
-- **Resumable.** Re-running skips routes already on disk, so an interrupted run
-  picks up where it left off.
+- **Resumable.** Re-running the same day skips routes already on disk, so an
+  interrupted run picks up where it left off.
 - **Resilient.** Per-route timeouts, automatic retry of stragglers under lighter
   load, failure screenshots, and rotating logs.
-- **Skip & cancel.** Skip a slow route mid-run, or cancel the whole run — the
-  current route stops promptly, not after a long wait.
-- **Consolidation.** Combine every per-route export into a single workbook —
-  including **TSN Highway Log** district PDFs and **TSMIS Highway Log PDFs**,
-  both converted into TSMIS-format Excel for side-by-side use.
-- **Highway Log comparisons.** Build a discrepancy workbook from two Highway
-  Logs (per-route or consolidated): matching values shown plainly, differences
-  in red, live Excel formulas throughout, plus per-route coverage stats. Three
-  flavors: TSMIS vs TSN, **TSMIS (PDF) vs TSN (PDF)**, and **TSMIS (PDF) vs TSMIS
-  (Excel)** — the PDF-sourced ones sidestep the vendor Excel export's bug.
+- **Skip, pause & cancel.** Skip a slow route mid-run, pause between routes, or
+  cancel the whole run — the current route stops promptly, not after a long wait.
+- **Consolidation.** Combine a report's per-route files into a single workbook —
+  every report, both editions. The PDF editions are read back into Excel, so the
+  two editions of a report can be checked against each other.
+- **Comparisons for every report.** Each report, in both editions, compares
+  against TSN, between environments, PDF against Excel, and against an earlier
+  export day; the Clean Road reports also compare across three export days at
+  once. The result is a discrepancy workbook — matching values shown plainly,
+  differences in red, per-route coverage — saved as a values workbook (opens
+  instantly), a live-formulas workbook (recalculates in Excel), or both.
+- **Comparison matrices.** Four grids on the Compare tab — vs TSN, vs Baseline
+  (an earlier day, say), PDF vs Excel and Three Days — where each row is a report,
+  each column an export day, and each cell one comparison: build it, see how many
+  cells differ (green = identical), open the workbook. *Export today* on the
+  vs TSN Matrix exports every report on the grid for today, then compares.
+- **Everything tab.** *Refresh & export* pulls every ticked report for every
+  ticked environment into one folder that is overwritten each time, so it always
+  holds the latest copy — pause it and pick it up later, even after closing the
+  app. Its *Comparison matrix* is a grid of reports by environments built from
+  that folder.
+- **ArcGIS tab** *(needs ArcGIS Pro)*. Pulls the TSMIS map layers with the ArcGIS
+  Pro installed on the PC, builds reports from them (Highway Detail, Intersection
+  Detail and the Clean Road files so far), and compares your exports against those
+  builds; the Clean Road files can also be compared against TSN and the ArcGIS
+  build at once. Ignore the tab if you don't have ArcGIS Pro.
+- **TSN library.** The app doesn't download TSN data: import each report's TSN
+  files once under Settings ▸ *TSN reports*, and every vs-TSN comparison reads them
+  from the `tsn_library\` folder.
 - **Run reports.** Every run records a per-route outcome CSV (saved / empty /
   skipped / failed).
 - **One-click validation.** Settings ▸ *Validate & package results* runs every
@@ -75,105 +99,129 @@ of `.bat` scripts for development and as a fallback.
   outcomes, TSN freshness, and logs into one credential-safe file for support.
 - **Optional fast mode.** Run several browsers in parallel for a 2.5–3×+ speedup.
 - **Browser, your way.** The standard download uses the machine's installed
-  Edge/Chrome, keeping it small (~148 MB); the with-browser download adds a
-  Built-in Chromium that works even where org-managed browsers interfere. A
-  header dropdown switches between whatever is available.
+  Chrome/Edge, keeping it small (~170 MB unzipped); the with-browser download adds a
+  Built-in Chromium that works even where org-managed browsers interfere. The
+  title bar shows which browser is exporting (*Export via*); when both Google
+  Chrome and the Built-in Chromium are present, choose between them under
+  Settings ▸ *Export browser*. Microsoft Edge handles automatic sign-in and is
+  the fallback.
+- **Updates itself.** When a newer version is out, an *Update to v…* button
+  appears in the title bar — click it, then *Restart to update*; your reports,
+  login and settings are kept.
 
 ## Supported reports
 
 | Report | Output format | Output folder |
 |---|---|---|
-| TSAR: Ramp Summary | PDF (Letter) | `output/<date>/ramp_summary/` |
-| TSAR: Ramp Summary (Excel) | XLSX | `output/<date>/ramp_summary_excel/` |
-| TSAR: Ramp Detail | XLSX | `output/<date>/ramp_detail/` |
-| TSAR: Ramp Detail (PDF) | PDF (Letter, landscape) | `output/<date>/ramp_detail_pdf/` |
-| Highway Sequence Listing | XLSX | `output/<date>/highway_sequence/` |
-| Highway Sequence Listing (PDF) | PDF (Letter, portrait) | `output/<date>/highway_sequence_pdf/` |
-| Highway Log | XLSX | `output/<date>/highway_log/` |
-| Highway Log (PDF) | PDF (Letter, landscape) | `output/<date>/highway_log_pdf/` |
-| Intersection Summary | XLSX | `output/<date>/intersection_summary/` |
-| Intersection Summary (PDF) | PDF (Letter, portrait) | `output/<date>/intersection_summary_pdf/` |
-| Intersection Detail | XLSX | `output/<date>/intersection_detail/` |
-| Intersection Detail (PDF) | PDF (Letter, landscape) | `output/<date>/intersection_detail_pdf/` |
-| Highway Detail | XLSX | `output/<date>/highway_detail/` |
-| Highway Detail (PDF) | PDF (Letter, landscape) | `output/<date>/highway_detail_pdf/` |
-| Highway Summary | XLSX | `output/<date>/highway_summary/` |
-| Highway Summary (PDF) | PDF (Letter, portrait) | `output/<date>/highway_summary_pdf/` |
-| Clean Road: Highway / Intersection / Ramp | XLSX | `output/<date>/clean_<kind>/` |
-| Clean Road: Highway / Intersection / Ramp (PDF) | PDF (Letter, landscape) | `output/<date>/clean_<kind>_pdf/` |
+| TSAR: Ramp Summary | PDF (Letter) | `output\<run>\ramp_summary\` |
+| TSAR: Ramp Summary (Excel) | XLSX | `output\<run>\ramp_summary_excel\` |
+| TSAR: Ramp Detail | XLSX | `output\<run>\ramp_detail\` |
+| TSAR: Ramp Detail (PDF) | PDF (Letter, landscape) | `output\<run>\ramp_detail_pdf\` |
+| Highway Sequence Listing | XLSX | `output\<run>\highway_sequence\` |
+| Highway Sequence Listing (PDF) | PDF (Letter, portrait) | `output\<run>\highway_sequence_pdf\` |
+| Highway Log | XLSX | `output\<run>\highway_log\` |
+| Highway Log (PDF) | PDF (Letter, landscape) | `output\<run>\highway_log_pdf\` |
+| Intersection Summary | XLSX | `output\<run>\intersection_summary\` |
+| Intersection Summary (PDF) | PDF (Letter, portrait) | `output\<run>\intersection_summary_pdf\` |
+| Intersection Detail | XLSX | `output\<run>\intersection_detail\` |
+| Intersection Detail (PDF) | PDF (Letter, landscape) | `output\<run>\intersection_detail_pdf\` |
+| Highway Detail | XLSX | `output\<run>\highway_detail\` |
+| Highway Detail (PDF) | PDF (Letter, landscape) | `output\<run>\highway_detail_pdf\` |
+| Highway Summary | XLSX | `output\<run>\highway_summary\` |
+| Highway Summary (PDF) | PDF (Letter, portrait) | `output\<run>\highway_summary_pdf\` |
+| Clean Road: Highway / Intersection / Ramp | XLSX | `output\<run>\clean_<kind>\` |
+| Clean Road: Highway / Intersection / Ramp (PDF) | PDF (Letter, landscape) | `output\<run>\clean_<kind>_pdf\` |
 
-Since v0.48.0 every edition consolidates and compares — between environments, vs
-TSN, and (for the eleven reports with both editions) PDF vs Excel. Ramp Summary
-(Excel), Intersection Summary (PDF), Highway Summary (PDF) and all six Clean Road
-editions were the last to join, off the 2026-10-02 statewide export. The Clean Road
-PDFs were added in v0.45.2.
+`<run>` is the run folder, named for the day, the data source and environment, and
+the TSMIS site the export came from — `<date> <source>-<environment> <site>-site`,
+e.g. `output\2026-11-13 ssor-prod main-site\highway_log\`. A main-site export and a
+development-site export never share a folder.
 
-Highway Log, Intersection Detail, and Highway Detail each ship in two editions — the regular
-Excel export and a print-layout **PDF** edition (Intersection Detail's added in v0.18.0,
-Highway Detail's in v0.19.2). Ticking both editions of a report generates it once and saves
-both. **Highway Detail and Highway Summary** are the site's newest TSAR report, **export-enabled
-in v0.19.1** (Highway Detail's PDF in v0.19.2; their consolidation/comparison is a later addition). The two Intersection reports live on the **development** TSMIS site (switch
-via Settings ▸ "Use development site"); as of v0.17.0 every fully-integrated report — both
-editions included — consolidates, compares
-cross-environment, and compares vs TSN.
+All eleven reports export in both editions — the regular Excel export and a
+print-layout **PDF** — and ticking both editions of a report generates it once and
+saves both. Every edition consolidates and compares: vs TSN, between environments,
+PDF vs Excel, and against an earlier export day. The app also lists the site's
+**Route History Table**, greyed out as *not yet available* — the site has no export
+for it yet.
 
-Consolidate-only: **TSN Highway Log** (drop district PDFs into
-`input/tsn_highway_log/`), **TSMIS Highway Log (PDF)**, and **TSMIS Intersection
-Detail (PDF)** (drop the matching PDF route exports into their `input/…` folders) —
-each produces TSMIS-format per-route files + one combined workbook under `output/`.
-The **Compare** tab diffs every report TSMIS-vs-TSN and cross-environment; the
-PDF-sourced Highway Log and Intersection Detail also offer a **PDF-vs-Excel**
-self-check (the PDF route sidesteps the vendor Excel export's bug).
+New reports are released first on the **development** TSMIS site and move to the
+main site once they are approved, so a report can be greyed out or fail on the main
+site and still export from the development one. A fresh copy uses the main site;
+switch under Settings ▸ *TSMIS site addresses* ▸ **Use development site** (**Use
+main site** switches back). This is separate from the *Environment* picker.
+
+**TSN files** are not downloaded by the app. Import them once under Settings ▸
+*TSN reports* (*Import raw…*, then *Rebuild*); they are kept in `tsn_library\`, one
+folder per report, and every vs-TSN comparison reads them from there. TSN's data
+stopped changing in September 2025, so most differences against TSN are things that
+changed in TSMIS since then, not errors.
 
 ---
 
 ## Getting started (end users)
 
 > **Requirements:** Windows 10/11 and TSMIS credentials. No Python or other
-> setup needed. The standard download also needs **Microsoft Edge or Google
-> Chrome** installed; the with-browser download brings its own.
+> setup needed. The standard download also needs **Google Chrome or Microsoft
+> Edge** installed; the with-browser download brings its own.
 
 1. **Download** the variant that fits from the
-   [Releases page](https://github.com/yunusshaikh7/TSMIS-Reports-Exporter/releases):
-   - `…-win64.zip` — standard; uses the Edge/Chrome already on the PC (smallest).
+   [Releases page](https://github.com/EagleBearerYS/TSMIS-Reports-Exporter/releases):
+   - `…-win64.zip` — standard; uses the Chrome/Edge already on the PC (smallest).
    - `…-win64-with-browser.zip` — ships its own Built-in Chromium and uses it by
      default (best on managed PCs where Edge sign-in misbehaves and Chrome
-     isn't installed); Edge/Chrome remain in the header dropdown.
+     isn't installed).
    - `…-batch-source.zip` — the console/`.bat` flow for developers (see
      [Developer setup](#developer-setup)).
 2. **Unblock it** before extracting: right-click the zip → **Properties** →
    tick **Unblock** → **OK**. (It's an unsigned app, so Windows marks downloads
    as untrusted — see [Known limitations](#known-limitations).)
-3. **Extract** the folder anywhere you can write (Desktop, Documents, a USB drive).
+3. **Extract** the folder somewhere you can write, and keep its path **short** —
+   `C:\TSMIS` is ideal. Windows and Excel limit how long a file's full path can
+   be, and a deep folder (a OneDrive Desktop, for example) can make exports and
+   comparisons fail to save or open.
 4. **Run** `TSMIS Exporter.exe`. On first launch, choose
-   **More info → Run anyway** if SmartScreen appears.
+   **More info → Run anyway** if SmartScreen appears. Keep the folder together —
+   the `.exe` needs the `_internal` folder next to it.
 
 Exports, logs, and your saved session are written **next to the `.exe`** (or under
 `%LOCALAPPDATA%\TSMIS Exporter` if that folder is read-only), so the tool is fully
-portable and leaves nothing behind on the system.
+portable and leaves nothing behind on the system. The `Start Here.txt` in the zip
+is the full quick start; `IT-README.txt` answers IT and security questions.
 
 ## Usage
 
-1. **Log in** — click **Log in**. On managed Caltrans PCs, after your first
-   Edge sign-in the tool signs in **automatically** using your Windows account
-   (no password, no window) — and exports can even sign themselves in with no
-   saved login. Otherwise a browser window opens: complete SSO + MFA, then
-   confirm; your session is saved and reused until it expires.
+1. **Log in** — click **Log in**. A browser window opens: sign in with your
+   Caltrans account and complete MFA until the TSMIS report page loads, then
+   click **I've finished logging in** (or just close the browser window). The
+   session is saved and reused until it expires; your password goes into the
+   browser, never into the app. On a Caltrans PC you can also just start an
+   export: with no saved login, the app first tries to sign in by itself with
+   Microsoft Edge and your Windows account, and asks you to log in only if that
+   doesn't work.
 2. **Export** — tick the report types, optionally enter a subset of routes
-   (blank = all), and click **Start**. The header dropdowns choose the **data
-   source** (SSOR / ARS) and **environment** (Prod / Test / Dev) — defaults
-   SSOR + Prod. Each day's files land in their own `output/<date>/` folder.
-   Progress, counts, and a live log are shown; use **Skip** for a slow route or
-   **Cancel** to stop.
-3. **Consolidate** *(optional)* — on the Consolidate tab, pick a report type
-   (and which export day — newest by default) to combine that day's per-route
-   files into one workbook under `output/<date>/consolidated/`. **TSN Highway
-   Log** reads district PDFs from `input/tsn_highway_log/` instead (the pane
-   shows the folder).
-4. **Compare** *(optional)* — pick a TSMIS and a TSN Highway Log (per-route or
-   consolidated) and get a discrepancy workbook: red `value ≠ value` cells,
-   route coverage, all live formulas. Big consolidated comparisons open in
-   manual calculation — press **F9** once.
+   (blank = all), and click **Start export**. The **Data source** (SSOR / ARS)
+   and **Environment** (Prod / Test / Dev) pickers under the title choose what
+   you export — defaults SSOR + Prod. Files land in a run folder named for the
+   day, the source and environment, and the TSMIS site, e.g.
+   `output\2026-11-13 ssor-prod main-site\highway_log\`. Progress, counts, and a
+   live log are shown; use **Skip route** for a slow route, **Pause** to hold
+   the run between routes, or **Cancel** to stop.
+3. **Consolidate** *(optional)* — on the Consolidate tab, pick a report (and
+   which export day — newest by default) and click **Start consolidation** to
+   combine that day's per-route files into one workbook under the run folder's
+   `consolidated\`. Or tick *Consolidate each report when its export finishes*
+   on the Export tab (the PDF editions, Ramp Summary aside, still go through the
+   Consolidate tab).
+4. **Compare** *(optional)* — the Compare tab has seven sub-tabs. Three compare
+   two things you pick and ask where to save the result: **Cross-environment**
+   (one report from two export folders), **vs TSN** (a report's consolidated
+   workbook against its TSN copy) and **Self-consistency** (a report's PDF
+   edition against its Excel edition). Tick *Values workbook*, *Live-formulas
+   workbook*, or both; differences show in red as `value ≠ value`. A big
+   live-formulas workbook opens with blank cells — press **F9** in Excel and
+   wait. The other four are matrices (**vs TSN**, **vs Baseline**, **PDF vs
+   Excel**, **Three Days**): grids of reports by export day in which each cell
+   is one comparison to build and open.
 5. **Save run report** *(optional)* — export a CSV of every route's outcome.
 
 Generated folders keep the files you use (XLSX, PDF, images, and run reports) at
@@ -181,12 +229,18 @@ the top level. Internal outcome records, provenance, comparison payloads, locks,
 and Matrix caches are grouped under one `_state` subfolder in the artifact
 folder they describe. Keep `_state` with its artifacts if you move or archive
 them. An app-owned destination may also contain `.tsmis-owned.json` at its root;
-that small marker is intentionally separate because Reset uses it to prove the
-folder is safe to delete.
+that small marker is intentionally separate because Settings ▸ *Delete all
+reports…* uses it to prove the folder is safe to delete.
 
-**Fast mode** (experimental): tick **⚡ Fast mode** and choose a worker count to
-run several browsers in parallel. Each worker uses ~0.5 GB RAM — `3` is a safe
-default; higher counts give a bigger speedup on a well-resourced PC.
+**Fast mode** (experimental): tick **⚡ Fast mode** and choose how many browsers
+to run in parallel. Each one uses ~0.5 GB RAM — 3–4 is a good number; higher
+counts give a bigger speedup on a well-resourced PC. Fast mode needs a saved
+login, and **Skip route** is off while it runs.
+
+**If something goes wrong:** Settings ▸ Debugging ▸ **Save support bundle…** saves
+one zip with the logs, run reports and settings — it includes this PC's name and
+folder paths, but never your login. Send it to whoever gave you the app, with a
+note of what you clicked and what happened.
 
 ---
 
@@ -196,7 +250,7 @@ The packaged app is the product, but the same console-free engine runs from
 `.bat` scripts (and plain Python) for development.
 
 ```bash
-git clone https://github.com/yunusshaikh7/TSMIS-Reports-Exporter.git
+git clone https://github.com/EagleBearerYS/TSMIS-Reports-Exporter.git
 cd TSMIS-Reports-Exporter
 ```
 
@@ -213,7 +267,7 @@ equivalents directly (Python 3.11):
 | GUI (dev) | `run app (GUI preview).bat` | `python scripts/gui_main.py` |
 
 Setup downloads a Built-in Chromium that becomes the default browser; if that
-download is skipped or fails, the tool falls back to the system Edge/Chrome.
+download is skipped or fails, the tool falls back to the system Chrome/Edge.
 Offline verification is a suite of golden checks under `build/check_*.py` (run with
 the build venv; CI runs them all) plus the frozen-bundle self-test; the live-export
 path against TSMIS still requires a login to exercise end to end.
@@ -228,7 +282,7 @@ powershell -ExecutionPolicy Bypass -File build\build.ps1
 
 This creates an isolated build venv, runs PyInstaller (onefolder, windowed), and
 prunes the bundle to runtime-only files. The result is `dist\TSMIS Exporter\`
-(~148 MB) — zip it to distribute.
+(~170 MB) — zip it to distribute.
 
 Add `-BundleChromium` to build the with-browser variant (downloads Playwright's
 Chromium into the bundle, which then defaults to it). Add `-SelfTest` to build
@@ -257,13 +311,18 @@ scripts/        Core engine (console-free) + console & GUI drivers
   report_catalog.py  The report-metadata source of truth; reports.py derives from it
   cli.py          Console adapters backing the .bat flow
   gui_main.py     Desktop app entry (pywebview / Edge WebView2 window)
-  gui_api.py      GUI bridge; task_coordinator.py owns task state; gui_worker.py = threads
+  gui_api.py      GUI bridge; task_coordinator.py owns task state; gui_worker*.py = background workers
   ui/             The interface itself (plain HTML/CSS/JS, no build step)
   export_*.py     One thin file per report type (a ReportSpec)
   consolidate_*.py  Combine per-route exports into one workbook
-  compare_core.py   The regression-locked discrepancy-workbook engine
-build/          Reproducible PyInstaller build (build.ps1, app.spec, prune, self-test)
-output/         Per-report output folders + consolidated/ + run_reports/
+  compare_core.py   The correctness-locked comparison-workbook engine (compare_*.py = its report families)
+  matrix*.py, *_matrix.py  The comparison matrices (Everything, by day, vs baseline, PDF vs Excel, three days, ArcGIS)
+  tsn_library.py  The TSN library; arcgis_*.py = the ArcGIS layer library and the reports built from it
+  updater.py      The in-app updater
+build/          Reproducible PyInstaller build (build.ps1, app.spec, prune, self-test) + the check_*.py suite
+output/         Generated: dated run folders (per-report folders + consolidated/), comparisons/, run_reports/
+tsn_library/    Imported TSN files (local only, git-ignored)
+arcgis_layers/  The ArcGIS layer library (local only, git-ignored)
 *.bat           Numbered launchers for the console workflow
 docs/project-guide.md       Router → conventions + an index into the docs/ library
 docs/           In-depth knowledge library (start at docs/INDEX.md)
@@ -277,11 +336,13 @@ logic, fast mode, and packaging — see [`docs/project-guide.md`](docs/project-g
 
 ## Tech stack
 
-- **Python 3.11** (standard library + four runtime deps)
+- **Python 3.11** (standard library + a handful of pinned runtime deps)
 - **[Playwright](https://playwright.dev/python/)** — browser automation, driving
-  the system Edge/Chrome or the optional Built-in Chromium
-- **[pdfplumber](https://github.com/jsvine/pdfplumber)** — PDF parsing (consolidation)
-- **[openpyxl](https://openpyxl.readthedocs.io/)** — Excel writing (consolidation)
+  the system Chrome/Edge or the optional Built-in Chromium
+- **[pdfplumber](https://github.com/jsvine/pdfplumber)** — PDF parsing
+  (consolidation), plus pypdfium2 and Pillow for reading and rendering PDF pages
+- **[openpyxl](https://openpyxl.readthedocs.io/)** — Excel reading and writing
+  (consolidation and comparison workbooks)
 - **[pywebview](https://pywebview.flowrl.com/)** — desktop GUI shell (Edge
   WebView2 rendering a vanilla HTML/CSS/JS interface)
 - **[PyInstaller](https://pyinstaller.org/)** — portable onefolder packaging
@@ -291,9 +352,15 @@ logic, fast mode, and packaging — see [`docs/project-guide.md`](docs/project-g
 - **The app is unsigned.** Windows SmartScreen / Defender and corporate DLP may
   flag it on first run. Unblock the zip before extracting (Properties → Unblock)
   and choose **More info → Run anyway**. Code-signing is the planned fix.
-- **The standard build needs a browser installed.** It drives the machine's Edge
-  or Chrome and does not bundle one — use the *with-browser* download for
+- **The standard build needs a browser installed.** It drives the machine's Chrome
+  or Edge and does not bundle one — use the *with-browser* download for
   machines where that's a problem.
+- **Long folder paths break saves.** Windows and Excel limit how long a file's
+  full path can be, so keep the app in a short folder such as `C:\TSMIS`.
+- **The ArcGIS tab needs ArcGIS Pro** installed and signed in on the PC; the rest
+  of the app works without it.
+- **One job at a time.** An export, consolidation or comparison runs on its own —
+  wait for the running one, or cancel it.
 
 ## Contributing
 

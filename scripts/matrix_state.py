@@ -363,21 +363,23 @@ def _staleness(cmp_m, sources, rec, fp_folders, missing_side,
     publication_reason = None
     published_generation = None
     if built and comparison_output is not None:
-        published = consolidation_meta.read_comparison_outcome(comparison_output)
+        # The headline is the strict generation reader's own answer, kept while
+        # every file it was read from is unchanged — a snapshot asks this about
+        # every built cell, and the strict read hashes whole workbooks.
+        published = consolidation_meta.read_comparison_headline(comparison_output)
         if published is None:
             publication_reason = "outcome_missing"
         elif not published.trusted:
             publication_reason = "outcome_untrusted"
             completion = outcome.PARTIAL
         else:
-            typed = published.comparison_outcome
-            verdict = typed.verdict
-            diff_cells = typed.counts.differing_cells
-            one_sided = (typed.counts.side_a_only_rows
-                         + typed.counts.side_b_only_rows)
-            completion = typed.completion
-            pairing_quality = typed.pairing_quality
-            published_generation = published.artifact_generation.generation_id
+            verdict = published.verdict
+            diff_cells = published.differing_cells
+            one_sided = (published.side_a_only_rows
+                         + published.side_b_only_rows)
+            completion = published.typed_completion
+            pairing_quality = published.pairing_quality
+            published_generation = published.generation_id
     rec_is_mapping = isinstance(rec, dict)
     try:
         rec_mtime = float(rec.get("built_at_mtime", -1)) if rec_is_mapping else None

@@ -49,7 +49,7 @@ function tdCellContent(cmp, days) {
     return { cls: "mx-missing", main: "needs export",
              sub: which ? `not exported ${which}` : "not exported" };
   }
-  if (!cmp.built) return { cls: "mx-stale", main: "compare", sub: "not built yet" };
+  if (!cmp.built) return { cls: "mx-unbuilt", main: "not built", sub: "build it to compare" };
   const t = cmp.three_day;
   if (!t) return { cls: "mx-stale", main: "re-run", sub: "outcome unknown" };
   const main = `${tdNum(t.newest)} changed ${short[2]}`;
@@ -157,7 +157,7 @@ async function renderThreeDayMatrix() {
   let snap;
   try { snap = await api.three_day_matrix_info(); } catch (e) { return; }
   if (seq !== _tdRenderSeq || !snap) return;     // a newer render started
-  if (snap.error) return;
+  if (mxSnapshotFailed(grid, snap)) return;
   TDM = snap;
   const sets = snap.sets || [], locked = !!(S.st && S.st.task);
 
@@ -178,16 +178,16 @@ async function renderThreeDayMatrix() {
 
   renderThreeDayPickers(snap, locked);
 
-  const rtog = $("threeDayMatrixReportToggles");
-  rtog.textContent = "";
-  const hidden = new Set(snap.hidden || []);
-  (snap.all_rows || []).forEach((r) => {
-    const isOn = !hidden.has(r.key);
-    rtog.appendChild(mxToggleChip(r.label, isOn, (isOn ? "Hide " : "Show ") + r.label, locked,
-      (next) => api.set_three_day_matrix_report(r.key, next), renderThreeDayMatrix));
-  });
+  mxReportToggles("threeDayMatrixReportToggles", "three_day", snap, locked,
+    (key, next) => api.set_three_day_matrix_report(key, next), renderThreeDayMatrix);
 
   grid.textContent = "";
+  if (!snap.rows.length) {
+    mxNoRows(grid);
+    wireThreeDayFooter();
+    updateThreeDayMatrixProgress();
+    return;
+  }
   if (!sets.length) {
     grid.style.gridTemplateColumns = ""; grid.style.gridTemplateRows = "";
     const empty = document.createElement("div");
@@ -229,9 +229,7 @@ async function renderThreeDayMatrix() {
           if (r && r.nothing) showMessage("info", "Nothing to rebuild", "No report has all three of these days exported.");
           else if (r && r.error) showMessage("error", "Can't rebuild", r.error);
         }),
-      mxHeadBtn("i-trash", `Remove the ${full} column`, "mxch-rm", async () => {
-        await api.remove_three_day_matrix_set(s.id); await renderThreeDayMatrix();
-      }));
+      mxRemoveColumnBtn(full, () => api.remove_three_day_matrix_set(s.id), renderThreeDayMatrix));
     h.appendChild(btns);
     grid.appendChild(h);
   });
@@ -299,8 +297,8 @@ async function renderThreeDayMatrix() {
 function wireThreeDayFooter() {
   $("btnThreeDayBuildAll").onclick = async () => {
     const r = await api.rebuild_three_day_matrix("all");
-    if (r && r.nothing) showMessage("info", "Nothing to compare", "Add three exported days first: a cell needs the report exported on all three.");
-    else if (r && r.error) showMessage("error", "Can't compare", r.error);
+    if (r && r.nothing) showMessage("info", "Nothing to build", "Add three exported days first: a cell needs the report exported on all three.");
+    else if (r && r.error) showMessage("error", "Can't build", r.error);
   };
   $("btnThreeDayRebuildAll").onclick = async () => {
     const r = await api.rebuild_three_day_matrix("stale");

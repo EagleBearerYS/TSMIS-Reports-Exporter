@@ -38,6 +38,13 @@ let _aglSeen = null;           // the refresh progress the table last showed
 function arcgisMatrixActive() {
   return S.tab === "arcgis" && agSub === "reports";
 }
+// Also read by applyMatrixWide: the sub-tabs that are not a matrix get a wider
+// left column (body.table-wide). The Layers and ArcGIS reports tables need it —
+// six and five columns do not fit half a window — and so does the strip of five
+// sub-tabs itself, which Clean Road vs TSN would otherwise wrap onto two rows.
+function arcgisTableActive() {
+  return S.tab === "arcgis" && agSub !== "reports" && agSub !== "threeway";
+}
 
 // ---- Clean Road vs TSN ----------------------------------------------------- //
 async function renderArcgis() {
@@ -62,14 +69,14 @@ async function renderArcgis() {
     ? `Built workbook: ${built.path}`
       + (built.completion && built.completion !== "complete"
          ? `   ·   last build was ${built.completion}` : "")
-    : "No built workbook yet — Build reads the staged layers and writes the "
-      + "74-column THY-shaped workbook (with its per-column Provenance sheet).";
+    : "Not built yet. Build from layers writes the Clean Road: Highway workbook from "
+      + "the layer library, with a Provenance sheet naming the layer behind each column.";
   const asof = $("agAsof");
   if (!asof.value && hwy.default_asof) asof.placeholder = hwy.default_asof + " (from the TSN extract)";
   $("btnAgBuild").disabled = !hwy.layers_ok;
   const compareBlockers = [];
   if (!built.exists) compareBlockers.push("build the workbook first");
-  if (!hwy.tsn_raw) compareBlockers.push("stage the TSN CA HIGHWAYS extract in the TSN library (Settings → TSN reports)");
+  if (!hwy.tsn_raw) compareBlockers.push("import the TSN CA HIGHWAYS extract under Settings ▸ TSN reports ▸ TSN Clean Road Highway (Import raw…, then Rebuild)");
   $("btnAgCompare").disabled = compareBlockers.length > 0;
   $("agCompareHint").textContent = compareBlockers.length
     ? "To compare: " + compareBlockers.join("; ") + "."
@@ -133,6 +140,10 @@ function setArcgisSub(which) {
     if (p) p.classList.toggle("hidden", !is);
   });
   renderArcgisTab();
+  // The right-hand card is hidden on the two matrix sub-tabs and comes back on
+  // the others. Nothing redrew it then, so after a matrix it showed whatever tab
+  // had drawn it last ("Ready to export …" on the Layers page).
+  if (typeof updateActivityCards === "function") updateActivityCards();
 }
 
 // ---- "Layers": the layer library + the in-app refresh (v0.46.0) ----------- //
@@ -417,7 +428,7 @@ function agRowSideLine(rk, b, supported) {
     if (!b || !b.available) return { text: "no ArcGIS build yet", cls: "" };
     const ed = (b.editions || []).find((e) => e.key === rk);
     return { text: b.comparable && ed && !ed.comparable ? "edition not consolidated yet"
-                                                        : "comparison not wired yet", cls: "" };
+                                                        : "no comparison yet", cls: "" };
   }
   if (!b || !b.built) return { text: "no ArcGIS build yet — build it", cls: "warn" };
   const asof = b.asof ? `vs ArcGIS as of ${b.asof}` : "vs ArcGIS (as-of unknown)";
@@ -498,19 +509,17 @@ async function renderArcgisMatrix() {
     });
   }
 
-  const rtog = $("agMatrixReportToggles");
-  if (rtog) {
-    rtog.textContent = "";
-    const hidden = new Set(snap.hidden || []);
-    (snap.all_rows || []).forEach((r) => {
-      const isOn = !hidden.has(r.key);
-      rtog.appendChild(mxToggleChip(r.label, isOn,
-        (isOn ? "Hide " : "Show ") + r.label + (r.supported ? "" : " (not available yet)"), locked,
-        (next) => api.set_arcgis_matrix_report(r.key, next), renderArcgisMatrix));
-    });
-  }
+  mxReportToggles("agMatrixReportToggles", "arcgis", snap, locked,
+    (key, next) => api.set_arcgis_matrix_report(key, next), renderArcgisMatrix,
+    { tip: (r) => (r.supported ? "" : " (not available yet)") });
 
   grid.textContent = "";
+  if (!snap.rows.length) {
+    mxNoRows(grid);
+    wireArcgisMatrixFooter();
+    updateArcgisMatrixProgress();
+    return;
+  }
   if (!days.length) {
     grid.style.gridTemplateColumns = ""; grid.style.gridTemplateRows = "";
     const empty = document.createElement("div");
@@ -549,9 +558,7 @@ async function renderArcgisMatrix() {
           if (r && r.nothing) showMessage("info", "Nothing to rebuild", "No comparable cells in this day — build the ArcGIS reports first (ArcGIS reports).");
           else if (r && r.error) showMessage("error", "Can't rebuild", r.error);
         }),
-      mxHeadBtn("i-trash", `Remove the ${d} column`, "mxch-rm", async () => {
-        await api.remove_arcgis_matrix_day(d); await renderArcgisMatrix();
-      }));
+      mxRemoveColumnBtn(d, () => api.remove_arcgis_matrix_day(d), renderArcgisMatrix));
     h.appendChild(btns);
     dndAttach(h, h, d, "ag-day", "x", () => days.slice(), async (order) => {
       const r = await api.set_arcgis_matrix_day_order(order);
@@ -657,8 +664,8 @@ function wireArcgisMatrixFooter() {
   const ba = $("btnAgMxBuildAll");
   if (ba) ba.onclick = async () => {
     const r = await api.rebuild_arcgis_matrix("all");
-    if (r && r.nothing) showMessage("info", "Nothing to compare", "Build the ArcGIS reports (ArcGIS reports) and add an exported day first.");
-    else if (r && r.error) showMessage("error", "Can't compare", r.error);
+    if (r && r.nothing) showMessage("info", "Nothing to build", "Build the ArcGIS reports (ArcGIS reports) and add an exported day first.");
+    else if (r && r.error) showMessage("error", "Can't build", r.error);
   };
   const rb = $("btnAgMxRebuildAll");
   if (rb) rb.onclick = async () => {
@@ -712,6 +719,14 @@ function bindArcgis() {
   bindThreeWay();
   $("btnAgGoBuilds").onclick = () => setArcgisSub("builds");
   $("btnAgRefreshAll").onclick = async () => {
+    // Without ArcGIS Pro there is nothing to confirm: say so before asking the
+    // user to agree to an hour-and-a-half job that cannot start.
+    if (AGL && AGL.pro && !AGL.pro.found) {
+      showMessage("info", "ArcGIS Pro is needed",
+        "ArcGIS Pro wasn't found on this PC, and the layers can only be refreshed "
+        + "through it. If it is installed somewhere unusual, use “Choose python.exe…” above.");
+      return;
+    }
     const n = (AGL && AGL.expected) || 40;
     const ok = await showConfirm({
       title: `Refresh all ${n} layers?`,

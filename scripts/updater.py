@@ -66,7 +66,13 @@ from version import APP_NAME, __version__
 
 log = logging.getLogger("tsmis.update")
 
-GITHUB_REPO = "yunusshaikh7/TSMIS-Reports-Exporter"
+# The repo's CURRENT owner name. The account was renamed on 2026-10-12; the old
+# name kept working only through GitHub's redirect, which lasts until somebody
+# else registers the old name — and whoever did could then publish a "newer
+# release" at the path this app asks. Never leave an update channel on a
+# redirect: when the owner or repo name changes, change it here in the next
+# release (`check_updater` compares it with the checkout's own remote).
+GITHUB_REPO = "EagleBearerYS/TSMIS-Reports-Exporter"
 RELEASES_PAGE = f"https://github.com/{GITHUB_REPO}/releases/latest"
 # /releases/latest never returns prereleases or drafts — only full releases
 # are ever offered.

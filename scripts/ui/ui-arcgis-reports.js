@@ -67,7 +67,7 @@ function agbWhen(epochS) {            // epoch seconds -> "2026-10-05 14:05"
 function agbComparedWith(b) {
   if (!b.available) return "build coming later";
   const eds = (b.editions || []).filter((e) => e.comparable);
-  if (!eds.length) return "built here · comparison not wired yet";
+  if (!eds.length) return "built here · no comparison yet";
   return "compared with " + eds.map((e) => e.label).join(" · ");
 }
 

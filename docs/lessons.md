@@ -416,6 +416,44 @@ alternatives you rejected*. Anything less is a guess wearing a docstring.
 → [planning/cleanroad-highways.md](planning/cleanroad-highways.md) (the settled
 build-time rules); roadmap DA1 / DA5 / DA6.
 
+
+## 18. A gate that passes on the re-run has a race in it; ask the part that failed
+
+The packaged self-test's last step opens the real page in a hidden window. It had
+failed before on this box when memory was short, passed when run again alone, and
+been put down to memory pressure. During the 2026-11-12 performance work it began
+failing two runs in three, with
+`Cannot read properties of undefined (reading 'test_state')` — a message about the
+test, not about the fault.
+
+The fault was in the product, and older than that work: the page asks for its files
+six connections at a time, the local server pywebview starts queues five, and when
+Python was a few milliseconds late accepting the first, the sixth was refused. One
+script missing, the page half built, nothing on screen, nothing in the log. Every
+start-up of the app ran the same race. The earlier failures of this step were never
+examined, so whether they were this race is not known — which is the point.
+
+Two things about how it was found are worth keeping:
+
+- **The right guess was reasoned away.** The queue was suspected within minutes and
+  then dismissed, because the page timed the failed request at 23 ms and a refused
+  connection on Windows "takes seconds". Chromium's own net log
+  (`--log-net-log`) settled it in one failing run: `ERR_CONNECTION_REFUSED`, 2 ms.
+  An hour of inference about what a component must have done lost to one line of
+  what it said it did.
+- **The instrument can hide the race.** With the net log in its `Everything` mode,
+  and with a debugging port open, the same exe passed every time. The default
+  capture mode kept the failure. A diagnostic that makes a timing fault disappear
+  has not cleared it.
+
+**The rule:** an intermittent failure of a gate is a finding about the product until
+shown otherwise, and "re-run it" is not a disposition. Get the failing component's
+own account before theorising, and make the gate's message name the cause — the
+self-test now reports which files did not load.
+
+→ [gui.md](gui.md) ("Where the time went when the app felt slow", item 4);
+`check_page_server_backlog`.
+
 ### Quick index of the lessons
 
 | # | Lesson | Owns the detail |
@@ -437,3 +475,4 @@ build-time rules); roadmap DA1 / DA5 / DA6.
 | 15 | Build guards, not more careful code — they catch what you write next | comparison-engine §13 |
 | 16 | A comment that says "this is cheap" is a claim, and claims need measuring | comparison-engine §2b + planning/vs-tsn-comparison-speed |
 | 17 | A rule fitted on one probe case is a hypothesis; score it on the population | planning/cleanroad-highways + roadmap DA1/DA5/DA6 |
+| 18 | A gate that passes on the re-run has a race in it; ask the part that failed | gui ("Where the time went", 4) + check_page_server_backlog |

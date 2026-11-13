@@ -122,6 +122,86 @@ _DYNAMIC_REPORT_MODULES = ("matrix", "day_matrix", "pdf_excel_matrix",
                            "three_day", "three_day_workbook",
                            "three_day_formulas", "three_day_matrix")
 
+# What a hosted job needs importable in its worker process (step 5c): the two
+# modules that define the hosted workers, and the builders their run() imports
+# on use.
+_WORKER_PROCESS_MODULES = ("gui_worker_matrix", "gui_worker_arcgis",
+                           "tsn_library", "arcgis_reports", "arcgis_matrix",
+                           "three_way_matrix", "three_day_matrix")
+
+# What the hidden window is asked when its page never finishes booting: the
+# files that did not load, the page's own failure banner, and whether the bridge
+# arrived. Plain ES5 so it runs however little of the page did. (The browser
+# always asks for a favicon and the app has none, so that one is left out.)
+_PAGE_DIAGNOSIS_JS = """(function () {
+  var out = {};
+  try {
+    out.not_loaded = performance.getEntriesByType('resource')
+      .filter(function (e) {
+        return e.responseStatus !== 200 && !/favicon\\.ico$/.test(e.name);
+      })
+      .map(function (e) { return e.name.split('/').pop() + ' (status ' + e.responseStatus + ')'; });
+  } catch (e) { out.not_loaded = 'unavailable: ' + e; }
+  var banner = document.getElementById('fatalBanner');
+  out.banner = banner ? banner.innerText.slice(0, 200) : null;
+  out.bridge = typeof (window.pywebview && window.pywebview.api
+                       && window.pywebview.api.get_initial_state);
+  return JSON.stringify(out);
+})()"""
+
+
+def _writer_probe(path, classic):
+    """Write one sheet of the cell shapes a comparison holds through
+    `compare_core._SheetRows` — with openpyxl's own row path forced when
+    `classic` — and return ``(package members, direct path used)``.
+    ``docProps/core.xml`` is left out: it holds only the creation time."""
+    import os
+    from zipfile import ZipFile
+
+    import openpyxl
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    import compare_core as core
+
+    saved = os.environ.get("TSMIS_CLASSIC_XLSX")
+    if classic:
+        os.environ["TSMIS_CLASSIC_XLSX"] = "1"
+    else:
+        os.environ.pop("TSMIS_CLASSIC_XLSX", None)
+    try:
+        wb = openpyxl.Workbook(write_only=True)
+        ws = wb.create_sheet("Probe")
+        ws.column_dimensions["A"].width = 18
+        body = Font(name="Arial", size=10)
+        bold = Font(name="Arial", size=10, bold=True)
+        tint = PatternFill("solid", start_color="FFE699")
+        wrap = Alignment(wrap_text=True, vertical="top")
+        rows = core._SheetRows(ws)
+        ws.append(core._header_row(ws, ["Key", "Exact", "Tinted", "Count", "Link", "Bare"]))
+        values = ["plain", " lead", "trail ", "a<b&c>\"d'", "new\nline", "tab\there",
+                  "é ≠ \U0001f642", "", "=SUM(A1)", "+1", "-x", "@y", "#N/A",
+                  12, 1.5, 0.1 + 0.2, 12345678901234567890, True, False, None]
+        for i, value in enumerate(values):
+
+            def fill(put, value=value, i=i):
+                put(f"K{i:03d}", bold, guard=True)
+                put(value, body, guard=True, exact_source_numeric=True)
+                put(value, body, fill=tint, align=wrap, guard=True)
+                put(i, body)
+                put(f'=HYPERLINK("#Probe!{i + 2}:{i + 2}",{i + 2})', body)
+                put(value if isinstance(value, str) else None, body)
+
+            rows.row(fill)
+        wb.save(str(path))
+        active = rows.fast
+    finally:
+        if saved is None:
+            os.environ.pop("TSMIS_CLASSIC_XLSX", None)
+        else:
+            os.environ["TSMIS_CLASSIC_XLSX"] = saved
+    with ZipFile(path) as z:
+        return {n: z.read(n) for n in z.namelist() if n != "docProps/core.xml"}, active
+
 
 def run(emit=None):
     """Run the comprehensive self-test. Returns 0 on success; raises on any
@@ -191,6 +271,22 @@ def _exercise(tmp, emit):
     assert wb2.active["C2"].value == 1234, "openpyxl round-trip failed"
     emit("openpyxl: write/read round-trip ok")
 
+    # 3b. The comparison writer. A statewide comparison writes its rows straight
+    #     into the sheet's stream instead of through one openpyxl cell per value
+    #     (xlsx_fast_rows), and that is only allowed to be a SPEED change. Only
+    #     this exact bundle can show that its openpyxl lets that path in and that
+    #     the bytes it writes are openpyxl's own, so the same sheet is written
+    #     both ways and every package member compared.
+    direct, active = _writer_probe(tmp / "writer_direct.xlsx", classic=False)
+    classic, _ = _writer_probe(tmp / "writer_classic.xlsx", classic=True)
+    differing = sorted(n for n in set(direct) | set(classic)
+                       if direct.get(n) != classic.get(n))
+    assert not differing, \
+        f"the comparison writer's direct rows differ from openpyxl's own in {differing}"
+    emit("comparison writer: direct rows "
+         + ("active" if active else "NOT active (openpyxl's own row path: slower, same output)")
+         + f", {len(direct)} package members identical to openpyxl's")
+
     # 4. The visual-evidence render stack (SHIPS since v0.21.0 -- the excludes
     #    proof this step used to be is inverted): rasterize a PDF page
     #    (pdfplumber.to_image -> pypdfium2), draw the highlight box (PIL), and
@@ -246,6 +342,30 @@ def _exercise(tmp, emit):
         f"layer export worker missing: {arcgis_pro.worker_script()}"
     arcgis_selftest.run(tmp / "arcgis", emit)
 
+    # 5c. Worker processes: comparison / build jobs run in a child process, and a
+    #     frozen exe starts one by re-launching ITSELF — so only this exact
+    #     artifact can prove it works. A child that starts and then fails is a
+    #     packaging defect and fails the gate. An operating system that refuses
+    #     to create the process at all is an environment restriction: the app
+    #     keeps those jobs in-process there, so that is reported, not failed.
+    #     The child also imports the modules a real job runs (the worker classes
+    #     and the builders they import on use), so a job that could only ever
+    #     fall back to the window's process fails here instead of going unseen.
+    import job_host
+    probed = job_host.probe(modules=_WORKER_PROCESS_MODULES)
+    if probed["ok"]:
+        emit(f"worker process: started (pid {probed['pid']}), imported "
+             f"{len(_WORKER_PROCESS_MODULES)} job modules and answered in "
+             f"{probed['seconds']:.1f}s")
+    elif probed["refused"]:
+        emit("worker process: skipped, this environment refuses child processes "
+             f"({probed['reason']}) -- jobs will run in-process")
+    else:
+        raise AssertionError(
+            "worker process probe failed: "
+            f"{probed['detail'] or probed['reason'] or 'no answer from a child process'} "
+            f"(answer pid {probed['pid']}, {probed['seconds']:.1f}s)")
+
     # 6. GUI bridge: js_api + initial state + bundled ui/ assets MUST work (these
     #    catch a prune/exclude that broke pywebview/pythonnet or lost the ui/ assets).
     import webview
@@ -289,10 +409,19 @@ def _exercise(tmp, emit):
     def _drive(w):
         try:
             deadline = time.time() + 30
+            booted = False
             while time.time() < deadline:                # wait for app.js to boot
                 if w.evaluate_js("typeof window.__tsmis !== 'undefined'"):
+                    booted = True
                     break
                 time.sleep(0.25)
+            if not booted:
+                # Name the cause: which files did not load, and what the page
+                # itself reported. (A bare "test_state of undefined" took a
+                # browser net log to explain.)
+                res["err"] = ("the page never finished booting: "
+                              f"{w.evaluate_js(_PAGE_DIAGNOSIS_JS)}")
+                return
             res["state"] = w.evaluate_js("window.__tsmis.test_state()")
         except Exception as e:
             res["err"] = f"{type(e).__name__}: {e}"

@@ -43,6 +43,10 @@ function applyMatrixWide() {
   document.body.classList.toggle("mw-td", td);
   document.body.classList.toggle("mw-ag", ag);
   document.body.classList.toggle("mw-tw", tw);
+  // Not a matrix: the ArcGIS tab's Layers / ArcGIS reports tables, which only
+  // need the left column wider than half the window.
+  document.body.classList.toggle("table-wide",
+    typeof arcgisTableActive === "function" && arcgisTableActive());
 }
 
 // CMP-AUD-079: true when a COMPARE-TAB comparison is live, so the sub-tab strip
@@ -110,7 +114,7 @@ function selectCompareGroup(groupId) {
 function renderCompareFiles() {
   for (const [side, id] of [["tsmis", "cmpTsmisPath"], ["tsn", "cmpTsnPath"]]) {
     const el = $(id);
-    el.textContent = CMP[side] || "— not selected —";
+    el.textContent = CMP[side] || "— not picked —";
     el.title = CMP[side] || "";
     el.classList.toggle("unset", !CMP[side]);
   }

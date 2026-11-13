@@ -245,4 +245,11 @@ def main():
 
 
 if __name__ == "__main__":
+    # FIRST, before anything else runs: comparison jobs are hosted in child
+    # processes (job_host), and in the packaged exe a child IS this exe started
+    # with multiprocessing's own arguments. freeze_support() recognizes that
+    # launch, runs the job and exits — without it the child would fall through
+    # to main() and open a second window. It is a no-op for a normal start.
+    import multiprocessing
+    multiprocessing.freeze_support()
     main()

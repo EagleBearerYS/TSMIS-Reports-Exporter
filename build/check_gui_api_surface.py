@@ -84,7 +84,14 @@ def _src(mod):
 #     rows / row order, adding and removing a set, one cell, a scoped rebuild,
 #     and opening a cell or the store. A column of every other by-day matrix is
 #     one day, so none of their endpoints can name three.
+#   * set_matrix_reports_all (2026-11-13) — Add all / Remove all for the report
+#     rows of any of the seven matrices, named by its first argument. The seven
+#     per-row endpoints take one row each, and until this change each refused to
+#     hide the last row, so "show only these three" cost one click and one
+#     re-render per report taken off. ONE endpoint with a matrix name rather
+#     than seven more: the operation is identical everywhere.
 FROZEN_API = {
+    "set_matrix_reports_all",
     "three_day_matrix_info", "set_three_day_matrix_source",
     "add_three_day_matrix_set", "remove_three_day_matrix_set",
     "set_three_day_matrix_report", "set_three_day_matrix_row_order",
