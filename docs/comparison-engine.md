@@ -217,6 +217,137 @@ re-read on both the raw and the normalized-library path.
 Interleaved on statewide Intersection Detail, 3 paired rounds: **229.2 s →
 191.7 s (16.4%, 1.20x)**, package digest identical on all six runs.
 
+**The big sheets' rows are written directly (2026-11-12).** v0.41.0 concluded that
+writing was "70% of a comparison, with no hot spot". The hot spot was the per-cell
+machinery itself, and it was hidden by where it was measured: **the shipped bundle
+has no lxml**, so every cell goes through openpyxl's pure-Python path — a
+`WriteOnlyCell`, a type-inferring bind, a `ValueError` raised and caught per styled
+cell inside `_values_to_row` (its message formats the cell's `repr`), three
+ElementTree elements, and five `file.write` calls. Measured on the shipped
+configuration that is ~8 µs a cell, and a statewide comparison writes millions.
+A dev box with lxml installed never sees it; **benchmark with
+`build\.venv\Scripts\python.exe`, which has no lxml, or you are timing a different
+writer.**
+
+`compare_core._SheetRows` now serializes a row of the data, snapshot, Comparison
+and Only-in sheets as ONE string, written through the same text stream openpyxl is
+writing that sheet to (`xlsx_fast_rows`). Everything around the rows — the sheet
+header, widths, conditional formatting, comments, the styles table, the package —
+is still openpyxl's. What makes it a speed change and not a second writer:
+
+- **Each fragment reproduces one branch of `etree_write_cell`** (inline string with
+  or without `xml:space`, number, formula, error, Boolean, empty styled cell), with
+  the same escaping function, and `_put` decides a cell's type the way
+  `set_safe_literal_cell` and `Cell._bind_value` do between them.
+- **Anything else is openpyxl's.** A date, a Decimal, a non-finite float, a row
+  with its own height raises `Unsupported`, and that whole row is rebuilt from real
+  cells. So is every row when the stream cannot be driven directly (lxml installed,
+  `TSMIS_CLASSIC_XLSX=1`) and whenever `_styled_cell` has been swapped — which is
+  what the output-lock checks and `benchmark_vs_tsn_speed.py --writer historical`
+  do to build their control, so those now compare the direct path against the
+  historical one without being edited.
+- **Styles register at the same moment.** A composite's id is taken the first time
+  a directly-written cell uses it, which is when openpyxl would have registered it,
+  so `styles.xml` comes out in the same order. A row that is filled twice (declined,
+  then rebuilt) registers the same styles in the same order — which requires a
+  `fill` to describe the same cells every time it is called.
+- **A row the caller still has to touch is built from real cells** (`cells()`): the
+  Highway Log ditto tint and its hover comment.
+
+Three smaller changes ride with it, each exact:
+
+- **Text widths are assembled, not re-measured.** Sizing a sheet measures every
+  distinct value in the real font. Under Pillow's BASIC layout a string's length is
+  its glyph advances plus each adjacent pair's kerning, all multiples of 1/64 px, so
+  `_font_length` builds it from per-character and per-pair tables and gets the SAME
+  float `getlength` returns (`check_text_measure`: 32,304 measurements, 0 off). A
+  font on any other layout engine is measured directly.
+- **`_xl_trim` skips the regex when there is no space** to trim.
+- **Inputs are loaded once, not parsed three times.** Inside
+  `xlsx_fast_read.cheap_sizing()` — which wraps every file comparator's loader —
+  openpyxl's "does this sheet carry a `<dimension>`?" is answered from the sheet's
+  head instead of a parse to its last row (the cost §2b already names for the
+  commit gate; each input paid it once per open, and each is opened about three
+  times), and a plain `<is><t>…</t></is>` is read from its `<t>` instead of through
+  a `Text` object. The rows are openpyxl's, values and types
+  (`check_xlsx_fast_read`). It is opt-in and NOT applied to the commit gates: the
+  one thing it changes is that a sheet damaged past its head fails when its rows
+  are read instead of when the workbook is opened.
+
+Measured on the shipped configuration, same inputs, against a pristine `main`
+checkout. Every row is byte-identical on every package member:
+
+| Comparison (real exports) | `main` | now | |
+|---|---:|---:|---:|
+| Clean Road Ramp vs TSN, values (279 MB of XML) | 87.7 s | 27.5 s | 3.2× |
+| Highway Sequence vs TSN, both flavors (1.1 GB of XML) | 324.3 s | 128.3 s | 2.5× |
+| Clean Road Ramp, three days (2 interleaved rounds) | 15.6 s | 11.8 s | 1.3× |
+
+`check_xlsx_fast_rows` holds the byte bar on every cell shape, on rows the direct
+path must decline, and on whole workbooks in every mode; `check_compare_style_cache`
+still holds it against the pre-cache writer. The three-day grid uses the same sink
+(`row_mixed`, whose `plain` is the bare-value form of `put`). **Not converted yet:**
+the Highway Detail and Intersection Detail Report Views, the three-way workbook and
+the three-day lists — each builds its own cells and is the next place to look.
+
+**The equality sweep (2026-11-12).** The table above is three comparators called
+directly. The whole change — the direct rows, the cheaper input loads, the route
+workbook writer, the read-side memos and the worker process — was then held to the
+same bar through the shipped path. The released tree (`main`, v0.52.1) and this tree
+each got a sandbox with its own copy of the same real exports, and each ran the
+matrix workers the window starts (`gui_worker_matrix`): the released tree on a
+thread, this tree in a worker process, as it ships. Everything either wrote was then
+compared.
+
+| What ran in both trees (real exports) | Cells | Sheet XML compared |
+|---|---:|---:|
+| vs TSN by day — Highway Detail, Highway Sequence, Highway Log, Intersection Detail, Ramp Detail, Ramp Summary (both editions), Intersection Summary, Highway Summary, Clean Road Highway / Intersection / Ramp, Ramp Detail (PDF), Clean Road Ramp (PDF) | 14 of the 22 rows | 11.9 GB |
+| vs Baseline — Clean Road ×3 (11-06 vs 10-30); Highway Log, Intersection Detail, Ramp Detail, two summaries (10-02 vs 07-23) | 8 | 4.2 GB |
+| PDF vs Excel — Ramp Detail, Clean Road Ramp, the three summaries | 5 of the 11 rows | 0.4 GB |
+| Reports vs ArcGIS — Clean Road Ramp, Intersection | 2 | 0.8 GB |
+| Three-way — Clean Road Ramp, Intersection | 2 | 0.1 GB |
+| Three Days — Clean Road Highway, Intersection, Ramp (with the live-formulas copy) | 3 | 1.1 GB |
+| TSN library rebuild — Highway Log (12 district PDFs), Intersection Detail, Ramp Detail | 3 datasets | 0.1 GB |
+| PDF conversion, eight consolidators, 595 real PDFs — every per-route workbook and each consolidated workbook | 682 files | 0.3 GB |
+
+**Result: no value differs anywhere.** In every one of the 41 comparison workbooks,
+every package member is byte-identical except `docProps/core.xml` (the creation time)
+and three kinds of cell that name the run rather than the data: the sandbox folder
+inside a source path, and — on the Provenance sheet — the sha256 of an input
+workbook that side had just rebuilt. Each such hash was checked to be that file's
+own, and the two files to hold identical members (they differ only in their own
+creation time). The 18 consolidated inputs the two trees rebuilt are member-identical;
+so are the three TSN datasets and all 682 PDF-conversion files. The published typed
+outcome — counts, per-column breakdown, pairing trace — is the same value for value
+(55,011 compared; where the cells were compared as files, the content-addressed
+payload chunk is the same file byte for byte). The window's own snapshot endpoints
+return the same cell values from the released tree as from this one on a first read,
+on repeat reads served from the memos, and in a fresh process that loaded the memos
+from disk (33 cells, 619 values, nine reads).
+
+What the sweep did **not** run through the matrix: eight PDF-edition rows vs TSN
+(Highway Log, Intersection Detail, Highway Detail, Highway Sequence, the Intersection
+and Highway Summary prints, Clean Road Highway and Intersection) and six PDF vs Excel
+rows (the same families less the two summaries). Their PDF conversion is in the last
+table row — a subset of routes for the four largest families, and Clean Road
+Highway's prints go through the consolidator Ramp's and Intersection's do — and
+their comparators write the same `compare_core` sheets as every row above, but those
+comparators themselves were not run. Nor were the Everything matrix and the manual
+Compare tab (the same adapters), ArcGIS report builds or the evidence images (the
+last two are not touched by this change beyond the worker process). And it ran on
+the dev PC from source: inside the packaged exe the writer is held by the self-test's
+own byte comparison ([build-and-release.md](build-and-release.md), step 3b).
+
+How it was run, for the next output-locked change: two `git worktree` checkouts (the
+base, and a second one with the working tree's changes copied over), a private copy
+of the export days / `tsn_library` / `arcgis_layers` in each (never a junction — the
+workers write into the day folders), the worker class driven with the arguments the
+GUI passes, then a member-by-member diff of both trees with the hashes streamed in
+1 MB blocks. Two lessons cost time: run at most two jobs at once on a 16 GB PC (the
+PC went down with four running plus a diff that read whole sheets into memory), and
+leave the live-formulas copy off for statewide cells once one large cell has covered
+it — it roughly doubles the base tree's time.
+
 ### Counts only — the preview mode (§2c)
 
 `mode="preview"` is the fourth comparison mode beside `formulas` / `values` /

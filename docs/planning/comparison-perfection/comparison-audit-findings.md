@@ -4114,8 +4114,8 @@ fingerprint survived in the workbook or sidecar. Renames, run-root/report-subfol
 aliases, and later file replacement cannot be audited from the saved artifact.
 
 Stage-8 Ramp Summary adds a real source example. The 126 TSMIS PDFs print report date
-07/09/2026, reference date 07/10/2026, route/title claims, and submitter
-`Yunus.Shaikh@dot.ca.gov`; their Excel siblings also retain per-route generated times.
+07/09/2026, reference date 07/10/2026, route/title claims, and the submitter's
+Caltrans address; their Excel siblings also retain per-route generated times.
 The production consolidated/comparison workbooks preserve only source basenames and
 lose those printed claims. All source-backed numeric values are exact, but the saved
 comparison cannot independently identify the pull/snapshot that supplied them.
@@ -7107,12 +7107,12 @@ Primary code: Summary normalizers/sidecars, comparison Notes/provenance, Matrix/
 
 The accepted `r7` Intersection Summary workbook and sidecar bind the raw PDF bytes but do
 not carry its printed reference date `09/15/2025`, report ID `OTM22250`, event `4843738`,
-submitter `TRLBUGNI`, report title/location, or printed generation time. These page-2/3
+submitter user ID, report title/location, or printed generation time. These page-2/3
 facts identify what was run, by whom, and for which effective snapshot; they are not
 reconstructable from the Category/Count rows and are materially different from legal or
 presentation-only page furniture. Ramp Summary independently confirms the same class:
-report/reference dates `09/15/2025`, report ID `OTM22270`, event `4843742`, submitter
-`TRLBUGNI`, `STATEWIDE` scope/title, and the page-3 `05:10 PM` generation time are all
+report/reference dates `09/15/2025`, report ID `OTM22270`, event `4843742`, the submitter's
+user ID, `STATEWIDE` scope/title, and the page-3 `05:10 PM` generation time are all
 absent from its normalized Category/Count artifact. It must be audited under the same
 rule rather than given a family-specific exception.
 

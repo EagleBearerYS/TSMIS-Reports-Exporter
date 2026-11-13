@@ -19,13 +19,34 @@ import outcome
 import consolidation_meta
 import owned_dir
 from common import (ROUTES, AuthError, BrowserNotFoundError, PreflightError,
+                    ReportUnavailableError, SiteUnreachableError,
                     DATA_SOURCE_LABELS,
                     ENVIRONMENT_LABELS, get_site, set_site)
 from events import Events
 from exporter import run_export, run_export_combined, _wait_while_paused
 from paths import env_tagged_filename, output_run_dir
+from site_target import HOST_MAIN, host_kind_for
 
 log = logging.getLogger("tsmis.gui")
+
+
+def _dev_site_hint(exc, src=None, env=None):
+    """One more sentence for a report the MAIN site greys out: reports wait on
+    the development site until they are approved, so that is where this one
+    most likely is. Window guidance (it names a Settings button), which is why
+    it is added here and not in the engine's own UI-neutral message. Empty for
+    anything else, and when the run was already on another site."""
+    if not isinstance(exc, ReportUnavailableError):
+        return ""
+    try:
+        if src is None or env is None:
+            src, env = get_site()
+        if host_kind_for(src, env) != HOST_MAIN:
+            return ""
+    except Exception:  # silent-ok: a hint must never replace the real message
+        return ""
+    return (" Reports that are not approved for the main site yet exist only on "
+            "the development site: Settings ▸ Use development site.")
 
 def _swap_store_dir(live, staged, guard=None):
     """Replace `live` with the freshly-exported `staged` store folder, JOURNALED (P2/F2).
@@ -575,7 +596,8 @@ class ExportWorker(threading.Thread):
             err = ("auth", str(e))
         except (PreflightError, BrowserNotFoundError) as e:
             log.warning("export worker stopped: %s: %s", type(e).__name__, e)
-            err = ("general", str(e))               # message is already user-safe
+            # message is already user-safe
+            err = ("general", str(e) + _dev_site_hint(e))
         except Exception as e:
             # The full traceback MUST land in the log -- the GUI can only show
             # one line, and "TypeError: ..." with no context is undebuggable.
@@ -722,6 +744,29 @@ class BatchWorker(threading.Thread):
                                 ("auth" if isinstance(e, AuthError) else "general",
                                  str(e))))
                     return                              # finally restores the site
+                except SiteUnreachableError as e:
+                    # The network, not this environment: every one left would
+                    # fail the same way. Stop once with the reason (it is
+                    # user-safe by contract) and keep the batch resumable,
+                    # instead of six "stopped unexpectedly" lines.
+                    log.warning("batch stopped on %s-%s: %s: %s", src, env,
+                                type(e).__name__, e)
+                    self.q.put(("error", ("general", str(e))))
+                    return                              # finally restores the site
+                except PreflightError as e:
+                    # The site answered but this environment could not run —
+                    # most often a report greyed out there. Say WHY (the message
+                    # is user-safe by contract); the old line only named the
+                    # exception class and sent the reader to the log file.
+                    crashed = True
+                    log.warning("batch: %s-%s stopped: %s: %s", src, env,
+                                type(e).__name__, e)
+                    self.q.put(("log", f"  {src}-{env} stopped: {e}"
+                                       f"{_dev_site_hint(e, src, env)}"))
+                    self.q.put(("log", "  Leaving it pending and moving on. Resume would "
+                                       "stop at the same place: to finish this "
+                                       "environment, Discard the batch, un-tick that "
+                                       "report under Report types and start again."))
                 except Exception as e:
                     crashed = True
                     log.exception("batch: %s-%s crashed", src, env)

@@ -38,6 +38,7 @@ import artifact_store
 import consolidation_meta
 import outcome
 import output_state
+import xlsx_fast_read
 from compare_core import run_compare
 from comparison_contract import comparison_result_boundary
 from events import ConsolidateResult, Events
@@ -1134,7 +1135,10 @@ def run_files_compare(schema, tsmis_path, tsn_path, out_path, *, banner, has_rou
     events.on_log("")
 
     try:
-        loaded = loader(tsmis_path, tsn_path)
+        # Every workbook a loader opens here is read through, so the head of a
+        # sheet answers openpyxl's size question (see xlsx_fast_read).
+        with xlsx_fast_read.cheap_sizing():
+            loaded = loader(tsmis_path, tsn_path)
     except ValueError as e:
         return ConsolidateResult(status="error", message=str(e))
     if has_route is None:

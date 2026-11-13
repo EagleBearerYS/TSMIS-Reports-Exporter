@@ -122,8 +122,9 @@ class GuiUpdateMixin:
                 return {"error": "An update or revert is already in progress."}
             if phase == "staged":
                 # Don't silently discard a download the user already staged.
-                return {"error": "A download is already staged — restart to apply it, "
-                                 "or reopen the app first, then revert."}
+                return {"error": "An update is already downloaded. Click Restart to "
+                                 "update first, or close and reopen the app, then "
+                                 "revert."}
             self._update = {"phase": "downloading", "progress": 0, "revert": True}
         ui_log.info("revert: user chose 'Revert to previous version'")
         self._emit_log("Reverting to the previous version — finding it and downloading…")

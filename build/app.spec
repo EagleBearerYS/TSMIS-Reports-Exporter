@@ -69,6 +69,9 @@ APP_MODULES = [
     "browser_channels", "auth_nav", "report_nav", "edge_device", "session",
     "events", "outcome", "comparison_contract", "cache_envelope", "credential_safety",
     "consolidation_meta", "artifact_store", "contract", "task_coordinator",
+    "content_token",                   # change tokens + the shared digest memo
+    "xlsx_fast_rows", "xlsx_fast_read",  # direct row writes + cheap read-only loads
+    "job_host",                        # comparison/build jobs in a worker process
     "output_state",                    # organized non-deliverable generation state
     "safe_delete", "owned_dir",          # P12 fs-safety: junction-safe reset + M03 ownership marker
     "exporter", "exporter_parallel",

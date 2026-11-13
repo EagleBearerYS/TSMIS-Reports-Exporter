@@ -107,6 +107,21 @@ function makeReportRow(rep, checked, off, onChange) {
 // top-level reports first in the TSMIS site's order, then each family contiguously).
 // Emit a family header (.option-group) whenever the group changes; flat reports get
 // none. `checkedFor(rep)` decides the initial tick; `onChange` fires on toggle. (P-D)
+// All / None over a report checklist. Each box is flipped through its own
+// change event, so the row highlight, the count and the pre-flight card follow
+// exactly as they do for a click. Reports the app has switched off
+// (dataset.off) are never ticked.
+function wireChecklistBulk(listId, allId, noneId) {
+  const set = (on) => $(listId).querySelectorAll("input").forEach((c) => {
+    if (c.dataset.off === "1" || c.disabled || c.checked === on) return;
+    c.checked = on;
+    c.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  const all = $(allId), none = $(noneId);
+  if (all) all.onclick = () => set(true);
+  if (none) none.onclick = () => set(false);
+}
+
 function fillReportList(container, checkedFor, onChange) {
   let lastGroup = null;
   (S.init.reports || []).forEach((rep) => {
@@ -161,6 +176,8 @@ function buildStatic() {
     $("batchEnvList").appendChild(row);
   }));
   updateBatchCount();
+  wireChecklistBulk("reportList", "btnReportsAll", "btnReportsNone");
+  wireChecklistBulk("batchReportList", "btnBatchReportsAll", "btnBatchReportsNone");
   if (S.init.batch_dest) setBatchDest(S.init.batch_dest);
 
   // consolidate radios. Each cons_reports entry is {label, fmt} where fmt is the
@@ -401,7 +418,7 @@ function renderState() {
     ? "Edge one-click sign-in: working (proven this session). Exports can sign themselves in without a saved file."
     : dev.primed
       ? "Edge one-click sign-in: set up (the Edge sign-in profile exists) — it's verified the first time something signs in this session."
-      : "Edge one-click sign-in: not set up. Sign in once with Microsoft Edge to enable hands-free sign-in on this PC.";
+      : "Edge one-click sign-in: not used on this PC yet. It is tried by itself the first time an export runs without a saved login.";
   if (dev.reason && !dev.ok) edgeTitle += `\n\nLast attempt: ${dev.reason}`;
   $("loginEdge").title = edgeTitle;
   // M1-E/G6: the last device sign-in failure, shown in the popover so a dark chip
@@ -1069,10 +1086,58 @@ function paintState() {
   if (onCompareGroup(BASELINE_MATRIX_GROUP)) updateBaselineMatrixProgress();
   if (onCompareGroup(PVE_MATRIX_GROUP)) updatePveMatrixProgress();
   if (onCompareGroup(THREE_DAY_MATRIX_GROUP)) updateThreeDayMatrixProgress();
-  if (typeof syncArcgisLock === "function") syncArcgisLock();
+  // Same rule as the matrices above: the ArcGIS tab renders in full on entry
+  // (setTab), so its lock-sensitive controls need syncing only while it shows.
+  if (S.tab === "arcgis" && typeof syncArcgisLock === "function") syncArcgisLock();
   // env_access can change on a push (background active-env check / scan) —
   // re-overlay the matrix warnings without a full rebuild when one is visible.
   if (onEverythingMatrix || onCompareGroup(DAY_MATRIX_GROUP)) applyMatrixEnvFlags();
+}
+
+// ------------------------------------------------- one refresh per burst ----
+// A finished job reaches the page as `run_ended`, then a state, then
+// `matrix_refresh` (gui_api._end_task, then the job's own done handler) — and
+// each of the two events used to re-fetch and rebuild the visible grid. The
+// second fetch superseded the first, so the user saw one render, but Python
+// built the snapshot twice (and a queue of N jobs built it 2N times). Both
+// events now ASK for a refresh; the asks made within one short window are
+// answered by a single render of whatever is on screen when the window closes.
+// The delay is far below what reads as lag and long enough to span the two
+// back-to-back batches the events can arrive in.
+const VIEW_REFRESH_DELAY_MS = 40;
+let _viewRefresh = null;                 // { runEnded } while a refresh is pending
+
+function requestViewRefresh(runEnded) {
+  if (!_viewRefresh) {
+    _viewRefresh = { runEnded: false };
+    setTimeout(flushViewRefresh, VIEW_REFRESH_DELAY_MS);
+  }
+  if (runEnded) _viewRefresh.runEnded = true;
+}
+
+function flushViewRefresh() {
+  const req = _viewRefresh;
+  _viewRefresh = null;
+  if (!req) return;
+  const onCompare = (g) => S.tab === "compare" && S.compareGroup === g;
+  if (S.tab === "everything") {
+    if (req.runEnded) renderBatchLibrary();
+    if (S.everySub === "matrix") renderMatrix();
+  }
+  if (onCompare(DAY_MATRIX_GROUP)) renderDayMatrix();
+  if (onCompare(BASELINE_MATRIX_GROUP)) renderBaselineMatrix();
+  if (onCompare(PVE_MATRIX_GROUP)) renderPveMatrix();
+  if (onCompare(THREE_DAY_MATRIX_GROUP)) renderThreeDayMatrix();
+  if (S.tab === "arcgis") {
+    // A finished run re-renders whichever ArcGIS sub-tab is showing; a bare
+    // matrix_refresh touches the four views that follow the shared queue (the
+    // Clean Road sub-tab is not one of them).
+    if (req.runEnded) renderArcgisTab();
+    else if (typeof arcgisMatrixActive === "function" && arcgisMatrixActive()) renderArcgisMatrix();
+    else if (typeof threeWayMatrixActive === "function" && threeWayMatrixActive()) renderThreeWayMatrix();
+    else if (typeof agSub !== "undefined" && agSub === "layers") renderArcgisLayers();
+    else if (typeof agSub !== "undefined" && agSub === "builds") renderArcgisBuilds();
+  }
 }
 
 // ------------------------------------------------------- event dispatch ----
@@ -1127,23 +1192,10 @@ function dispatch(events) {
         case "run_started": startRunUi(ev.mode, ev.label, ev.workers); break;
         case "run_ended":
           endRunUi();
-          if (S.tab === "everything") { renderBatchLibrary(); if (S.everySub === "matrix") renderMatrix(); }
-          if (S.tab === "compare" && S.compareGroup === DAY_MATRIX_GROUP) renderDayMatrix();
-          if (S.tab === "compare" && S.compareGroup === BASELINE_MATRIX_GROUP) renderBaselineMatrix();
-          if (S.tab === "compare" && S.compareGroup === PVE_MATRIX_GROUP) renderPveMatrix();
-          if (S.tab === "compare" && S.compareGroup === THREE_DAY_MATRIX_GROUP) renderThreeDayMatrix();
-          if (S.tab === "arcgis") renderArcgisTab();
+          requestViewRefresh(true);
           break;
         case "matrix_refresh":
-          if (S.tab === "everything" && S.everySub === "matrix") renderMatrix();
-          if (S.tab === "compare" && S.compareGroup === DAY_MATRIX_GROUP) renderDayMatrix();
-          if (S.tab === "compare" && S.compareGroup === BASELINE_MATRIX_GROUP) renderBaselineMatrix();
-          if (S.tab === "compare" && S.compareGroup === PVE_MATRIX_GROUP) renderPveMatrix();
-          if (S.tab === "compare" && S.compareGroup === THREE_DAY_MATRIX_GROUP) renderThreeDayMatrix();
-          if (typeof arcgisMatrixActive === "function" && arcgisMatrixActive()) renderArcgisMatrix();
-          if (typeof threeWayMatrixActive === "function" && threeWayMatrixActive()) renderThreeWayMatrix();
-          if (S.tab === "arcgis" && typeof agSub !== "undefined" && agSub === "layers") renderArcgisLayers();
-          if (S.tab === "arcgis" && typeof agSub !== "undefined" && agSub === "builds") renderArcgisBuilds();
+          requestViewRefresh(false);
           break;
         case "modal": showMessage(ev.kind, ev.title, ev.message); break;
         default:
@@ -1175,7 +1227,7 @@ function bindEvents() {
   // tabs
   const TABS = {
     export: { btn: "tabExport", pane: "paneExport", title: "Export reports",
-              sub: "Select reports and routes, then run the batch export." },
+              sub: "Select reports and routes, then start the export." },
     consolidate: { btn: "tabConsolidate", pane: "paneConsolidate", title: "Consolidate output",
                    sub: "Merge per-route files into a single workbook." },
     compare: { btn: "tabCompare", pane: "paneCompare", title: "Compare reports",
@@ -1210,9 +1262,19 @@ function bindEvents() {
       $(t.btn).setAttribute("aria-selected", String(key === tab));
       $(t.pane).classList.toggle("hidden", key !== tab);
     });
+    // Every tab opens at its top. The panes share one scrolling column, so a
+    // tab used to open wherever the previous one had been scrolled to — halfway
+    // down, past its own first section.
+    const col = document.querySelector(".col-config");
+    if (col) col.scrollTop = 0;
     $("panelTitle").textContent = TABS[tab].title;
     $("panelSub").textContent = TABS[tab].sub;
-    if (tab === "arcgis") renderArcgisTab();
+    if (tab === "arcgis") {
+      renderArcgisTab();
+      // State pushes skip this tab while it is hidden, so bring its Cancel /
+      // Build / Compare controls up to the current lock on the way in.
+      if (typeof syncArcgisLock === "function") syncArcgisLock();
+    }
     if (tab === "everything") {
       renderBatchLibrary();
       setEverySub(S.everySub || "export");   // re-applies matrix-wide if on the matrix sub-tab
@@ -1338,23 +1400,23 @@ function bindEvents() {
     }
   });
   $("btnQueueClear")?.addEventListener("click", () => api.matrix_queue_clear());
-  $("btnQueueStopAll")?.addEventListener("click", () => api.matrix_stop_all());
+  $("btnQueueStopAll")?.addEventListener("click", confirmStopAll);
   // The day matrices share the same queue (Clear / Stop-all act on it too).
   $("btnDayQueueClear")?.addEventListener("click", () => api.matrix_queue_clear());
-  $("btnDayQueueStopAll")?.addEventListener("click", () => api.matrix_stop_all());
+  $("btnDayQueueStopAll")?.addEventListener("click", confirmStopAll);
   $("btnBaselineQueueClear")?.addEventListener("click", () => api.matrix_queue_clear());
-  $("btnBaselineQueueStopAll")?.addEventListener("click", () => api.matrix_stop_all());
+  $("btnBaselineQueueStopAll")?.addEventListener("click", confirmStopAll);
   $("btnPveQueueClear")?.addEventListener("click", () => api.matrix_queue_clear());
-  $("btnPveQueueStopAll")?.addEventListener("click", () => api.matrix_stop_all());
+  $("btnPveQueueStopAll")?.addEventListener("click", confirmStopAll);
   // The ArcGIS "Reports vs layers" matrix rides the same queue.
   $("btnAgQueueClear")?.addEventListener("click", () => api.matrix_queue_clear());
-  $("btnAgQueueStopAll")?.addEventListener("click", () => api.matrix_stop_all());
+  $("btnAgQueueStopAll")?.addEventListener("click", confirmStopAll);
   // …and so does the ArcGIS "Three-way" matrix (v0.51.0).
   $("btnTwQueueClear")?.addEventListener("click", () => api.matrix_queue_clear());
-  $("btnTwQueueStopAll")?.addEventListener("click", () => api.matrix_stop_all());
+  $("btnTwQueueStopAll")?.addEventListener("click", confirmStopAll);
   // …and the Compare tab's Three Days matrix (v0.52.0).
   $("btnThreeDayQueueClear")?.addEventListener("click", () => api.matrix_queue_clear());
-  $("btnThreeDayQueueStopAll")?.addEventListener("click", () => api.matrix_stop_all());
+  $("btnThreeDayQueueStopAll")?.addEventListener("click", confirmStopAll);
 
   renderThemeButton();
   $("btnTheme").onclick = () => {
@@ -1491,9 +1553,10 @@ function bindEvents() {
   };
   $("btnSiteDev").onclick = () => applySitePreset("dev",
     "Point all six TSMIS addresses at the development site (tsmis-dev.dot.ca.gov)? "
-    + "Intersection reports are available there. Used by the next sign-in / export.");
+    + "Reports are released there before they are approved for the main site. "
+    + "Used by the next sign-in / export.");
   $("btnSiteProd").onclick = () => applySitePreset("prod",
-    "Clear every site-address override and go back to the built-in production addresses?");
+    "Clear every custom site address and go back to the built-in main site (tsmis.dot.ca.gov)?");
   $("btnEnvAccess").onclick = () => {
     $("tabSettings").click();
     $("setSiteUrls").scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1601,12 +1664,24 @@ async function boot(realApi) {
   }
   hideFatal();
   S.init = init;
-  buildStatic();
-  fillSettings();
-  bindEvents();
-  S.st = S.init.state;
-  renderState();
-  refreshConsDest();
+  try {
+    buildStatic();
+    fillSettings();
+    bindEvents();
+    S.st = S.init.state;
+    renderState();
+    refreshConsDest();
+  } catch (e) {
+    // A script that never arrived, or a fault in the first paint, used to leave
+    // a half-built window with nothing on it to say so. Say so, and put the
+    // cause in the log file.
+    const title = "The app's interface didn't finish loading";
+    const detail = "Close the app and start it again. If it keeps happening, the log file has the details.";
+    if (typeof showFatal === "function") showFatal(title, detail);
+    else document.body.insertAdjacentText("afterbegin", `${title}. ${detail}`);
+    try { api.log_js_error("boot failed while building the page: " + String((e && e.stack) || e)); } catch (_) { /* broken bridge */ }
+    return;
+  }
   window.__tsmis = {
     dispatch,
     // hooks for the packaged self-test (build/full_smoke.py)
@@ -1659,8 +1734,9 @@ if (!WANT_MOCK) {
   setTimeout(() => {
     if (!booted) {
       showFatal("The app's interface couldn't connect to its engine",
-                "The page loaded but the pywebview bridge never arrived. Close the app and try again; "
-                + "details are in the log file. (For a browser-only design preview, open index.html#mock.)");
+                "The window opened but the app did not start behind it. Close the app and "
+                + "open it again; if it keeps happening, send the log files (the data\\logs "
+                + "folder next to the app).");
     }
   }, 60000);
 }

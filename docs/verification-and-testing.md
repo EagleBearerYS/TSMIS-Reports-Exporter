@@ -381,6 +381,12 @@ re-bless every deliberate fix) is owned by [comparison-engine.md](comparison-eng
 | `check_highway_log_ditto.py` | the Highway Log ditto resolver (`is_ditto` / `fill_paired_roadbed` / `display_fills`) |
 | `check_highway_log_roadbed.py` | the roadbed-aware comparison key (`roadbed_tag` / `roadbed_canonical_location` / `keys_for` opt-in; strictly refines, never merges) |
 | `check_compare_style_cache.py` | **the writer is output-locked** (v0.40.0). A/Bs `_styled_cell`'s composite-style cache against the historical assignment sequence and requires every stable OOXML member byte-exact in BOTH flavors; also holds the three properties that make the cache safe (per-cell `StyleArray` ownership, identity keying with retained components, style bound before the value). |
+| `check_xlsx_fast_rows.py` | **the direct row writer produces openpyxl's bytes** (2026-11-12). Writes every cell shape the big sheets carry (whitespace, markup, astral characters, 32,767+ characters, numbers of every size, Booleans, formulas, error literals, str subclasses), rows the direct path must hand back to openpyxl (dates, Decimals, a row with its own height) and whole comparison workbooks in every mode through `_SheetRows` and through `TSMIS_CLASSIC_XLSX=1`, and requires every package member byte-exact; also that refused values fail the same way on both paths. A fixture row must describe the same cells each time it is filled — the first draft of this check failed on its own random fill, not on the writer. |
+| `check_xlsx_fast_read.py` | **cheap read-only loads return openpyxl's rows** — values AND types, sheet sizes and padding — for a write-only workbook, a sized one, and hand-written sheet XML (rich runs, phonetics, empty text, ref-less cells, formula mode); that the shortcut is opt-in, per thread and re-entrant; and the one documented difference (a sheet damaged past its head fails at read, not at open). |
+| `check_text_measure.py` | **assembled text widths equal `font.getlength`** exactly (32,304 measurements over the real fonts, report text and random strings), a non-BASIC layout engine is measured directly, and the tables are bounded. |
+| `check_snapshot_memo.py` | **the read-side memos behind a fast matrix snapshot**: the one-handle change token equals `os.stat`'s; the shared digest memo, the comparison headline and their on-disk copies are each really used and are never served across the audit's tamper (same size, mtime and file id, different bytes) — in memory or after a restart; a headline from another app version is not loaded; `read_scope` reads a folder once and ends with its block. |
+| `check_job_host.py` | **process-hosted GUI workers**: off until enabled; a hosted job runs in another process and its messages, log records and Stop cross the boundary; a non-plain worker keeps its thread; a child that dies mid-job still ends it with one terminal message (under the run's own name when the worker has one); a child that cannot start never costs the job and switches hosting off for the session; the self-test's probe passes only when the child imported every module it was given, and names the one it could not. |
+| `check_page_server_backlog.py` | **the window's page server keeps a burst of connections waiting** (2026-11-12). Starts a server the way `webview.start` does, holds its accept loop, opens 24 connections at once and requires all 24 to connect and then be served; the control, the same server on socketserver's stock queue of 5, must refuse part of the same burst (7 of 24 connect on this box). Guards the refused sixth connection that left the page half built — see [gui.md](gui.md). |
 | `check_comparison_artifact_schema.py` | the versioned `COMPARISON_ARTIFACT_SCHEMA` at the commit boundary — plus, since v0.40.0, an assertion that a typed comparison commit makes **zero openpyxl loads of its own output**. |
 | `check_comparison_preview.py` | **a counts-only preview certifies nothing** (v0.41.0). Its counts equal the build's exactly; it writes no file and claims no artifact; the staleness rules that hide it; a real build clears it; the shipped `build_comparison(preview=True)` records to the preview store and never the result cache; the renderer never paints it as a match. |
 | `check_arcgis_report.py` | the ArcGIS-report projection (Highway Detail) — the primary-layer effective-date rule, the printed-column merge and start-anchored Description, and the HF-01 unavailable-marker rule (CMP-AUD-245). |
@@ -598,6 +604,20 @@ its layers on 0.03% (458 cells), the v0.51.2 build on 2 cells of 1.46 million.
 
 Verify `scripts/ui/` changes without launching the real app, via a preview HTTP
 server. The pywebview traps + the GUI threading model are owned by [gui.md](gui.md).
+
+**To look at every screen at once, run `python tools/ui_walk.py <out_dir>
+[width height [dark|light]]`** (2026-11-13). It walks the same `#mock` in a
+headless browser — every tab and sub-tab, each matrix with columns added, the
+options corners scrolled, Remove all / Add all, one confirm dialog — writes a
+PNG per view and prints what overflows: a container that scrolls sideways, text
+cut without an ellipsis, text running past the window. It needs no preview
+server and no visible window, and it found eleven layout defects the first time
+it ran, none of which a check had caught. 1164×741 is the default window's page
+area and 910×512 a 1366×768 work PC at 150% DPI; run both, in both themes. The
+mock shows layout, not the app: [gui.md](gui.md) ("What a first-time user
+needed") has the two ways to drive the REAL window and the real bridge, and
+`build/check_shipped_readmes.py` holds the text files that ship beside the exe
+to what the window shows.
 
 - **Mock server:** from the repository root, run
   `python -m http.server 8765 --bind 127.0.0.1 --directory scripts/ui`, then open

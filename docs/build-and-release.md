@@ -88,9 +88,46 @@ Steps:
    openpyxl round-trip, the matrix modules, GUI construction through the real JS
    bridge). `-SelfTest -BundleChromium` gates the bundled-Chromium path. The artifact
    that ships is the artifact that passed.
+   Since 2026-11-12 it also starts a **worker process** (step 5c, `job_host.probe`):
+   comparison jobs run in a child process, and a frozen exe hosts one by
+   re-launching ITSELF, so only the real artifact can prove that works. The child
+   also imports the modules a real job runs (`self_test._WORKER_PROCESS_MODULES`:
+   the worker classes and the builders they import on use), so a bundle in which a
+   job could only ever fall back to the window's process fails here. This is why
+   `gui_main.py` calls `multiprocessing.freeze_support()` as the first statement
+   under `__main__` — remove it and every hosted job opens a second window. A child
+   that starts and fails fails the gate; an OS that refuses to create the process
+   is reported and skipped, because the app keeps those jobs in-process there.
+   It also holds the **comparison writer** inside the bundle (step 3b,
+   `self_test._writer_probe`): one sheet of the cell shapes a comparison holds is
+   written through `compare_core._SheetRows` twice — the direct row path, then
+   openpyxl's own with `TSMIS_CLASSIC_XLSX=1` — and every package member must
+   match. The line says whether the direct path is **active**; "NOT active" is not
+   a failure (the output is the same) but it means this bundle ships without the
+   2026-11-12 writer speed-up, which is what an lxml that found its way into the
+   bundle would do.
+   **If the window step fails**, the message now names why the page never booted:
+   the files that did not load, the page's own failure banner, and whether the
+   bridge arrived. `watchdog timeout` on a machine with every CPU busy is the
+   60-second window watchdog, not a packaging defect (a pristine build does the
+   same) — re-run it alone. The refused-connection failure this step used to
+   flake on is fixed at its source ([gui.md](gui.md), "Where the time went", 4).
+   **After it passes, the self-test's own first-run data is removed** (2026-11-13).
+   The test runs the shipped exe from its own folder, which leaves `data\logs`
+   (a log carrying the build machine's paths) and the empty `tsn_library\` /
+   `arcgis_layers\` skeletons beside it — and the folder is zipped as-is, so
+   every release shipped another machine's log and looked like a copy that had
+   already been used. `build.ps1` deletes those four folders and fails if anything
+   but the exe, `_internal` and the two text files is left.
 4. **Report** — copies `dist_readme.txt` in as `Start Here.txt` and
    `it_readme.txt` in as `IT-README.txt` (the IT/security handout), windowed
-   builds only, and prints the onefolder size.
+   builds only, and prints the onefolder size. Both are the first thing a new
+   user or a reviewing IT person reads, and `check_shipped_readmes` holds them to
+   the code: every label the quick start quotes must still exist in the window,
+   its example folder must be a real run-folder name, and the IT notes must name
+   the updater's repository, every outbound host and every data folder. (By
+   v0.52.1 the quick start still described a four-report app and a browser
+   dropdown removed in v0.17.0; nothing had been checking.)
 
 The ~148–149 MB floor is `node.exe` (~80 MB, the Playwright Node driver) +
 Python + pythonnet/WebView2 assemblies + pdf/excel libs.
@@ -264,8 +301,14 @@ version chip, the app asks the GitHub Releases API for the latest tag and
 compares it to `version.__version__`. The only UI is the title-bar pill.
 Console/`.bat` flows never update.
 
-`GITHUB_REPO = "yunusshaikh7/TSMIS-Reports-Exporter"` (public repo, stdlib
-`urllib`, no token).
+`GITHUB_REPO = "EagleBearerYS/TSMIS-Reports-Exporter"` (public repo, stdlib
+`urllib`, no token). **It must be the repository's current owner and name.** The
+owner account was renamed on 2026-10-12 and the constant kept the old name until
+2026-11-13: GitHub redirected it, but a redirect lasts only until someone else
+registers the old name — and the checksum the updater verifies is published by
+the same release, so the repository path is the update channel's only anchor.
+`check_updater` compares the constant with the checkout's `origin` remote.
+Copies released before that fix (v0.52.1 and older) still ask the old path.
 
 ### TLS — Windows cert store, never certifi
 
@@ -551,6 +594,13 @@ version.py`), then the pure-Python golden guards:
 
 - Product-name guard: `check_no_misspelling.py` (fails the build if the product
   name is ever mis-typed — it is always TSMIS)
+- Account-name guard: `check_no_account_names.py` (fails on any e-mail address,
+  and on any value given for a report's submitter, in a file git would commit,
+  bar a few made-up placeholders). The release's `-batch-source.zip` is
+  `git archive HEAD`, so anything tracked is published, and every report prints
+  the account that asked for it: a pin, a fixture or a note copied from a real
+  page can carry a person's account. Match the shape or read it from the source
+  at run time; never write the name.
 - Export-engine: `check_export_engine.py`, `check_parallel_reconcile.py`,
   `check_intersection_gate.py`
 - GUI bridge + diagnostics: `check_gui_bridge.py`, `check_a2_compare_filter.py`,

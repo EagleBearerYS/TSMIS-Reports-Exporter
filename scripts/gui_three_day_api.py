@@ -14,7 +14,8 @@ touches lives on GuiApi.
 import logging
 
 import settings
-from gui_endpoint import _api_method
+import job_host
+from gui_endpoint import _api_method, _snapshot_endpoint
 from gui_worker_matrix import ThreeDayMatrixCompareWorker
 
 ui_log = logging.getLogger("tsmis.ui")
@@ -67,7 +68,7 @@ class GuiThreeDayMixin:
             return "Refresh stale three-day comparisons"
         return "Rebuild all three-day comparisons"
 
-    @_api_method
+    @_snapshot_endpoint
     def three_day_matrix_info(self):
         """The Three Days snapshot + the day pickers' available days."""
         import matrix
@@ -132,7 +133,7 @@ class GuiThreeDayMixin:
 
     @_api_method
     def set_three_day_matrix_report(self, row_key, visible):
-        """Show/hide an edition ROW. At least one stays on."""
+        """Show/hide an edition ROW."""
         import three_day_matrix
 
         keys = three_day_matrix.row_keys()
@@ -143,8 +144,6 @@ class GuiThreeDayMixin:
             hidden.discard(row_key)
         else:
             hidden.add(row_key)
-        if len(hidden & keys) >= len(keys):
-            return {"error": "Keep at least one report on the matrix."}
         settings.set_three_day_matrix_hidden(sorted(hidden))
         self._push_state()
         return {"ok": True, "hidden": sorted(hidden)}
@@ -271,7 +270,7 @@ class GuiThreeDayMixin:
         self._set_dot("busy", "Comparing…")
         self._emit({"t": "run_started", "mode": "consolidate", "label": "Comparing…",
                     "workers": 1})
-        ThreeDayMatrixCompareWorker(
+        job_host.hosted(ThreeDayMatrixCompareWorker,
             self._three_day_source(), cells,
             self._gated_queue(), self.cancel_event,
             also_formulas=settings.get_three_day_matrix_formulas()).start()

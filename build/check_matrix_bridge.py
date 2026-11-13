@@ -105,14 +105,106 @@ def main():
         check("show puts it back",
               a.set_matrix_report("highway_log", True).get("ok")
               and "highway_log" in a.matrix_info()["rows"])
-        # can't hide them all (22 rows: hide 21, the 22nd hide is rejected)
+        # Every row may come off, one chip at a time: the grid then says so and
+        # the options corner still lists them (the old "keep at least one" rule
+        # made Remove all impossible to offer).
         _all = [k for k in a.matrix_info()["rows"]]
         for k in _all[:-1]:
             a.set_matrix_report(k, False)
         last = a.set_matrix_report(_all[-1], False)
-        check("can't hide the last remaining row", bool(last.get("error")))
-        for k in _all[:-1]:
+        emptied = a.matrix_info()
+        check("the last remaining row can be hidden too",
+              last.get("ok") and emptied["rows"] == [])
+        check("an emptied matrix still lists every report to add back",
+              [r["key"] for r in emptied["all_rows"]] == _all
+              and sorted(emptied["hidden"]) == sorted(_all))
+        check("nothing to rebuild on an emptied matrix (no crash, no job)",
+              a.recompute_matrix("all").get("nothing") is True
+              and a._coord.current_job is None)
+        for k in _all:
             a.set_matrix_report(k, True)
+
+        print("Open comparisons folder before the first comparison:")
+        # It used to mkdir a PLAIN <dest>/comparisons, which the matrix worker
+        # then refused to write into ("could not be proven app-created") — one
+        # early click blocked every later comparison until the folder was
+        # deleted by hand. It must create the folder as the app's own, or not
+        # create it at all.
+        import os as _os
+        import owned_dir
+        _opened, _startfile = [], getattr(_os, "startfile", None)
+        _os.startfile = lambda p: _opened.append(str(p))
+        try:
+            _cmp_root = dest / matrix.COMPARISONS_DIRNAME
+            check("no comparisons folder exists yet", not _cmp_root.exists())
+            check("the endpoint answers ok and opens a folder",
+                  a.open_comparisons_folder().get("ok") and len(_opened) == 1)
+            _lease_error = ""
+            try:
+                owned_dir.require_owned_dir_lease(_cmp_root, kind="comparisons")
+            except Exception as e:      # noqa: BLE001 - the failure under test
+                _lease_error = f"{type(e).__name__}: {e}"
+            check("a comparison can still be written there afterwards"
+                  + (f" ({_lease_error[:90]})" if _lease_error else ""), not _lease_error)
+            # A plain folder that is already there is simply opened — never
+            # marked as the app's own after the fact.
+            _plain_dest = Path(tempfile.mkdtemp(prefix="tsmis_mxb_plain_"))
+            (_plain_dest / matrix.COMPARISONS_DIRNAME).mkdir()
+            settings.get_batch_dest = lambda: str(_plain_dest)
+            _opened.clear()
+            a.open_comparisons_folder()
+            check("a pre-existing plain comparisons folder is opened, not adopted",
+                  _opened == [str(_plain_dest / matrix.COMPARISONS_DIRNAME)]
+                  and not owned_dir.is_owned(_plain_dest / matrix.COMPARISONS_DIRNAME,
+                                             kind="comparisons"))
+            settings.get_batch_dest = lambda: str(dest)
+            shutil.rmtree(_plain_dest, ignore_errors=True)
+        finally:
+            if _startfile is not None:
+                _os.startfile = _startfile
+
+        print("set_matrix_reports_all (Add all / Remove all, every matrix):")
+        check("unknown matrix rejected",
+              bool(a.set_matrix_reports_all("nope", False).get("error")))
+        gone = a.set_matrix_reports_all("everything", False)
+        check("Remove all empties the Everything matrix",
+              gone.get("ok") and a.matrix_info()["rows"] == []
+              and set(gone["hidden"]) >= set(_all))
+        back = a.set_matrix_reports_all("everything", True)
+        check("Add all puts every report back, in order",
+              back.get("ok") and a.matrix_info()["rows"] == _all
+              and not (set(back["hidden"]) & set(_all)))
+        # A stale key from an older version stays put: only this matrix's own
+        # rows are added or removed.
+        settings.set_matrix_hidden_reports(["retired_report"])
+        a.set_matrix_reports_all("everything", False)
+        a.set_matrix_reports_all("everything", True)
+        check("a key that is not a row of the matrix is left alone",
+              settings.get_matrix_hidden_reports() == ["retired_report"])
+        settings.set_matrix_hidden_reports([])
+        import arcgis_matrix
+        import baseline_matrix
+        import day_matrix
+        import pdf_excel_matrix
+        import three_day_matrix
+        import three_way_matrix
+        for which, keys, getter in (
+                ("day", day_matrix.row_keys(), settings.get_day_matrix_hidden),
+                ("baseline", baseline_matrix.row_keys(), settings.get_baseline_matrix_hidden),
+                ("pve", pdf_excel_matrix.row_keys(), settings.get_pve_matrix_hidden),
+                ("arcgis", arcgis_matrix.row_keys(), settings.get_arcgis_matrix_hidden),
+                ("three_way", three_way_matrix.row_keys(), settings.get_three_way_matrix_hidden),
+                ("three_day", three_day_matrix.row_keys(), settings.get_three_day_matrix_hidden)):
+            off = a.set_matrix_reports_all(which, False)
+            hidden_all = set(getter()) >= set(keys) and bool(keys)
+            on = a.set_matrix_reports_all(which, True)
+            check(f"{which}: Remove all hides every row, Add all shows every row",
+                  off.get("ok") and hidden_all and on.get("ok")
+                  and not (set(getter()) & set(keys)))
+        check("one matrix's Remove all never touches another's rows",
+              a.set_matrix_reports_all("day", False).get("ok")
+              and a.matrix_info()["rows"] == _all
+              and a.set_matrix_reports_all("day", True).get("ok"))
         snap0 = a._state_snapshot()
         check("snapshot carries the 'matrix' key (None idle)",
               "matrix" in snap0 and snap0["matrix"] is None)

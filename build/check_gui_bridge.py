@@ -566,9 +566,49 @@ def test_export_browser():
         gs = a.get_settings().get("export_browser", {})
         check("get_settings exposes the picker info",
               {"value", "chrome_ok", "chromium_present", "labels"} <= set(gs))
+        # An Edge-only PC (every work PC has Edge, not all have Chrome): once
+        # the readiness checks have answered, the indicator must name the
+        # browser that will really export — it used to keep saying Chrome.
+        saved_checks = {k: dict(v) for k, v in a._checks.items()}
+        try:
+            for ch in common.BROWSER_CHANNELS:
+                a._checks[f"browser_{ch}"] = {
+                    "status": "ok" if ch == "msedge" else "bad", "text": ch}
+            check("Edge-only PC: the indicator names Microsoft Edge",
+                  a._export_browser_view()["cls_label"] == "Microsoft Edge")
+            for ch in common.BROWSER_CHANNELS:
+                a._checks[f"browser_{ch}"] = {"status": "busy", "text": ch}
+            check("while the checks are still running the default label stands",
+                  a._export_browser_view()["cls_label"] in ("Google Chrome",
+                                                            "Built-in Chromium"))
+        finally:
+            a._checks.update(saved_checks)
+        # A browser the user explicitly picked is named even if it is broken:
+        # the note in the log says what is used instead.
+        settings.set_export_browser("")
     finally:
         settings.set_export_browser(orig)
         common.set_preferred_channel(orig_pref)
+
+
+def test_install_location_notes():
+    print("start-up notes about where this copy lives:")
+    short = Path(r"C:\TSMIS")
+    check("a short, writable folder says nothing",
+          gui_api.install_location_notes(short, short, True) == [])
+    check("a dev run (not packaged) with a short root says nothing",
+          gui_api.install_location_notes(short, None, False) == [])
+    deep = Path("C:\\Users\\first.last\\OneDrive - An Organisation With A Long Name"
+                "\\Desktop\\TSMIS-Exporter-v0.53.0-win64\\TSMIS Exporter")
+    notes = gui_api.install_location_notes(deep, deep, True)
+    check("a long path gets ONE note that names its length and a short folder",
+          len(notes) == 1 and str(len(str(deep))) in notes[0] and "C:\\TSMIS" in notes[0])
+    fallback = Path(r"C:\Users\x\AppData\Local\TSMIS Exporter")
+    notes = gui_api.install_location_notes(fallback, Path(r"C:\Program Files\TSMIS Exporter"), True)
+    check("a read-only app folder says where the data went and that updates are off",
+          len(notes) == 1 and str(fallback) in notes[0] and "update" in notes[0])
+    check("the threshold leaves room for the app's longest names under 260",
+          gui_api.LONG_DATA_ROOT + 145 < 260)
 
 
 def test_channel_order():
@@ -690,6 +730,7 @@ def main():
     test_compare_derived_overwrite_token()
     test_tsn_library_panel()
     test_export_browser()
+    test_install_location_notes()
     test_channel_order()
     test_active_env_check_gates()
     print()

@@ -131,6 +131,26 @@ def main() -> int:
     require(cross["difference_count"] == 1,
             "cross-format cell mutation was not isolated")
 
+    require(oracle.SUBMITTER_ADDRESS.search(
+        "SUBMITTOR : first.last@dot.ca.gov").group(0) == "first.last@dot.ca.gov",
+        "a cover page's submitter address was not matched by its shape")
+    require(oracle.SUBMITTER_ADDRESS.search("https://tsmis.dot.ca.gov/reports") is None,
+            "a host name was taken for a submitter address")
+    require(oracle._one_submitter(["first.last@dot.ca.gov"] * 3)
+            == "first.last@dot.ca.gov", "one account across the pull did not pass")
+    rejected(lambda: oracle._one_submitter(["first.last@dot.ca.gov", "someone else"]),
+             "a pull signed by two accounts was accepted")
+    rejected(lambda: oracle._one_submitter([]), "a pull with no submitter was accepted")
+    require(oracle._token_presence(
+        ("07/09/2026", oracle.SUBMITTER_PROBE, "Generated:"),
+        ["Generated: today", "by first.last@dot.ca.gov"]) == {
+            "07/09/2026": False, oracle.SUBMITTER_LABEL: True, "Generated:": True},
+        "a carried submitter address was not seen by its shape")
+    require(oracle._token_presence(
+        (oracle.SUBMITTER_PROBE,), ["tsmis.dot.ca.gov", "SUBMITTOR"]) == {
+            oracle.SUBMITTER_LABEL: False},
+        "a host name or a bare label was taken for a submitter address")
+
     synthetic = {slug: 0 for slug, _row, _label in oracle.ALL_SOURCE}
     synthetic.update({"total_ramps": 1, "ramp_points_no_linework": 0})
     arithmetic = oracle._arithmetic({"001": synthetic}, {})

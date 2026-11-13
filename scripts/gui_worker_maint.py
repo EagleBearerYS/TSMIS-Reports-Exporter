@@ -562,7 +562,7 @@ class ResetWorker(threading.Thread):
                 # Something appeared at the approved pathname after quarantine.
                 # It is a different entry by construction and is never folded
                 # into this run's deletion authority.
-                msg = (f"A new item appeared at '{path}' during Reset and was left "
+                msg = (f"A new item appeared at '{path}' during the delete and was left "
                        "untouched; preview again if it should also be deleted.")
                 errors.append(msg)
                 ui.info("reset: %s", msg)

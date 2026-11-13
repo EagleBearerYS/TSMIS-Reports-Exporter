@@ -75,6 +75,7 @@ except ImportError:
 _DITTO_FILL = "E4DFEC"
 
 from events import ConsolidateResult, Events
+import xlsx_fast_rows
 
 # Styling shared by all sheets (colors taken from the approved sample; the
 # Only-in tab colors echo the Comparison sheet's yellow/blue row tints).
@@ -655,7 +656,10 @@ def _xl_trim(v):
         return "TRUE" if v else "FALSE"
     if isinstance(v, float) and v.is_integer():
         v = int(v)
-    return re.sub(" +", " ", str(v)).strip(" ")
+    s = str(v)
+    if " " not in s:
+        return s                 # nothing for TRIM to do — the usual case
+    return re.sub(" +", " ", s).strip(" ")
 
 
 def _is_plus_run(v):
@@ -2207,12 +2211,68 @@ def _text_px(text, bold=False, size_pt=11.0):
     if not fonts:
         px = len(s) * _FALLBACK_CHAR_PX * (float(size_pt) / 11.0)
     else:
-        px = (max(f.getlength(s) for f in fonts)
+        px = (max(_font_length(f, s) for f in fonts)
               / _MEASURE_SCALE * _MEASURE_MARGIN)
     if len(_PX_CACHE) >= _PX_CACHE_MAX:
         _PX_CACHE.clear()        # bounded: a corpus run must not grow this
     _PX_CACHE[key] = px          # without limit
     return px
+
+
+_GLYPH_TABLES = {}             # id(font) -> (font, {char: length}, {pair: length})
+_GLYPH_TABLE_MAX = 200_000     # pairs held per font before that font's reset
+
+
+def _font_length(font, s):
+    """``font.getlength(s)``, assembled from one- and two-character lengths.
+
+    Sizing a statewide sheet measures a few hundred thousand distinct strings,
+    and each ``getlength`` call lays the whole string out again. Under Pillow's
+    BASIC layout engine a string's length is exactly its glyph advances plus the
+    kerning of each adjacent pair — there is no shaping across more than two
+    characters — so it equals
+
+        length(c0) + sum over i of ( length(c[i-1] c[i]) - length(c[i-1]) )
+
+    and every term comes from a table that fills up after the first few
+    thousand strings. All of these lengths are whole multiples of 1/64 px, so
+    the sum is exact in floating point: the result is the SAME number
+    ``getlength`` returns, not an approximation of it
+    (`check_text_measure` holds that on real and random text).
+
+    With any other layout engine (Raqm shapes ligatures and contextual kerning)
+    the identity does not hold, so the font is measured directly."""
+    tables = _GLYPH_TABLES.get(id(font))
+    if tables is None:
+        try:
+            from PIL import ImageFont
+            additive = getattr(font, "layout_engine", None) == ImageFont.Layout.BASIC
+        except Exception:        # noqa: BLE001  # silent-ok: unknown engine -> measure directly
+            additive = False
+        tables = _GLYPH_TABLES[id(font)] = (
+            (font, {}, {}) if additive else (font, None, None))
+    single, pair = tables[1], tables[2]
+    if single is None:
+        return font.getlength(s)
+    if len(pair) > _GLYPH_TABLE_MAX:
+        single.clear()
+        pair.clear()
+    getlength = font.getlength
+    prev = s[0]
+    total = before = single.get(prev)
+    if total is None:
+        total = before = single[prev] = getlength(prev)
+    for ch in s[1:]:
+        two = prev + ch
+        both = pair.get(two)
+        if both is None:
+            both = pair[two] = getlength(two)
+        total += both - before
+        before = single.get(ch)
+        if before is None:
+            before = single[ch] = getlength(ch)
+        prev = ch
+    return total
 
 
 def _width_to_px(width):
@@ -2486,6 +2546,23 @@ def _styled_cell(ws, value, *, font, fill=None, align=None, border=None,
     package members against the historical assignment sequence.
     """
     c = WriteOnlyCell(ws)
+    c._style = copy(_composite_style(ws, font, fill, align, border)[4])
+    if guard:
+        set_safe_literal_cell(
+            c, value, exact_source_numeric=exact_source_numeric)
+    elif value is not None:
+        c.value = value
+    return c
+
+
+def _composite_style(ws, font, fill, align, border):
+    """The workbook's cached entry for one (font, fill, alignment, border) set:
+    ``[font, fill, align, border, StyleArray, …]``, registered on first use.
+
+    Slots 5 and 6 belong to `_SheetRows`: the serialized style attribute of this
+    composite as-is and with the ``@`` text format, filled in the first time a
+    directly-written cell uses each (which is the moment openpyxl would have
+    registered that style, so the styles table comes out in the same order)."""
     wb = ws.parent
     cache = getattr(wb, "_tsmis_style_cache", None)
     if cache is None:
@@ -2503,17 +2580,9 @@ def _styled_cell(ws, value, *, font, fill=None, align=None, border=None,
             prototype.alignment = align
         if border:
             prototype.border = border
-        style = copy(prototype._style)
-        cache[key] = (font, fill, align, border, style)
-    else:
-        style = entry[4]
-    c._style = copy(style)
-    if guard:
-        set_safe_literal_cell(
-            c, value, exact_source_numeric=exact_source_numeric)
-    elif value is not None:
-        c.value = value
-    return c
+        entry = [font, fill, align, border, copy(prototype._style), None, None]
+        cache[key] = entry
+    return entry
 
 
 def _styled(ws, value, font, fill=None, align=None, guard=False,
@@ -2521,6 +2590,234 @@ def _styled(ws, value, font, fill=None, align=None, guard=False,
     return _styled_cell(
         ws, value, font=font, fill=fill, align=align, guard=guard,
         exact_source_numeric=exact_source_numeric)
+
+
+def plain_value(ws, value):
+    """A bare value for a streamed row — only formula-looking text needs a cell
+    (it is forced to a string so Excel shows it instead of running it)."""
+    if isinstance(value, str) and is_formula_injection(value):
+        c = WriteOnlyCell(ws, value=value)
+        c.data_type = "s"
+        return c
+    return value
+
+
+# The shipped cell builder. `_SheetRows` writes rows directly only while this is
+# still what `_styled_cell` names: the output-lock checks and the speed benchmark
+# swap in the historical builder to produce their control workbook, and a
+# swapped builder must build every cell, or the control would not be one.
+_SHIPPED_STYLED_CELL = _styled_cell
+
+
+class _SheetRows:
+    """The row sink for one of the big sheets of a comparison workbook.
+
+    ``row(fill)`` writes one row; ``fill(put)`` calls ``put(value, font, …)``
+    once per cell, left to right, with `_styled`'s own arguments. Where it can,
+    the row is serialized straight into the sheet's stream (`xlsx_fast_rows`)
+    without building an openpyxl cell per value — the same bytes, at a fraction
+    of the cost, which is most of what a statewide comparison spends. A row that
+    needs openpyxl's machinery (a date, a Decimal, a row height, …) is built
+    from real cells exactly as before, and so is every row when the stream
+    cannot be driven directly (lxml installed, ``TSMIS_CLASSIC_XLSX``).
+
+    ``put`` decides each cell's type the way `_styled_cell` does, i.e. the way
+    `set_safe_literal_cell` and openpyxl's ``Cell._bind_value`` do between them:
+
+      * a guarded string is always a string cell — the guard exists to turn the
+        two things openpyxl would type otherwise (a leading ``=`` and Excel's
+        error literals) back into text;
+      * a guarded number is exact text with the ``@`` format when the caller
+        asked for exact source numerics or it needs more than 15 digits, and an
+        ordinary number otherwise; a guarded Boolean is ``TRUE``/``FALSE`` text;
+      * unguarded, a string starting with ``=`` is a formula and an error
+        literal is an error cell.
+
+    Create it AFTER the sheet's widths, heights, filter and formatting are set
+    and before its header row: it opens the sheet's stream, as the first
+    ``ws.append`` would."""
+    __slots__ = ("ws", "wb", "stream", "fast", "_parts", "_col", "_row",
+                 "_last", "_entry")
+
+    def __init__(self, ws):
+        self.ws = ws
+        self.wb = ws.parent
+        self.stream = (xlsx_fast_rows.install(ws)
+                       if _styled_cell is _SHIPPED_STYLED_CELL else None)
+        self.fast = bool(self.stream is not None and self.stream.raw)
+        self._parts = None
+        self._col = 0
+        self._row = 0
+        self._last = (self, None, None, None)    # no font is ever this object
+        self._entry = None
+
+    def row(self, fill):
+        stream = self.stream
+        if self.fast and stream.plain_row():
+            self._parts = parts = []
+            self._col = 0
+            self._row = stream.row
+            try:
+                fill(self._put)
+            except xlsx_fast_rows.Unsupported:  # silent-ok: rebuilt below from real cells
+                pass
+            else:
+                stream.emit("".join(parts))
+                return
+        self.ws.append(self.cells(fill))
+
+    def cells(self, fill):
+        """The row as real openpyxl cells — for a row the caller still has to
+        touch (a ditto tint, a hover comment) before appending it."""
+        ws = self.ws
+        out = []
+
+        def put(value, font, fill=None, align=None, border=None, guard=False,
+                exact_source_numeric=False):
+            out.append(_styled_cell(
+                ws, value, font=font, fill=fill, align=align, border=border,
+                guard=guard, exact_source_numeric=exact_source_numeric))
+
+        fill(put)
+        return out
+
+    def row_mixed(self, fill):
+        """`row`, for a sheet that mixes styled cells with BARE values:
+        ``fill(put, plain)`` — ``plain(value)`` writes what appending
+        `plain_value(ws, value)` to the row would (an unstyled cell typed by
+        openpyxl, formula-looking text kept as text, and no cell at all for
+        None). ``plain(value, False)`` is the value appended as it is, with no
+        formula guard — for the writer's own labels and counts."""
+        stream = self.stream
+        if self.fast and stream.plain_row():
+            self._parts = parts = []
+            self._col = 0
+            self._row = stream.row
+            try:
+                fill(self._put, self._plain)
+            except xlsx_fast_rows.Unsupported:  # silent-ok: rebuilt below from real cells
+                pass
+            else:
+                stream.emit("".join(parts))
+                return
+        ws = self.ws
+        out = []
+
+        def put(value, font, fill=None, align=None, border=None, guard=False,
+                exact_source_numeric=False):
+            out.append(_styled_cell(
+                ws, value, font=font, fill=fill, align=align, border=border,
+                guard=guard, exact_source_numeric=exact_source_numeric))
+
+        fill(put, lambda value, guard=True: out.append(
+            plain_value(ws, value) if guard else value))
+        ws.append(out)
+
+    def _plain(self, value, guard=True):
+        col = self._col = self._col + 1
+        if value is None:
+            return                   # openpyxl writes no cell for a bare None
+        t = type(value)
+        if t is str or isinstance(value, str):
+            # Two decisions, in openpyxl's order: `plain_value` forces
+            # formula-looking text to a string cell (judged on the value as
+            # given); anything else is typed from its stored text.
+            forced = guard and is_formula_injection(value)
+            text = xlsx_fast_rows.string_text(value)
+            ref = f"{xlsx_fast_rows.column_letter(col)}{self._row}"
+            if not forced and len(text) > 1 and text[0] == "=":
+                self._parts.append(xlsx_fast_rows.cell_formula(ref, "", text))
+            elif not forced and text in xlsx_fast_rows.ERROR_CODES:
+                self._parts.append(xlsx_fast_rows.cell_error(ref, "", text))
+            else:
+                self._parts.append(xlsx_fast_rows.cell_string(ref, "", text))
+            return
+        ref = f"{xlsx_fast_rows.column_letter(col)}{self._row}"
+        if t is int or (t is float and math.isfinite(value)):
+            self._parts.append(xlsx_fast_rows.cell_number(ref, "", value))
+        elif t is bool:
+            self._parts.append(xlsx_fast_rows.cell_bool(ref, "", value))
+        else:
+            raise xlsx_fast_rows.Unsupported
+
+    def _style_attr(self, entry, at):
+        """Register this composite (with the ``@`` format when `at`) and return
+        its serialized attribute; "" for a style openpyxl would not write."""
+        style = entry[4]
+        if at:
+            probe = WriteOnlyCell(self.ws)
+            probe._style = copy(style)
+            probe.number_format = "@"
+            style = probe._style
+        attr = f' s="{self.wb._cell_styles.add(style)}"' if any(style) else ""
+        entry[5 + at] = attr
+        return attr
+
+    def _put(self, value, font, fill=None, align=None, border=None, guard=False,
+             exact_source_numeric=False):
+        col = self._col = self._col + 1
+        kind = at = 0
+        t = type(value)
+        if t is str:
+            text = value
+        elif value is None:
+            kind = 5
+        elif t is int or t is float:
+            if t is float and not math.isfinite(value):
+                if guard:
+                    raise ValueError(
+                        "non-finite numeric source values cannot be compared")
+                raise xlsx_fast_rows.Unsupported
+            if guard and (exact_source_numeric
+                          or _excel_numeric_needs_text(value)):
+                text = _xl_trim(value)
+                kind = at = 1
+            else:
+                kind = 2
+        elif t is bool:
+            if guard:
+                text = "TRUE" if value else "FALSE"
+                kind = at = 1
+            else:
+                kind = 4
+        elif isinstance(value, str):         # a str subclass (PhysicalKey)
+            text = value
+        else:
+            raise xlsx_fast_rows.Unsupported
+        if kind == 0:
+            text = xlsx_fast_rows.string_text(text)
+            if not guard:
+                if len(text) > 1 and text[0] == "=":
+                    kind = 3
+                elif text in xlsx_fast_rows.ERROR_CODES:
+                    kind = 6
+        # Consecutive cells nearly always share one composite; an identity test
+        # on the four components reaches the same entry the cache would return.
+        last = self._last
+        if (font is last[0] and fill is last[1] and align is last[2]
+                and border is last[3]):
+            entry = self._entry
+        else:
+            entry = self._entry = _composite_style(
+                self.ws, font, fill, align, border)
+            self._last = (font, fill, align, border)
+        attr = entry[5 + at]
+        if attr is None:
+            attr = self._style_attr(entry, at)
+        ref = f"{xlsx_fast_rows.column_letter(col)}{self._row}"
+        if kind <= 1:
+            self._parts.append(xlsx_fast_rows.cell_string(ref, attr, text))
+        elif kind == 2:
+            self._parts.append(xlsx_fast_rows.cell_number(ref, attr, value))
+        elif kind == 5:
+            if attr:                 # an unstyled empty cell is not written
+                self._parts.append(xlsx_fast_rows.cell_empty(ref, attr))
+        elif kind == 3:
+            self._parts.append(xlsx_fast_rows.cell_formula(ref, attr, text))
+        elif kind == 4:
+            self._parts.append(xlsx_fast_rows.cell_bool(ref, attr, value))
+        else:
+            self._parts.append(xlsx_fast_rows.cell_error(ref, attr, text))
 
 
 def _header_row(ws, values, comment_fn=None, fill_fn=None):
@@ -2766,6 +3063,7 @@ def _write_data_sheet(wb, name, tab_color, rows, lay, events, cmp_rows,
     _fit_data_columns(ws, rows, lay)
     align_for = _ceiling_wrapper(ws)
 
+    out = _SheetRows(ws)             # every width above is declared by now
     ws.append(_header_row(
         ws,
         (["Comparison row"] + lay.data_header + ["Key (helper)"]
@@ -2779,21 +3077,56 @@ def _write_data_sheet(wb, name, tab_color, rows, lay, events, cmp_rows,
     fills = (lay.sc.ditto_resolver(rows, lay.has_route)
              if lay.sc.ditto_resolver is not None else None)
     ditto_fill = PatternFill("solid", start_color=_DITTO_FILL) if fills else None
+    medwid_fields = lay.medwid_field_indices
+    fresh_chunks = lay.build_fresh_chunks
     for r, row in enumerate(rows, start=2):
-        u = cmp_rows[r - 2]
-        # Whole-row target: the jump selects the entire Comparison row
-        # (temporary highlight until the next click) WITHOUT scrolling
-        # right, same as the forward row links.
-        cells = [_styled(ws, f'=HYPERLINK("#Comparison!{u}:{u}",{u})', link_font)]
-        # Raw input values are guarded: a Description like "=cmd…" stays text,
-        # never a live formula (the field FORMULAS read these via TRIM/INDEX, so
-        # guarding here protects both flavors at the source).
-        cells += [_styled(ws, v, body_font,
-                          align=align_for(j + 1, value=v),
-                          guard=True, exact_source_numeric=True)
-                  for j, v in enumerate(row)]
+
+        def fill_row(put, row=row, r=r):
+            u = cmp_rows[r - 2]
+            # Whole-row target: the jump selects the entire Comparison row
+            # (temporary highlight until the next click) WITHOUT scrolling
+            # right, same as the forward row links.
+            put(f'=HYPERLINK("#Comparison!{u}:{u}",{u})', link_font)
+            # Raw input values are guarded: a Description like "=cmd…" stays
+            # text, never a live formula (the field FORMULAS read these via
+            # TRIM/INDEX, so guarding here protects both flavors at the source).
+            for j, v in enumerate(row):
+                put(v, body_font, align=align_for(j + 1, value=v),
+                    guard=True, exact_source_numeric=True)
+            # Both flavors write a LITERAL key (the comparison's row universe is
+            # build-time static): a live COUNTIFS mis-numbers blank key fields,
+            # and the literal always matches the Comparison sheet's stored
+            # occurrence #. Guard the helper key too: a key like "=X" would
+            # otherwise become a live formula here, breaking the Comparison
+            # MATCH lookups (which search for the literal "=X|1") AND splitting
+            # the two flavors. Guarding stores the literal string the lookups
+            # expect.
+            put(helper_keys[r - 2], body_font, guard=True)
+            # E1 formula twin: five short, hidden stages per Med-Wid field.
+            # Physical geometry is identical between flavors; formula mode stays
+            # live, while values mode stores exact literals and therefore
+            # remains fast/plain.
+            for f in medwid_fields:
+                if live_medwid_helpers:
+                    cols = [lay.medwid_helper_col(f, stage)
+                            for stage in _MEDWID_HELPER_STAGES]
+                    refs = [f"${col}{r}" for col in cols]
+                    source_ref = f"${lay.data_col(f)}{r}"
+                    for helper in _medwid_helper_formulas(
+                            source_ref, refs[0], refs[1], refs[2], refs[3]):
+                        put(helper, body_font)
+                else:
+                    for helper in _medwid_helper_values(row[f + lay.off]):
+                        put(helper, body_font, guard=isinstance(helper, str))
+            for chunk_no, columns in enumerate(fresh_chunks, start=1):
+                put(_checked_formula(
+                        _build_fresh_formula(lay, name, r, columns),
+                        f"{name} build-snapshot chunk {chunk_no}"),
+                    body_font)
+
         row_fills = fills.get(r - 2) if fills else None
         if row_fills:                        # mark each dittoed cell in this row
+            cells = out.cells(fill_row)      # real cells: they are tinted below
             for col_in_row, resolved in row_fills.items():
                 c = cells[1 + col_in_row]    # cells[0] is the back-link
                 c.fill = ditto_fill
@@ -2802,41 +3135,9 @@ def _write_data_sheet(wb, name, tab_color, rows, lay, events, cmp_rows,
                     f"Ditto ('{c.value}') — value is on the paired roadbed's row; "
                     f"resolves to: {shown}. Not counted as a difference.",
                     "TSMIS Exporter")
-        # Both flavors write a LITERAL key (the comparison's row universe is
-        # build-time static): a live COUNTIFS mis-numbers blank key fields, and
-        # the literal always matches the Comparison sheet's stored occurrence #.
-        # Guard the helper key too: a key like "=X" would otherwise become a
-        # live formula here, breaking the Comparison MATCH lookups (which search
-        # for the literal "=X|1") AND splitting the two flavors. Guarding stores
-        # the literal string the lookups expect.
-        cells.append(_styled(ws, helper_keys[r - 2], body_font, guard=True))
-        # E1 formula twin: five short, hidden stages per Med-Wid field. Physical
-        # geometry is identical between flavors; formula mode stays live, while
-        # values mode stores exact literals and therefore remains fast/plain.
-        for f in lay.medwid_field_indices:
-            if live_medwid_helpers:
-                cols = [lay.medwid_helper_col(f, stage)
-                        for stage in _MEDWID_HELPER_STAGES]
-                refs = [f"${col}{r}" for col in cols]
-                source_ref = f"${lay.data_col(f)}{r}"
-                helpers = _medwid_helper_formulas(
-                    source_ref, refs[0], refs[1], refs[2], refs[3])
-                cells.extend(_styled(ws, helper, body_font)
-                             for helper in helpers)
-            else:
-                source_value = row[f + lay.off]
-                helpers = _medwid_helper_values(source_value)
-                cells.extend(_styled(ws, helper, body_font,
-                                     guard=isinstance(helper, str))
-                             for helper in helpers)
-        for chunk_no, columns in enumerate(lay.build_fresh_chunks, start=1):
-            cells.append(_styled(
-                ws,
-                _checked_formula(
-                    _build_fresh_formula(lay, name, r, columns),
-                    f"{name} build-snapshot chunk {chunk_no}"),
-                body_font))
-        ws.append(cells)
+            ws.append(cells)
+        else:
+            out.row(fill_row)
         if (r - 1) % _PROGRESS_EVERY == 0:
             events.on_log(f"  {name} sheet: {r - 1:,} rows…")
             if events.is_cancelled():
@@ -2870,25 +3171,26 @@ def _write_snapshot_sheet(wb, side, rows, lay, events, helper_keys):
     ws = wb.create_sheet(name)
     ws.sheet_state = "veryHidden"
     body_font = Font(name="Arial", size=10)
+    out = _SheetRows(ws)
     ws.append(_header_row(
         ws,
         (["Source row"] + lay.data_header + ["Key (helper)"]
          + lay.medwid_helper_headers)))
     if len(helper_keys) != len(rows):
         raise ValueError("snapshot helper-key count does not match source rows")
+    medwid_fields = lay.medwid_field_indices
     for row_number, row in enumerate(rows, start=2):
-        cells = [_styled(ws, row_number - 1, body_font)]
-        cells.extend(_styled(
-            ws, value, body_font, guard=True, exact_source_numeric=True)
-            for value in row)
-        cells.append(_styled(
-            ws, helper_keys[row_number - 2], body_font, guard=True))
-        for field_idx in lay.medwid_field_indices:
-            source_value = row[field_idx + lay.off]
-            cells.extend(_styled(
-                ws, helper, body_font, guard=isinstance(helper, str))
-                for helper in _medwid_helper_values(source_value))
-        ws.append(cells)
+
+        def fill_row(put, row=row, row_number=row_number):
+            put(row_number - 1, body_font)
+            for value in row:
+                put(value, body_font, guard=True, exact_source_numeric=True)
+            put(helper_keys[row_number - 2], body_font, guard=True)
+            for field_idx in medwid_fields:
+                for helper in _medwid_helper_values(row[field_idx + lay.off]):
+                    put(helper, body_font, guard=isinstance(helper, str))
+
+        out.row(fill_row)
         if (row_number - 1) % _PROGRESS_EVERY == 0:
             events.on_log(
                 f"  Build snapshot for {side}: {row_number - 1:,} rows…")
@@ -2967,6 +3269,7 @@ def _write_comparison(wb, union, lay, events, vals=None, helper_tokens=None,
 
     link_font = _link_font()
     link_cols = {3, 4} if lay.has_route else {2, 3}   # trow / nrow positions
+    out = _SheetRows(ws)
     ws.append(_header_row(ws, lay.id_headers
                           + [sc.header[i] for i in lay.field_indices]
                           + [chunk["header"] for chunk in lay.state_chunks]
@@ -3044,10 +3347,13 @@ def _write_comparison(wb, union, lay, events, vals=None, helper_tokens=None,
             guard_set.add(len(row) - 1)                      # the row token
         else:
             guard_set = set(range(len(row))) - link_cols
-        ws.append([_styled(ws, v, link_font if j in link_cols else body_font,
-                           align=align_for(j, value=v),
-                           guard=(j in guard_set))
-                   for j, v in enumerate(row)])
+
+        def fill_row(put, row=row, guard_set=guard_set):
+            for j, v in enumerate(row):
+                put(v, link_font if j in link_cols else body_font,
+                    align=align_for(j, value=v), guard=(j in guard_set))
+
+        out.row(fill_row)
         if (i + 1) % _PROGRESS_EVERY == 0:
             events.on_log(f"  Comparison sheet: {i + 1:,} of {len(union):,} rows…")
             if events.is_cancelled():
@@ -3506,6 +3812,7 @@ def _write_only_sheet(wb, side, other, tab_color, keys, lay, events, vals=None,
         own_rows = vals["row_t"] if side == sc.side_a else vals["row_n"]
         own_by = vals["by_t"] if side == sc.side_a else vals["by_n"]
         other_routes = vals["routes_n"] if side == sc.side_a else vals["routes_t"]
+    out = _SheetRows(ws)
     ws.append(_header_row(ws, id_headers
                           + [sc.header[i] for i in lay.field_indices],
                           _context_header_comment_fn(sc, lay.sc.header_comment)
@@ -3550,10 +3857,13 @@ def _write_only_sheet(wb, side, other, tab_color, keys, lay, events, vals=None,
             guard_set.add(1 if lay.has_route else 0)         # the key (loc) cell
         else:
             guard_set = set(range(len(row))) - {link_col}
-        ws.append([_styled(ws, v, link_font if j == link_col else body_font,
-                           align=align_for(j, value=v),
-                           guard=(j in guard_set))
-                   for j, v in enumerate(row)])
+
+        def fill_row(put, row=row, guard_set=guard_set):
+            for j, v in enumerate(row):
+                put(v, link_font if j == link_col else body_font,
+                    align=align_for(j, value=v), guard=(j in guard_set))
+
+        out.row(fill_row)
         if (i + 1) % _PROGRESS_EVERY == 0:
             events.on_log(f"  {name} sheet: {i + 1:,} of {len(keys):,} rows…")
             if events.is_cancelled():

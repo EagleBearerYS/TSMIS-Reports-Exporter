@@ -221,13 +221,50 @@ def main() -> int:
     }
     page1 = "\n".join((
         "REPORT DATE : 07/09/2026", "REFERENCE DATE : 07/10/2026",
-        "SUBMITTOR : Yunus.Shaikh@dot.ca.gov",
+        "SUBMITTOR : first.last@dot.ca.gov",
         "REPORT TITLE : TSAR - Intersection Summary", "ROUTE 001", "PM ALL"))
     page2 = "\n".join((
         "TSAR – Intersection Summary", "District: ALL County: ALL Route: 001",
         "Ref Date: 2026-07-10", "Total Intersections = 1",
         *(source for _section, source, _cats in oracle.SECTIONS)))
-    oracle._validate_pdf_provenance(page1, page2, metadata, "001", "valid.pdf")
+    valid = oracle._validate_pdf_provenance(page1, page2, metadata, "001", "valid.pdf")
+    require(valid["submitter"] == "first.last@dot.ca.gov",
+            "the cover page's submitter was not read back")
+    rejected(lambda: oracle._validate_pdf_provenance(
+        page1.replace("first.last@dot.ca.gov", "first.last"), page2, metadata,
+        "001", "submitter.pdf"), "PDF without a submitter address was accepted")
+    rejected(lambda: oracle._validate_pdf_provenance(
+        page1.replace("SUBMITTOR : ", "PRINTED FOR : "), page2, metadata,
+        "001", "label.pdf"), "PDF without a SUBMITTOR line was accepted")
+    require(oracle._token_presence(
+        ("07/09/2026", oracle.SUBMITTER_PROBE, "REPORT DATE"),
+        ["Pulled 07/09/2026", "by first.last@dot.ca.gov"]) == {
+            "07/09/2026": True, oracle.SUBMITTER_LABEL: True, "REPORT DATE": False},
+        "a carried submitter address was not seen by its shape")
+    require(oracle._token_presence(
+        (oracle.SUBMITTER_PROBE,), ["tsmis.dot.ca.gov", "SUBMITTOR"]) == {
+            oracle.SUBMITTER_LABEL: False},
+        "a host name or a bare label was taken for a submitter address")
+    tsn_probe = (oracle.TSN_SUBMITTER_LABEL, "TRXXXXXX")
+    require(oracle._token_presence(
+        ("OTM22250", tsn_probe), ["OTM22250 submitted by TRXXXXXX"]) == {
+            "OTM22250": True, oracle.TSN_SUBMITTER_LABEL: True},
+        "a carried TSN submitter id was not reported under its label")
+    require(oracle._token_presence((tsn_probe,), ["submitted by", "TRX"]) == {
+        oracle.TSN_SUBMITTER_LABEL: False},
+        "an absent TSN submitter id was reported as carried")
+    require(oracle.TSN_SUBMITTER_ID.search(
+        "REFERENCE DATE : 09/15/2025\nSUBMITTOR : TRXXXXXX\nEVENT ID : 1"
+    ).group(1) == "TRXXXXXX", "the print's submitter id was not read by its shape")
+    require(oracle.TSN_SUBMITTER_ID.search("SUBMITTOR : \nEVENT ID : 1") is None
+            and oracle.TSN_SUBMITTER_ID.search(
+                "SUBMITTOR : first.last@dot.ca.gov") is None,
+            "a blank submitter or an address was read as a mainframe id")
+    rejected(lambda: oracle._one_submitter(["first.last@dot.ca.gov", "someone else"]),
+             "a pull signed by two accounts was accepted")
+    rejected(lambda: oracle._one_submitter([]), "a pull with no submitter was accepted")
+    require(oracle._one_submitter(["first.last@dot.ca.gov"] * 3)
+            == "first.last@dot.ca.gov", "one account across the pull did not pass")
     rejected(lambda: oracle._validate_pdf_provenance(
         page1.replace("07/09/2026", "07/08/2026"), page2, metadata,
         "001", "date.pdf"), "PDF report-date mutation was accepted")

@@ -184,7 +184,11 @@ button, input, select { font-family: inherit; }
     position: sticky; top: 0; z-index: 2;
     background: var(--background); padding-bottom: 8px;
   }
-  .col-config .pane .actions-row {
+  /* Only a pane's OWN action bar (a card-section) sticks. A button row inside a
+     section — Settings has five, the ArcGIS panes three — is ordinary content:
+     sticking those too floated the buttons of sections further down over
+     whatever was being read. */
+  .col-config .pane .card-section.actions-row {
     position: sticky; bottom: 0; z-index: 1;
     background: var(--card); border-top: 1px solid var(--border);
     border-bottom-left-radius: var(--radius-xl);
@@ -198,6 +202,12 @@ button, input, select { font-family: inherit; }
      idle cards step aside so the log keeps the space. */
   body.matrix-wide .col-config { flex-grow: 3.4; }
   body.matrix-wide .col-activity { flex-grow: 1; }
+  /* The ArcGIS tab's two TABLE sub-tabs (Layers, ArcGIS reports): six and five
+     columns do not fit half a default window — the status text ran under the
+     Refresh buttons and the last column was cut off. They keep the ordinary
+     cards on the right, just narrower. */
+  body.table-wide .col-config { flex-grow: 1.9; }
+  body.table-wide .col-activity { flex-grow: 1; }
   /* In matrix mode the Matrix-options corner IS the primary control surface
      (queue, baseline/source, day columns, set-all modes, report toggles, fast
      mode, formulas) — so give it the column's height and demote the activity log
@@ -270,12 +280,16 @@ body.matrix-wide .mx-pane .mx-cell { justify-content: flex-start; padding: 5px 1
    that looks like it does something. */
 body.matrix-wide .mx-pane .mx-sub { line-height: 1.2; }
 body.matrix-wide .mx-pane .mx-rowhead { padding: 3px 10px; gap: 1px; }
-/* Label keeps the whole top line (buttons aside) and ellipses rather than
-   wrapping, so the row header stays one short line + the stacked dropdown. */
+/* The label WRAPS when the header column is at its narrowest. It used to be cut
+   with an ellipsis to keep every row one line, which at the default window size
+   turned "TSAR: Ramp Summary" and "TSAR: Ramp Detail" into "TSAR: Ramp Su…" /
+   "TSAR: Ramp De…" and dropped the "(PDF)" that tells two editions apart. A
+   name that reads in full is worth the occasional second line; words stay
+   whole. */
 body.matrix-wide .mx-pane .mxrh-label {
   /* the 12.5 -> 12px shrink this used to carry is gone: both are --text-sm */
   line-height: 1.15;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal;
+  overflow-wrap: normal;
 }
 body.matrix-wide .mx-pane .mx-fluent-select { align-self: flex-start; }
 body.matrix-wide .mx-pane .mx-rowmode { height: 18px; font-size: var(--text-2xs); padding: 0 22px 0 7px; }
@@ -557,12 +571,17 @@ body.matrix-wide .mx-pane .mx-rowhead { justify-content: center; }
 
 /* sub-tabs inside a pane (e.g. Compare: Cross-environment vs TSMIS vs TSN) —
    the same segmented control as the main tabs, full-width within the card. */
+/* The strip WRAPS when its tabs do not fit (Compare has seven, ArcGIS five, and
+   the classic panes are half a window wide): every tab stays on screen. Without
+   the wrap the strip widened its whole column, which then needed a sideways
+   scroll to reach the last tabs. Each tab grows from its own width, so a strip
+   that does fit still fills the row. */
 .subtabs {
-  display: flex; gap: 4px; margin-bottom: 14px;
+  display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 14px;
   background: var(--secondary); border-radius: var(--radius-lg); padding: 4px;
 }
 .subtab {
-  flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
+  flex: 1 1 auto; display: flex; align-items: center; justify-content: center; gap: 6px;
   border: none; border-radius: var(--radius-md); white-space: nowrap;
   padding: 7px 12px; font-size: var(--text-sm); font-weight: 600;
   background: transparent; color: var(--muted-foreground);
@@ -587,6 +606,8 @@ body.matrix-wide .mx-pane .mx-rowhead { justify-content: center; }
   text-transform: uppercase; color: var(--muted-foreground);
 }
 .section-meta { font-size: var(--text-sm); color: var(--muted-foreground); }
+/* A section's count with its All / None buttons, kept together on the right. */
+.section-tools { display: inline-flex; align-items: center; gap: 6px; }
 .hint { margin: 6px 0 0; font-size: var(--text-sm); color: var(--muted-foreground); }
 /* A hint that must be READ, not skimmed: the ArcGIS reports card uses it for
    the vintage line, where a layer build and an export from different dates
@@ -837,6 +858,11 @@ body.busy .option-row:hover { background: transparent; }
 .mx-cell.mx-attempt .mx-sub { color: var(--destructive); }
 .mx-cell.mx-stale    { background: color-mix(in oklab, var(--muted) 60%, var(--card)); }
 .mx-cell.mx-stale .mx-num { color: var(--muted-foreground); text-decoration: line-through; }
+/* Not built yet: the same quiet ground as a stale cell, but nothing is struck
+   through — there is no old number here to distrust, only a comparison waiting
+   to be built. */
+.mx-cell.mx-unbuilt  { background: color-mix(in oklab, var(--muted) 60%, var(--card)); }
+.mx-cell.mx-unbuilt .mx-num { color: var(--muted-foreground); font-style: italic; font-weight: 500; }
 .mx-cell.mx-missing  { background: var(--card); }
 .mx-cell.mx-missing .mx-num { color: var(--muted-foreground); font-style: italic; font-weight: 500; }
 /* Compact ICON action buttons — three text labels never fit a ~128px cell, so
@@ -902,6 +928,19 @@ body.busy .option-row:hover { background: transparent; }
 /* In flight: the chip already shows its NEW state, so this only says "still
    settling" — never a spinner that would out-shout the state it just took. */
 .mx-toggle-busy:not(:disabled) { opacity: .72; }
+/* The Reports group's first line: Add all / Remove all. It takes the chip
+   list's full width so the chips start on their own line. The buttons are
+   squared off so they do not read as two more reports. */
+.mx-bulk {
+  flex: 0 0 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  margin-bottom: 2px;
+}
+.mx-toggle.mx-toggle-all {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px; border-radius: var(--radius-md);
+  color: var(--foreground); font-weight: 500;
+}
+.mx-toggle.mx-toggle-all .ic { width: 12px; height: 12px; }
 
 /* A click that can't be answered optimistically (see mxBusyClick) — the control
    dims and shows the wait cursor the moment it is pressed, so the press always
@@ -918,6 +957,9 @@ body.busy .option-row:hover { background: transparent; }
                      box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--muted-foreground) 40%, transparent);
                      font-style: italic; }
 .mx-key.mx-stale { background: color-mix(in oklab, var(--muted) 60%, var(--card)); }
+.mx-key.mx-unbuilt { background: color-mix(in oklab, var(--muted) 60%, var(--card)); font-style: italic; }
+/* Legend keys that explain themselves on hover say so with the help cursor. */
+.mx-key[title] { cursor: help; }
 .mx-key.mx-missing { background: var(--card); font-style: italic; }
 .mx-key.mx-na { background: var(--card); color: var(--muted-foreground); font-style: italic; }
 .mx-cell.mx-na { background: var(--card); }
@@ -1205,6 +1247,14 @@ body.matrix-wide .mx-pane .mxrh-build .mxch-refresh { width: 18px; height: 18px;
    config corner now, so they wrap within the narrow column and carry no margin
    (the .mc-group gap handles spacing). */
 .dm-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* The add-day picker fills the corner's width and no more. A select is as wide
+   as its longest option, and an option names the day, its site and every report
+   exported that day — which pushed the options card into a sideways scroll. */
+.dm-toolbar .tb-select { flex: 1 1 100%; min-width: 0; }
+.dm-toolbar .tb-select select { width: 100%; min-width: 0; text-overflow: ellipsis; }
+/* Nothing in an options corner may widen it: a folder path in a hint breaks
+   wherever it must. */
+.matrix-config .hint, .matrix-config .ev-status-line { overflow-wrap: anywhere; }
 .dm-empty {
   padding: 20px; text-align: center; color: var(--muted-foreground);
   font-size: var(--text-sm); border: 1px dashed var(--border); border-radius: var(--radius-lg);
@@ -1273,7 +1323,10 @@ body.matrix-wide .mx-pane .mxrh-build .mxch-refresh { width: 18px; height: 18px;
   font-size: var(--text-lg); font-weight: 600; color: var(--foreground);
 }
 .preflight-target .dot { width: 9px; height: 9px; }
-.preflight-rows { display: grid; gap: 9px; }
+/* One column that may shrink: a grid item is as wide as its longest unbroken
+   content unless told otherwise, and a long folder path used to carry the row
+   past the card's edge. */
+.preflight-rows { display: grid; grid-template-columns: minmax(0, 1fr); gap: 9px; }
 .pf-row { display: flex; gap: 12px; align-items: baseline; font-size: var(--text-base); }
 .pf-label {
   width: 76px; flex-shrink: 0;
@@ -1281,9 +1334,13 @@ body.matrix-wide .mx-pane .mxrh-build .mxch-refresh { width: 18px; height: 18px;
   text-transform: uppercase; color: var(--muted-foreground);
 }
 .pf-value { flex: 1; min-width: 0; color: var(--foreground); overflow-wrap: anywhere; }
+/* A path here WRAPS. Cutting it with an ellipsis hid its end — the run folder,
+   the one part that says where this run saves — behind a long install folder. */
 .pf-value.path {
   font-family: var(--font-mono); font-size: var(--text-sm);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  /* undo the one-line `.path` look this element also carries */
+  white-space: normal; overflow: visible; text-overflow: clip;
+  overflow-wrap: anywhere;
 }
 .pf-warn { color: var(--warning); }
 
@@ -1572,9 +1629,11 @@ body.matrix-wide .mx-pane .mxrh-build .mxch-refresh { width: 18px; height: 18px;
 
 /* ArcGIS ▸ ArcGIS reports (v0.47.0): one row per report, same table look as
    Layers. A report with no build yet stays listed, muted. */
+/* The last column holds a "Refresh" button (about 84px) inside 16px of cell
+   padding; at its old 88px floor the button spilled left over the status text. */
 .agb-table {
   grid-template-columns: minmax(180px, 1.6fr) minmax(92px, auto) minmax(58px, auto)
-                         minmax(120px, 1.3fr) minmax(88px, auto);
+                         minmax(120px, 1.3fr) minmax(104px, auto);
 }
 .agb-asof-cell { flex-direction: column; align-items: flex-start !important; gap: 1px !important; }
 .agl-row.agb-off .agl-name { color: var(--muted-foreground); font-weight: 500; }
@@ -1712,10 +1771,13 @@ body.matrix-wide .mx-pane .mxrh-build .mxch-refresh { width: 18px; height: 18px;
 @keyframes rise-in   { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 @keyframes line-in   { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 
-/* Tab panes rise+fade in on switch; the Everything sub-panes just cross-fade
-   (so they don't double-animate with the parent pane). */
-.pane:not(.hidden) { animation: pane-in var(--motion-slow) var(--ease-out) both; }
-#everyExport:not(.hidden), #everyMatrix:not(.hidden) { animation: fade-in var(--motion) var(--ease-out) both; }
+/* Tab panes fade in on switch. This is the animation every tab click waits on,
+   so it is the SHORT step and opacity only: at --motion-slow with a 6px rise the
+   new view was not fully there for a quarter of a second after each click,
+   which read as the app lagging behind the pointer. The Everything sub-panes
+   use the same quick fade (so they don't double-animate with the parent). */
+.pane:not(.hidden) { animation: fade-in var(--motion-fast) var(--ease-out) both; }
+#everyExport:not(.hidden), #everyMatrix:not(.hidden) { animation: fade-in var(--motion-fast) var(--ease-out) both; }
 /* Compare's per-group radio rows fade+rise as the chosen group is revealed. */
 #compareList .option-row:not(.hidden) { animation: rise-in var(--motion) var(--ease-out) both; }
 
@@ -1725,8 +1787,11 @@ body.matrix-wide .mx-pane .mxrh-build .mxch-refresh { width: 18px; height: 18px;
 }
 
 /* List entrances — these surfaces are rebuilt element-by-element on each render,
-   so each new row/line/pill animates in. transform/opacity only (compositor-cheap). */
-.log-line   { animation: line-in var(--motion-fast) var(--ease-out) both; }
+   so each new row/pill animates in. transform/opacity only (compositor-cheap).
+   Log lines are deliberately NOT animated: a busy run appends them a couple of
+   hundred at a time, and the Failures filter re-shows up to 3,000 at once — one
+   animation per line there is thousands of concurrent animations for motion
+   nobody can follow at that rate. */
 .pstep      { animation: rise-in var(--motion) var(--ease-out) both; }
 .worker-row { animation: rise-in var(--motion) var(--ease-out) both; }
 .lib-row    { animation: line-in var(--motion-fast) var(--ease-out) both; }

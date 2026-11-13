@@ -35,7 +35,7 @@ function fillSettings() {
     : null;
   [["Data folder", meta.data_root], ["Output folder", meta.output_root],
    ["ArcGIS layers", agLine],
-   ["Log file", meta.log_file], ["Failure shots", meta.failures_dir]]
+   ["Log file", meta.log_file], ["Failure screenshots", meta.failures_dir]]
     .forEach(([label, value]) => {
       const line = document.createElement("div");
       line.className = "path-line";
@@ -116,7 +116,7 @@ function renderChromium(c) {
     text = "Ships with this app (the “with-browser” download) — nothing to manage.";
   } else if (c.downloaded) {
     text = `Downloaded (${c.downloaded_mb} MB)` + (c.active
-      ? " and available as an export browser (pick it under Export browser below)."
+      ? " and used for exports (Export browser below can switch to Google Chrome)."
       : " — restart the app to use it.");
   } else {
     text = "Not installed — exports use the PC's Microsoft Edge / Google Chrome.";
@@ -140,7 +140,9 @@ function renderExportBrowser(eb) {
   const hasChoice = !!(eb.chromium_present && eb.chrome_ok);
   if (hasChoice) {                       // both installed → a real pick
     box.classList.remove("hidden");
-    [["auto", "Automatic — Google Chrome when installed"],
+    // Both are installed whenever this list shows, and the automatic order
+    // tries the Built-in Chromium first (browser_channels.BROWSER_CHANNELS).
+    [["auto", `Automatic — ${labels.chromium} first`],
      ["chrome", labels.chrome], ["chromium", labels.chromium]].forEach(([val, text]) => {
       const lab = document.createElement("label"); lab.className = "set-radio";
       const r = document.createElement("input");
@@ -338,8 +340,9 @@ async function downloadChromium() {
   const ok = await showConfirm({
     title: "Download the Built-in Chromium?",
     message: "About 170 MB will be downloaded into the app's data folder "
-      + "(data\\ms-playwright).\n\nAfter it finishes, restart the app, then pick "
-      + "“Built-in Chromium” under Settings ▸ Export browser.",
+      + "(data\\ms-playwright).\n\nAfter it finishes, restart the app: exports then "
+      + "use the Built-in Chromium (Settings ▸ Export browser can switch back to "
+      + "Google Chrome).",
     confirmLabel: "Download",
   });
   if (!ok) return;
@@ -418,7 +421,8 @@ async function deleteAllReports() {
   inputCb.type = "checkbox";
   inputRow.appendChild(inputCb);
   inputRow.appendChild(Object.assign(document.createElement("span"),
-    { textContent: "Also delete the TSN input PDFs (input\\tsn_highway_log)" }));
+    { textContent: "Also delete TSN files dropped into the Export Everything folder "
+        + "(its _tsn_input folder). The TSN library in Settings is never deleted." }));
   inputCb.onchange = async () => {
     includeInput = inputCb.checked;
     prev = await api.reset_preview(includeInput);

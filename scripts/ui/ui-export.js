@@ -179,10 +179,16 @@ document.addEventListener("contextmenu", (e) => e.preventDefault());
 // SSOR/ARS × environment target (answering the recurring "am I on the right
 // site?" worry), and where the file lands. Shown while idle; the progress card
 // replaces it on run. Built from live form state so it tracks every change.
+// Today's run folder, as the export will name it: the date, the source and
+// environment, and (v0.49.0+) the TSMIS site that pair points at — "2026-10-07
+// ssor-prod dev-site". The site comes from the state's `site_hosts`; without it
+// (an older bridge) the name stops at the environment, as it did before.
 function pfTodayRunFolder() {
   const d = new Date(), p = (n) => String(n).padStart(2, "0");
   const date = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-  return `${date} ${$("selSource").value}-${$("selEnv").value}`;
+  const key = `${$("selSource").value}-${$("selEnv").value}`;
+  const host = ((S.st && S.st.site_hosts) || {})[key];
+  return `${date} ${key}` + (host ? ` ${host}-site` : "");
 }
 function pfRoutesSummary() {
   const raw = $("routesInput").value.trim();
@@ -268,10 +274,16 @@ function renderPreflight() {
     if ($("cmpWantFormulas").checked) outs.push("Live formulas");
     addRow("Output", outs.join(" + ") || "Pick at least one", { warn: !outs.length });
   } else {
-    $("preflightTitle").textContent = "Nothing queued";
+    // Settings and the ArcGIS tab's non-matrix sub-tabs share this card; each
+    // gets its own words (the ArcGIS tab used to be told to "adjust settings").
+    const arcgis = tab === "arcgis";
+    $("preflightTitle").textContent = arcgis ? "Nothing running" : "Nothing queued";
     const note = document.createElement("div");
     note.className = "pf-value";
-    note.textContent = "Adjust settings on the left — exports run from the other tabs.";
+    note.textContent = arcgis
+      ? "Layer refreshes, report builds and comparisons start from the buttons on "
+        + "the left. Progress shows here while one runs."
+      : "Adjust settings on the left — exports run from the other tabs.";
     rows.appendChild(note);
   }
 }

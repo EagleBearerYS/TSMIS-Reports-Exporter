@@ -50,6 +50,22 @@ stops it on Cancel or when it exceeds its time limits. Nothing is installed into
 ArcGIS Pro's environment. The TSMIS Project Inspector uses the same pattern on the
 same PCs.
 
+**It also starts copies of itself (2026-11-12).** A comparison, TSN consolidation or
+ArcGIS report build now runs in a **worker process**: the app's own `.exe` started a
+second time by Python's `multiprocessing` (the command line carries
+`--multiprocessing-fork` and a pipe handle), so the heavy work stops competing with
+the window. It is the same signed-or-unsigned binary from the same folder — no
+script, no shell, no temp executable, no elevation, no network of its own — it
+reads and writes exactly the files the job did before, talks to the window over
+local pipes that exist only on this PC (Python's own: an anonymous pipe at start-up,
+then a single-instance named pipe, `\\.\pipe\pyc-…`), and exits when the job ends or
+the window closes. One runs at a
+time. If the PC refuses to create the process, or the child does not report in
+within 90 seconds, the job runs inside the app as it did before and the log says so
+(`worker processes disabled for this session: …`); `TSMIS_INPROCESS_WORKERS=1`
+forces that. `--self-test` reports which of the two a machine does (`worker
+process: started …` or `skipped, this environment refuses child processes`).
+
 TLS for the update check/download uses the **Windows certificate store**
 (`ssl.create_default_context()` in `scripts/updater.py`), so corporate TLS
 inspection and the system proxy work without any bundled CA list. Do **not** switch
@@ -72,8 +88,13 @@ locations, the registry, or other users' profiles.
   diagnostics, `LOG_DIR`), `config.json` (settings, `CONFIG_FILE`), the WebView2
   profile (`WEBVIEW_PROFILE_DIR` = `data\webview2`), the Edge sign-in profile
   (`EDGE_LOGIN_PROFILE_DIR` = `data\edge_login_profile`), the downloaded Chromium if
-  any (`DOWNLOADED_BROWSERS_DIR` = `data\ms-playwright`), and `update\`
-  (`UPDATE_DIR`, staging during an update).
+  any (`DOWNLOADED_BROWSERS_DIR` = `data\ms-playwright`), `update\`
+  (`UPDATE_DIR`, staging during an update), and `cache\` (`CACHE_DIR`: two small JSON
+  files, `digests.json` and `comparison_headlines.json` — the SHA-256 of files the
+  app has already hashed and the counts of comparisons it has already read, each
+  keyed to the file's path, size, timestamps and NTFS change stamp. No report
+  content. Safe to delete at any time; the app rebuilds it by reading the files
+  again).
 - `scripts\tsmis_auth.json` (dev) / `data\tsmis_auth.json` (packaged) — the saved
   sign-in session (`AUTH`). **Treat as a credential.** Plaintext Playwright
   `storage_state` (cookies); see §6.
@@ -106,6 +127,13 @@ These are the only non-default low-level options, all on automated browser conte
   itself into a work profile mid-login (returned as `http://127.0.0.1:<port>` for a
   CDP re-attach). The port is a free local port, bound to loopback, and only open
   while that one sign-in window is up. No remote access.
+- **The window's own page server** (`127.0.0.1:42001`, pywebview's default
+  port): the app's interface is plain files served to its own WebView2 from a
+  small HTTP server inside the process, bound to loopback, for as long as the
+  window is open. The IT notes that ship beside the exe said "no inbound network
+  service" with only the sign-in port as an exception until 2026-11-13; they name
+  both now, and `check_shipped_readmes` holds that. A fixed port also means two
+  copies of the app would ask for the same one — see [roadmap.md](roadmap.md) J4.
 
 ## 4. Mark-of-the-Web (MOTW) handling
 

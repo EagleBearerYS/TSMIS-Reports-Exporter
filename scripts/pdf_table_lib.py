@@ -353,11 +353,30 @@ def write_route_workbook(rows, out_path, *, sheet_name, header,
         ws.column_dimensions[get_column_letter(i)].width = \
             40 if name == "Description" else 12
 
+    # Neutralize any formula-looking text (e.g. a Description starting with "=")
+    # so it can't execute when the workbook is opened — on the row just appended.
+    #
+    # That row is addressed by a running count, not by `ws[ws.max_row]`: both
+    # `max_row` and the `max_column` that indexing a whole row needs are a scan
+    # of EVERY cell in the sheet, so asking them once per row made writing a
+    # route quadratic in its length (a 3,000-row route did tens of millions of
+    # comparisons to find the row it had just written). The cells touched are
+    # the same ones: columns 1 through the widest row so far.
+    row_number = 1                           # the header row
+    width = max(len(header), 1)
     for row in rows:
-        ws.append(row_values(row) if row_values is not None else row)
-        # Neutralize any formula-looking text (e.g. a Description starting with
-        # "=") so it can't execute when the workbook is opened.
-        for cell in ws[ws.max_row]:
+        values = row_values(row) if row_values is not None else row
+        ws.append(values)
+        row_number += 1
+        if isinstance(values, (list, tuple)):
+            if not values:
+                continue                     # an empty row has no cells to guard
+            width = max(width, len(values))
+            cells = next(ws.iter_rows(min_row=row_number, max_row=row_number,
+                                      min_col=1, max_col=width))
+        else:
+            cells = ws[ws.max_row]           # any other row shape: the full scan
+        for cell in cells:
             if is_formula_injection(cell.value):
                 cell.data_type = "s"
     if decorate is not None:

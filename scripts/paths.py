@@ -469,6 +469,10 @@ CONFIG_FILE = _PRIVATE / "config.json"
 UPDATE_DIR = _PRIVATE / "update"       # self-update download/staging area (see updater.py)
 EDGE_LOGIN_PROFILE_DIR = _PRIVATE / "edge_login_profile"
 WEBVIEW_PROFILE_DIR = _PRIVATE / "webview2"   # the GUI window's WebView2 user-data folder
+# Re-derivable speed caches (file digests, comparison headlines): each entry is
+# served only while the files it describes still carry the same change token, so
+# deleting this folder costs one slower first read and nothing else.
+CACHE_DIR = _PRIVATE / "cache"
 
 # Built-in Chromium. Two places one can live, probed in order; this module is
 # imported (via common) by every entry point before any sync_playwright()

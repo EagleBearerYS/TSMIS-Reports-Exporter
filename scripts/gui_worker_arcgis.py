@@ -114,6 +114,10 @@ class ArcgisReportBuildWorker(threading.Thread):
     finish `ok` (failed, cancelled, or the layers refused) is reported as such —
     never as a success. Cancel stops between reports as well as inside one."""
 
+    # What the run is called in its terminal message. `job_host` reads it too, so
+    # a refresh whose worker process died is still reported under this name.
+    JOB_LABEL = "ArcGIS report refresh"
+
     def __init__(self, row_keys, asof, queue, cancel_event):
         super().__init__(daemon=True, name="arcgis-report-build")
         self.row_keys = ([row_keys] if isinstance(row_keys, str)
@@ -177,7 +181,7 @@ class ArcgisReportBuildWorker(threading.Thread):
             cancelled = self.cancel.is_set()
             succeeded = counts["ok"] + counts["partial"]
             self.q.put(("matrix_done", {
-                "label": "ArcGIS report refresh",
+                "label": self.JOB_LABEL,
                 "done": succeeded, "total": total,
                 "errors": counts["failed"] + counts["cancelled"],
                 "cancelled": cancelled, "attempted": total,

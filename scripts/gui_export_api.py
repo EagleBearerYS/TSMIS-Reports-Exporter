@@ -318,7 +318,9 @@ class GuiExportMixin:
                            "environment(s) done.")
         elif payload.get("cancelled"):
             self._emit_log(f"Export Everything stopped — {done} of {total} "
-                           "environment(s) done. Re-open the app to resume the rest.")
+                           "environment(s) done. Resume batch (Everything ▸ Refresh "
+                           "& export) finishes the rest; it is still there after "
+                           "restarting the app.")
         else:
             self._emit_log(f"Export Everything ended — {done} of {total} "
                            "environment(s) done; some were left pending (see the log).")

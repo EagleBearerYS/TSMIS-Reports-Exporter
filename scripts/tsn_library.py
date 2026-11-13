@@ -39,6 +39,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import consolidation_meta
+import content_token
 import outcome
 import paths
 import report_catalog as _catalog
@@ -253,7 +254,30 @@ def normalized_workbook_identity(path):
     pathname. Descriptor and pathname identity/size/timestamps must remain exact
     through the read, so a concurrent replacement never receives a generation
     claim for whichever bytes happened to be observed.
+
+    The digest is served from the shared change-token memo when the workbook's
+    token is the one it was hashed under (CMP-AUD-080's rule). `status()` asks
+    three times per call and is itself called for every dataset on every
+    snapshot and at every commit checkpoint; each of those was a full read. A
+    replacement between two calls still shows: it moves the token, so the next
+    call reads the bytes again.
     """
+    memo_path = Path(path)
+    try:
+        memo_stat = memo_path.lstat()
+    except OSError:  # silent-ok: the bound open below reports the real cause
+        memo_stat = None
+    memo_token = (content_token.change_token(memo_path, memo_stat)
+                  if memo_stat is not None and stat.S_ISREG(memo_stat.st_mode)
+                  else None)
+    cached = content_token.lookup(memo_path, memo_token)
+    if cached is not None:
+        return {
+            "version": _NORMALIZED_WORKBOOK_IDENTITY_VERSION,
+            "algorithm": "sha256",
+            "byte_length": int(memo_stat.st_size),
+            "sha256": cached,
+        }
     path, descriptor, opened = _open_bound_file(path)
     digest = hashlib.sha256()
     count = 0
@@ -274,11 +298,19 @@ def normalized_workbook_identity(path):
     _finish_bound_file(path, descriptor, opened)
     if count != opened.st_size:
         raise ValueError("normalized workbook size changed while hashing")
+    value = digest.hexdigest()
+    if memo_token is not None:
+        try:
+            unchanged = content_token.change_token(path, path.lstat()) == memo_token
+        except OSError:  # silent-ok: an unstattable file is simply not memoized
+            unchanged = False
+        if unchanged:
+            content_token.remember(path, memo_token, value)
     return {
         "version": _NORMALIZED_WORKBOOK_IDENTITY_VERSION,
         "algorithm": "sha256",
         "byte_length": count,
-        "sha256": digest.hexdigest(),
+        "sha256": value,
     }
 
 

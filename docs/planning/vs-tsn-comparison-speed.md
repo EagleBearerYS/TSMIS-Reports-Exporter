@@ -1,9 +1,11 @@
 # Comparison speed — the record
 
-**Status: SHIPPED in v0.40.0, extended in v0.40.1, concluded in v0.41.0.** This is
-the project record, not an open plan. **Comparison speed tuning is finished** — the
-measured breakdown below says why, and the one remaining order-of-magnitude lever was
-taken in v0.41.0 by not writing the workbook at all.
+**Status: SHIPPED in v0.40.0, extended in v0.40.1 and v0.41.0, REOPENED 2026-11-12.**
+This is the project record, not an open plan. v0.41.0 declared comparison speed
+tuning finished ("writing is 70%, with no hot spot"). That conclusion was wrong, and
+the last section says why and what replaced it: the hot spot was openpyxl's per-cell
+machinery, measured on a box where lxml hid most of it. The output boundary below
+never moved — everything since is byte-identical too.
 
 Started on `codex/vs-tsn-comparison-speed` (2026-08-19, four commits), taken over
 and reshaped 2026-08-20. Read this before touching `compare_core._styled_cell` or
@@ -219,3 +221,58 @@ The numbers cannot disagree with a build's because both paths call the one
 counts are exact, and that it can never go green.
 
 Off by default; the log line says "counts only, no workbook".
+
+## 2026-11-12 — the hot spot was the cell machinery
+
+**What the earlier breakdown missed.** "Four writers, each serializing content the
+workbook must contain" is true, and it reads as "nothing left to take". But the cost
+was not the content, it was the route each cell took to the file — and it was
+measured on this dev box, whose Python has lxml installed. The build venv and the
+shipped bundle do not, so in the field every cell goes through
+`etree_write_cell`: three ElementTree elements and five `file.write` calls, on top of
+a `WriteOnlyCell`, a type-inferring bind and (inside `_values_to_row`) a `ValueError`
+raised and caught for every styled cell. The same statewide comparison is roughly
+twice as slow on the shipped configuration as on the box it was tuned on.
+
+**Rule that follows:** benchmark the writer with `build\.venv\Scripts\python.exe`
+(no lxml) or with `OPENPYXL_LXML=False`. The lxml finding recorded above — different
+bytes, ~2% — is about switching serializers; it says nothing about what the
+pure-Python one costs.
+
+**What shipped instead of a faster serializer** is not using one for the rows:
+`compare_core._SheetRows` writes each row of the big sheets as one pre-built string
+through the sheet's own stream, reproducing `etree_write_cell` branch for branch and
+handing anything it does not reproduce back to openpyxl. The full description and
+the measured table are in [comparison-engine.md](../comparison-engine.md) §2b
+(Clean Road Ramp vs TSN 87.7 s → 27.5 s; Highway Sequence both flavors 324 s →
+128 s; byte-identical on every member).
+
+Phase breakdown of the same Clean Road Ramp comparison, before and after (shipped
+configuration, one run each, wrapping each phase):
+
+| Phase | `main` | now |
+|---|---:|---:|
+| the two data sheets | 25.8 s | 4.2 s |
+| the two snapshot sheets | 18.7 s | 1.2 s |
+| the Comparison sheet | 15.9 s | 3.6 s |
+| input loading (both sides) | 11.2 s | 5.6 s |
+| column-width measuring | 4.4 s | 1.0 s |
+| `Workbook.save` (the zip) | 4.1 s | 4.4 s |
+| commit: counts read-back, digests, sidecars | 4.4 s | 5.0 s |
+| pairing + `count_diffs` | 2.5 s | 1.9 s |
+| **total** | **87.7 s** | **27.5 s** |
+
+**Where the time is now**, largest first, for whoever takes the next step:
+
+- **The commit's count read-back** (~5 s here): `_comparison_counts_from_xml` walks
+  the Comparison sheet with `iterparse`. The sheet was written by this process a
+  moment earlier; a scanner for exactly that dialect, falling back to the current
+  reader on anything else, is the same contract §2b already uses.
+- **The zip** (~4.4 s): deflate at the default level, done after every sheet is
+  finished. It releases the GIL, so it could run behind the next sheet's writer.
+- **Input loading** (~5.6 s): what is left is openpyxl's per-cell `dict` and the
+  comparator's own normalization.
+- **The Report Views, the three-way workbook and the three-day lists** still build
+  a cell per value.
+
+Parallel cells are a different lever and are not taken: see the roadmap.

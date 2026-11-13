@@ -81,6 +81,32 @@ def test_safe_release_url():
           updater.safe_release_url("javascript:alert(1)") == page)
 
 
+def test_update_channel_is_the_repo_itself():
+    """The updater asks GitHub for releases at `GITHUB_REPO`. After the owner
+    account was renamed (2026-10-12) the constant kept the OLD name for a month:
+    it still answered, through GitHub's redirect — which holds only until
+    someone else registers the old name, and whoever did could publish a "newer
+    release" at exactly the path every installed copy asks. So the constant must
+    name the repository this checkout was cloned from. Skipped where there is no
+    git checkout to ask (a source zip)."""
+    import re
+    import subprocess
+    print("the update channel is this repository (never a redirect):")
+    try:
+        got = subprocess.run(["git", "-C", str(ROOT), "remote", "get-url", "origin"],
+                             capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        got = None
+    url = (got.stdout.strip() if got and got.returncode == 0 else "")
+    m = re.search(r"github\.com[:/]+([^/\s]+/[^/\s]+?)(?:\.git)?/?$", url)
+    if not m:
+        print("  [SKIP] no github origin remote to compare with"
+              + (f" ({url!r})" if url else ""))
+        return
+    check(f"GITHUB_REPO is the origin remote's owner/name ({m.group(1)})",
+          updater.GITHUB_REPO.lower() == m.group(1).lower())
+
+
 class _FakeReleasesResp:
     """A context-manager stand-in for _http_get's response: json.load(resp)
     reads the whole body in one call. `headers` is empty by default (no Link
@@ -1191,6 +1217,7 @@ def main():
         test_versions()
         test_expected_sha256()
         test_safe_release_url()
+        test_update_channel_is_the_repo_itself()
         test_resolve_previous_release()
         test_resolve_previous_paginates()
         test_sha256_verify(monkeypatch_wait)

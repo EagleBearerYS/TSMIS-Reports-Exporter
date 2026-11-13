@@ -197,7 +197,13 @@
         <div class="card-section">
           <div class="section-head">
             <span class="section-label">Reports to export</span>
-            <span class="section-meta" id="reportCount">1 selected</span>
+            <span class="section-tools">
+              <span class="section-meta" id="reportCount">1 selected</span>
+              <button type="button" class="mx-linkbtn" id="btnReportsAll" data-lock-when-busy
+                      title="Tick every report">All</button>
+              <button type="button" class="mx-linkbtn" id="btnReportsNone" data-lock-when-busy
+                      title="Untick every report">None</button>
+            </span>
           </div>
           <div class="option-list" id="reportList"></div>
         </div>
@@ -296,7 +302,13 @@
         <div class="card-section">
           <div class="section-head">
             <span class="section-label">Report types</span>
-            <span class="section-meta" id="batchReportCount"></span>
+            <span class="section-tools">
+              <span class="section-meta" id="batchReportCount"></span>
+              <button type="button" class="mx-linkbtn" id="btnBatchReportsAll" data-lock-when-busy
+                      title="Tick every report type">All</button>
+              <button type="button" class="mx-linkbtn" id="btnBatchReportsNone" data-lock-when-busy
+                      title="Untick every report type">None</button>
+            </span>
           </div>
           <div class="option-list" id="batchReportList"></div>
         </div>
@@ -325,7 +337,7 @@
             <span class="checkbox" aria-hidden="true"><svg class="ic"><use href="#i-check"/></svg></span>
             <span class="fast-label">Consolidate each report when its export finishes</span>
           </label>
-          <p class="hint">Exports every ticked report type for every ticked environment, one after another, into the destination folder below (one subfolder per environment, refreshed in place — not dated run folders). The job is saved to disk, so you can pause and pick up later — even after closing the app.</p>
+          <p class="hint">Builds each report's combined workbook after its export. <b>Refresh everything</b> exports every ticked report type for every ticked environment, one after another, into the destination folder above (one subfolder per environment, refreshed in place — not dated run folders). The job is saved to disk, so you can pause and pick up later — even after closing the app.</p>
         </div>
         <div class="card-section actions-row">
           <button class="btn btn-accent" id="btnStartBatch" data-lock-when-busy>
@@ -363,10 +375,11 @@
               <span class="mx-key mx-match">identical</span>
               <span class="mx-key mx-diff-lo">few diffs</span>
               <span class="mx-key mx-diff-hi">many diffs</span>
-              <span class="mx-key mx-partial">partial inputs</span>
-              <span class="mx-key mx-preview">counts only</span>
-              <span class="mx-key mx-stale">stale</span>
-              <span class="mx-key mx-missing">needs export</span>
+              <span class="mx-key mx-partial" title="Some routes or files were missing when this was built, so its counts are incomplete">partial inputs</span>
+              <span class="mx-key mx-preview" title="The numbers were computed without writing a workbook (Matrix options ▸ Counts only)">counts only</span>
+              <span class="mx-key mx-stale" title="An input changed after this comparison was built, so its number may be out of date — rebuild it">stale</span>
+              <span class="mx-key mx-unbuilt" title="Everything this comparison needs is there; it has not been built yet">not built</span>
+              <span class="mx-key mx-missing" title="Something this comparison reads is missing — the cell says what (an export, a TSN file, a baseline)">needs export</span>
               <span class="mx-key mx-na">not available</span>
             </div>
           </div>
@@ -374,7 +387,7 @@
         </div>
         <div class="card-section actions-row">
           <button class="btn btn-subtle btn-small" id="btnMatrixRefreshAll">
-            <svg class="ic"><use href="#i-refresh"/></svg>Refresh stale comparisons
+            <svg class="ic"><use href="#i-refresh"/></svg>Rebuild stale
           </button>
           <button class="btn btn-subtle btn-small" id="btnOpenComparisons">
             <svg class="ic"><use href="#i-folder-open"/></svg>Open comparisons folder
@@ -498,9 +511,11 @@
         <div class="card-section hidden" id="cmpFoldersSection">
           <div class="section-head"><span class="section-label">Export folders to compare</span></div>
           <p class="hint" style="margin-bottom:10px">
-            Pick the two export run folders (e.g. <span class="mono">2026-06-11 ssor-prod</span>
-            vs <span class="mono">2026-06-11 ars-prod</span>). The report's per-route files are
-            read straight from both — no consolidation needed first. Baseline goes on the left.
+            Pick the two export run folders (e.g.
+            <span class="mono">2026-11-13 ssor-prod main-site</span> vs
+            <span class="mono">2026-11-13 ars-prod main-site</span>). The report's per-route
+            files are read straight from both — no consolidation needed first. The first
+            folder is the baseline.
           </p>
           <div class="file-pick-row">
             <span class="file-pick-label">Baseline</span>
@@ -591,10 +606,11 @@
               <span class="mx-key mx-match">identical</span>
               <span class="mx-key mx-diff-lo">few diffs</span>
               <span class="mx-key mx-diff-hi">many diffs</span>
-              <span class="mx-key mx-partial">partial inputs</span>
-              <span class="mx-key mx-preview">counts only</span>
-              <span class="mx-key mx-stale">stale</span>
-              <span class="mx-key mx-missing">needs export</span>
+              <span class="mx-key mx-partial" title="Some routes or files were missing when this was built, so its counts are incomplete">partial inputs</span>
+              <span class="mx-key mx-preview" title="The numbers were computed without writing a workbook (Matrix options ▸ Counts only)">counts only</span>
+              <span class="mx-key mx-stale" title="An input changed after this comparison was built, so its number may be out of date — rebuild it">stale</span>
+              <span class="mx-key mx-unbuilt" title="Everything this comparison needs is there; it has not been built yet">not built</span>
+              <span class="mx-key mx-missing" title="Something this comparison reads is missing — the cell says what (an export, a TSN file, a baseline)">needs export</span>
               <span class="mx-key mx-na">not available</span>
             </div>
             <div class="matrix-wrap"><div class="matrix-grid" id="dayMatrixGrid"></div></div>
@@ -649,10 +665,11 @@
               <span class="mx-key mx-match">identical</span>
               <span class="mx-key mx-diff-lo">few diffs</span>
               <span class="mx-key mx-diff-hi">many diffs</span>
-              <span class="mx-key mx-partial">partial inputs</span>
-              <span class="mx-key mx-preview">counts only</span>
-              <span class="mx-key mx-stale">stale</span>
-              <span class="mx-key mx-missing">needs export</span>
+              <span class="mx-key mx-partial" title="Some routes or files were missing when this was built, so its counts are incomplete">partial inputs</span>
+              <span class="mx-key mx-preview" title="The numbers were computed without writing a workbook (Matrix options ▸ Counts only)">counts only</span>
+              <span class="mx-key mx-stale" title="An input changed after this comparison was built, so its number may be out of date — rebuild it">stale</span>
+              <span class="mx-key mx-unbuilt" title="Everything this comparison needs is there; it has not been built yet">not built</span>
+              <span class="mx-key mx-missing" title="Something this comparison reads is missing — the cell says what (an export, a TSN file, a baseline)">needs export</span>
               <span class="mx-key mx-na">not available</span>
             </div>
             <div class="matrix-wrap"><div class="matrix-grid" id="baselineMatrixGrid"></div></div>
@@ -694,10 +711,11 @@
               <span class="mx-key mx-match">identical</span>
               <span class="mx-key mx-diff-lo">few diffs</span>
               <span class="mx-key mx-diff-hi">many diffs</span>
-              <span class="mx-key mx-partial">partial inputs</span>
-              <span class="mx-key mx-preview">counts only</span>
-              <span class="mx-key mx-stale">stale</span>
-              <span class="mx-key mx-missing">needs export</span>
+              <span class="mx-key mx-partial" title="Some routes or files were missing when this was built, so its counts are incomplete">partial inputs</span>
+              <span class="mx-key mx-preview" title="The numbers were computed without writing a workbook (Matrix options ▸ Counts only)">counts only</span>
+              <span class="mx-key mx-stale" title="An input changed after this comparison was built, so its number may be out of date — rebuild it">stale</span>
+              <span class="mx-key mx-unbuilt" title="Everything this comparison needs is there; it has not been built yet">not built</span>
+              <span class="mx-key mx-missing" title="Something this comparison reads is missing — the cell says what (an export, a TSN file, a baseline)">needs export</span>
               <span class="mx-key mx-na">not available</span>
             </div>
             <div class="matrix-wrap"><div class="matrix-grid" id="pveMatrixGrid"></div></div>
@@ -741,16 +759,17 @@
               <span class="mx-key mx-match">no change</span>
               <span class="mx-key mx-diff-lo">few changes</span>
               <span class="mx-key mx-diff-hi">many changes</span>
-              <span class="mx-key mx-partial">partial inputs</span>
-              <span class="mx-key mx-stale">stale</span>
-              <span class="mx-key mx-missing">needs export</span>
+              <span class="mx-key mx-partial" title="Some routes or files were missing when this was built, so its counts are incomplete">partial inputs</span>
+              <span class="mx-key mx-stale" title="An input changed after this comparison was built, so its number may be out of date — rebuild it">stale</span>
+              <span class="mx-key mx-unbuilt" title="Everything this comparison needs is there; it has not been built yet">not built</span>
+              <span class="mx-key mx-missing" title="Something this comparison reads is missing — the cell says what (an export, a TSN file, a baseline)">needs export</span>
             </div>
             <div class="matrix-wrap"><div class="matrix-grid" id="threeDayMatrixGrid"></div></div>
           </div>
 
           <div class="card-section actions-row">
             <button class="btn btn-subtle btn-small" id="btnThreeDayBuildAll">
-              <svg class="ic"><use href="#i-layers"/></svg>Compare all
+              <svg class="ic"><use href="#i-layers"/></svg>Build all
             </button>
             <button class="btn btn-subtle btn-small" id="btnThreeDayRebuildAll">
               <svg class="ic"><use href="#i-refresh"/></svg>Rebuild stale
@@ -859,7 +878,7 @@
             <button class="btn btn-accent" id="btnAgBuildsAll">
               <svg class="ic"><use href="#i-refresh"/></svg>Refresh all reports
             </button>
-            <label class="agb-asof" title="Rebuild as of a past date (YYYY-MM-DD). Blank builds the layers as they were exported.">
+            <label class="agb-asof" title="Rebuild as of a past date (YYYY-MM-DD). Blank builds from the layers as they were exported.">
               <span class="muted">As of</span>
               <span class="set-input"><input type="text" class="input" id="agBuildsAsof" data-lock-when-busy
                      autocomplete="off" spellcheck="false" placeholder="the layers' export date" style="width:160px"></span>
@@ -908,8 +927,9 @@
             <span class="mx-key mx-match">identical</span>
             <span class="mx-key mx-diff-lo">few diffs</span>
             <span class="mx-key mx-diff-hi">many diffs</span>
-            <span class="mx-key mx-partial">partial inputs</span>
-            <span class="mx-key mx-stale">stale</span>
+            <span class="mx-key mx-partial" title="Some routes or files were missing when this was built, so its counts are incomplete">partial inputs</span>
+            <span class="mx-key mx-stale" title="An input changed after this comparison was built, so its number may be out of date — rebuild it">stale</span>
+              <span class="mx-key mx-unbuilt" title="Everything this comparison needs is there; it has not been built yet">not built</span>
             <span class="mx-key mx-missing">needs ArcGIS build / export</span>
             <span class="mx-key mx-na">not available yet</span>
           </div>
@@ -918,7 +938,7 @@
 
         <div class="card-section actions-row">
           <button class="btn btn-subtle btn-small" id="btnAgMxBuildAll">
-            <svg class="ic"><use href="#i-layers"/></svg>Compare all
+            <svg class="ic"><use href="#i-layers"/></svg>Build all
           </button>
           <button class="btn btn-subtle btn-small" id="btnAgMxRebuildAll">
             <svg class="ic"><use href="#i-refresh"/></svg>Rebuild stale
@@ -965,8 +985,9 @@
             <span class="mx-key mx-match">no report finding</span>
             <span class="mx-key mx-diff-lo">few report findings</span>
             <span class="mx-key mx-diff-hi">many report findings</span>
-            <span class="mx-key mx-partial">partial inputs</span>
-            <span class="mx-key mx-stale">stale</span>
+            <span class="mx-key mx-partial" title="Some routes or files were missing when this was built, so its counts are incomplete">partial inputs</span>
+            <span class="mx-key mx-stale" title="An input changed after this comparison was built, so its number may be out of date — rebuild it">stale</span>
+              <span class="mx-key mx-unbuilt" title="Everything this comparison needs is there; it has not been built yet">not built</span>
             <span class="mx-key mx-missing">needs TSN / ArcGIS build / export</span>
           </div>
           <div class="matrix-wrap"><div class="matrix-grid" id="twMatrixGrid"></div></div>
@@ -974,7 +995,7 @@
 
         <div class="card-section actions-row">
           <button class="btn btn-subtle btn-small" id="btnTwMxBuildAll">
-            <svg class="ic"><use href="#i-layers"/></svg>Compare all
+            <svg class="ic"><use href="#i-layers"/></svg>Build all
           </button>
           <button class="btn btn-subtle btn-small" id="btnTwMxRebuildAll">
             <svg class="ic"><use href="#i-refresh"/></svg>Rebuild stale
@@ -1006,7 +1027,7 @@
               <svg class="ic"><use href="#i-play"/></svg>Build from layers
             </button>
           </div>
-          <p class="hint" id="agAsofHint">Leave blank to match the staged TSN extract's own date.</p>
+          <p class="hint" id="agAsofHint">Leave blank to use the date of the TSN extract in the TSN library.</p>
           <div class="actions-row">
             <label class="fast-toggle"><input type="checkbox" id="agWantFormulas" checked>
               <span class="checkbox" aria-hidden="true"><svg class="ic"><use href="#i-check"/></svg></span>
@@ -1029,10 +1050,11 @@
         </div>
 
         <div class="card-section">
-          <div class="section-head"><span class="section-label">Staged for later</span></div>
-          <p class="hint">CA Intersections and CA Ramps follow the same pattern once their
-            builds and comparisons are integrated — Highway went first. Their TSN extracts
-            and layers stay staged in the libraries.</p>
+          <div class="section-head"><span class="section-label">Intersections and ramps</span></div>
+          <p class="hint">This page builds and compares the <b>highway</b> file only.
+            Clean Road: Intersection and Clean Road: Ramp are built on
+            <b>ArcGIS reports</b> and compared on <b>Reports vs ArcGIS</b> and
+            <b>Three-way</b>.</p>
         </div>
         </div><!-- /agCleanRoad -->
 
@@ -1049,10 +1071,10 @@
             <label class="set-row">Per-route limit in fast mode
               <span class="set-input"><input type="number" class="input input-num set-num" id="setFastTimeout" min="1" max="120"><span class="muted">min</span></span>
             </label>
-            <label class="set-row">Per-route limit in the retry pass
+            <label class="set-row" title="Routes that failed are tried once more at the end of a run; this is how long each one may take then">Per-route limit in the retry pass
               <span class="set-input"><input type="number" class="input input-num set-num" id="setRetryTimeout" min="1" max="180"><span class="muted">min</span></span>
             </label>
-            <label class="set-row">County dropdown wait
+            <label class="set-row" title="How long to wait for the TSMIS page's County list to fill in after a route is picked">County dropdown wait
               <span class="set-input"><input type="number" class="input input-num set-num" id="setCountyTimeout" min="10" max="600"><span class="muted">sec</span></span>
             </label>
             <label class="set-row">Default fast-mode browsers
@@ -1069,7 +1091,7 @@
             <label class="option-row" id="rowDebugLog">
               <input type="checkbox" id="setDebugLog">
               <span class="checkbox" aria-hidden="true"><svg class="ic"><use href="#i-check"/></svg></span>
-              <span class="option-name">Verbose file logging <span class="muted">— extra detail in tsmis.log (applies immediately)</span></span>
+              <span class="option-name">Verbose file logging <span class="muted">— extra detail in the log file, tsmis-gui.log (applies immediately)</span></span>
             </label>
             <label class="option-row" id="rowNotifyFinish">
               <input type="checkbox" id="setNotifyFinish">
@@ -1147,12 +1169,12 @@
           </div>
           <div class="actions-row" style="margin-bottom:8px">
             <button class="btn btn-subtle btn-small" id="btnSiteDev"
-                    title="Point all six addresses at the development site (tsmis-dev.dot.ca.gov), where Intersection reports are available">
+                    title="Point all six addresses at the development site (tsmis-dev.dot.ca.gov), where reports are released before they are approved for the main site">
               <svg class="ic"><use href="#i-monitor"/></svg>Use development site
             </button>
             <button class="btn btn-subtle btn-small" id="btnSiteProd"
-                    title="Clear every override — back to the built-in production addresses">
-              <svg class="ic"><use href="#i-refresh"/></svg>Reset to production
+                    title="Clear every custom address — back to the built-in main site (tsmis.dot.ca.gov)">
+              <svg class="ic"><use href="#i-refresh"/></svg>Use main site
             </button>
           </div>
           <div class="set-urls" id="setSiteUrls"></div>
@@ -1199,13 +1221,14 @@
             <button class="btn btn-subtle btn-small" id="setTsnRebuildStale">Rebuild all out of date</button>
           </div>
           <p class="hint" style="margin-bottom:8px">
-            The canonical home for each report's <b>TSN</b> source data (the comparison
-            ground truth). Import the raw TSN file(s) once — district PDFs or a statewide
-            workbook, depending on the report — then <b>Rebuild</b> turns them into the
-            consolidated workbook every TSMIS-vs-TSN comparison reads. A green dot means
-            the consolidated workbook is current; amber means it's missing or older than
-            the raw you imported. After an app update the normalizer can move on, which
-            marks reports out of date — <b>Rebuild all out of date</b> does them in one run.
+            <b>TSN</b> is the older system that TSMIS replaced; its data has not changed
+            since the September 2025 cutover. Keep each report's TSN files here. Import
+            the file(s) once — district PDFs or one statewide workbook, depending on the
+            report — then <b>Rebuild</b> turns them into the single workbook every
+            TSMIS-vs-TSN comparison reads. A green dot means that workbook is up to date;
+            amber means it is missing, or older than the files you imported. After an app
+            update some reports can show as out of date —
+            <b>Rebuild all out of date</b> fixes them in one run.
           </p>
           <div class="tsn-lib" id="setTsnLibrary"></div>
         </div>
@@ -1226,7 +1249,8 @@
             </button>
           </div>
           <p class="hint">“Delete all reports” clears every exported, consolidated and comparison
-            file for a fresh start — logs, your login and these settings are always kept.</p>
+            file for a fresh start. Always kept: the TSN library, the ArcGIS layers and the
+            reports built from them, logs, your login and these settings.</p>
         </div>
 
         <div class="card-section">
@@ -1394,8 +1418,10 @@
         <div class="mc-group">
           <div class="mc-label">Show comparison for all</div>
           <div class="mc-allmodes">
-            <button class="mc-mode" data-mode="env">Cross-environment</button>
-            <button class="mc-mode" data-mode="tsn">vs TSN</button>
+            <button class="mc-mode" data-mode="env"
+                    title="Switch every report on this matrix to its between-environments comparison">Cross-environment</button>
+            <button class="mc-mode" data-mode="tsn"
+                    title="Switch every report on this matrix to its comparison against TSN">vs TSN</button>
           </div>
         </div>
         <div class="mc-group">
@@ -1439,6 +1465,9 @@
           <p class="hint" style="margin:6px 0 0">Add a day already exported, or use
             <b>Export today →</b> to pull a fresh dated column now. Only today can be
             exported — earlier days are kept exactly as pulled.</p>
+          <p class="hint" style="margin:6px 0 0">TSN is the older system TSMIS replaced,
+            and its data stopped changing in September 2025 — so most differences here
+            are changes made in TSMIS since then, not errors.</p>
         </div>
 
         <div class="mc-group">
@@ -1742,7 +1771,8 @@
             </button>
           </div>
           <p class="hint" id="threeDayPickHint" style="margin:6px 0 0"></p>
-          <p class="hint" style="margin:6px 0 0">Pick any three exported days — the
+          <p class="hint" style="margin:6px 0 0">This matrix covers the Clean Road
+            reports. Pick any three exported days — the
             order does not matter, they are read oldest to newest. Each set is a
             column; each cell compares that report's three exports (Excel with
             Excel, PDF with PDF) exactly as <b>vs Baseline Matrix</b> compares two.</p>

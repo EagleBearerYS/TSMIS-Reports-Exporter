@@ -31,6 +31,7 @@ contracts and ``events`` result shape; ``openpyxl`` is imported LAZILY inside
 produced file to reject a malformed/unreadable XLSX before committing it — a typed
 comparison reads its own package directly instead, and falls back to those).
 """
+import contextlib
 import datetime
 import hashlib
 import json
@@ -39,13 +40,14 @@ import os
 import posixpath
 import re
 import stat as statmod
-import time
+import threading
 import uuid
 import zipfile
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+import content_token
 import output_state
 from comparison_contract import ArtifactGeneration, AttemptState, ComparisonOutcome
 from events import ConsolidateResult
@@ -1767,6 +1769,37 @@ def _is_excluded(name):
     return any(name.endswith(s) for s in _FP_EXCLUDED_SUFFIXES)
 
 
+# --------------------------------------------------------------------------- #
+# One snapshot, one read of each folder.
+#
+# A matrix snapshot asks the same questions about the same folder many times —
+# the newest export in it for its cell, again for the day's availability, again
+# for the add-day picker; its content fingerprint for the cell and again for the
+# consolidated workbook built from it. Each answer is a directory walk (and, for
+# a fingerprint, a change-token read of every file), so a statewide by-day
+# snapshot repeated hundreds of walks it had already done.
+#
+# `read_scope` shares those answers for the length of ONE read-only snapshot on
+# the calling thread and forgets them when it ends. It is never entered by a
+# build: the freshness checks around a comparison's write read the disk every
+# time, exactly as before.
+# --------------------------------------------------------------------------- #
+_READ_SCOPE = threading.local()
+
+
+@contextlib.contextmanager
+def read_scope():
+    """Share folder reads across one snapshot (re-entrant; the outermost wins)."""
+    if getattr(_READ_SCOPE, "cache", None) is not None:
+        yield
+        return
+    _READ_SCOPE.cache = {}
+    try:
+        yield
+    finally:
+        _READ_SCOPE.cache = None
+
+
 def is_report_data_file(name):
     """True iff `name` is a real per-route / consolidated REPORT data file — a
     ``.xlsx`` or ``.pdf`` (`_REPORT_SUFFIXES`) that is NOT an Excel lock (``~$``),
@@ -1801,7 +1834,14 @@ def newest_report_file_mtime(folder):
 
     A ``DirEntry`` stat carries no file IDENTITY on Windows (see
     `fingerprint`'s note); that is fine here — this reads ``st_mtime`` only and
-    identity is never derived from it."""
+    identity is never derived from it.
+
+    Inside a `read_scope` the answer for one folder is read once (a snapshot asks
+    about the same folder for its cell, its day's availability and its picker)."""
+    cache = getattr(_READ_SCOPE, "cache", None)
+    key = ("newest", os.path.normcase(str(folder))) if cache is not None else None
+    if cache is not None and key in cache:
+        return cache[key]
     newest = None
     try:
         with os.scandir(folder) as it:
@@ -1814,7 +1854,9 @@ def newest_report_file_mtime(folder):
                 except OSError:  # silent-ok: a locked/vanished entry contributes no mtime
                     continue
     except OSError:  # silent-ok: an absent/unreadable folder HAS no newest mtime — None IS the answer
-        return None
+        newest = None
+    if cache is not None:
+        cache[key] = newest
     return newest
 
 
@@ -1858,103 +1900,18 @@ def exported_subdirs_by_day(source, subdirs):
 # change token can be obtained (a non-Windows filesystem, an unreadable handle),
 # the memo is refused and the file is re-hashed — fail-safe, never fail-fast.
 # --------------------------------------------------------------------------- #
-_HASH_BLOCK = 1 << 20
-_DIGEST_MEMO = {}
-_DIGEST_MEMO_MAX = 50_000          # ~6 statewide environments' worth of routes
-# FILETIME (100 ns ticks since 1601-01-01) -> unix nanoseconds.
-_FILETIME_EPOCH_TICKS = 116_444_736_000_000_000
-# A change token can only be as fine as the system clock that stamps it: two
-# writes inside one tick get the SAME ChangeTime (measured ~10 ms here, coarser
-# on some virtualized hosts — a CI runner produced an unmoved token). So a digest
-# is memoized only once its file's change stamp is comfortably in the PAST: a
-# file changed within this window is re-hashed next time instead of trusted.
-# (The same "racily clean" rule Git applies to its stat cache.) One second is far
-# above any plausible tick, and the cost is only re-hashing a just-written file.
-_RACY_WINDOW_NS = 1_000_000_000
-
-
-def _change_token(path, st):
-    """A tamper-visible identity for one file, or None when none is available."""
-    base = (int(st.st_size), int(getattr(st, "st_mtime_ns", 0)),
-            int(getattr(st, "st_dev", 0)), int(getattr(st, "st_ino", 0)))
-    if os.name != "nt":
-        return None                # no verified change signal -> never memoize
-    change_time = _windows_change_time(path)
-    return None if change_time is None else base + (change_time,)
-
-
-_WIN32_METADATA = None
-
-
-def _win32_metadata_api():
-    """``(ctypes, kernel32, FILE_BASIC_INFO, INVALID_HANDLE)`` or None. Built once,
-    lazily: ctypes stays off every non-Windows and non-fingerprint path."""
-    global _WIN32_METADATA
-    if _WIN32_METADATA is None:
-        _WIN32_METADATA = False
-        if os.name == "nt":
-            try:
-                import ctypes
-                from ctypes import wintypes
-                k32 = ctypes.WinDLL("kernel32", use_last_error=True)
-                k32.CreateFileW.restype = wintypes.HANDLE
-                k32.CreateFileW.argtypes = [
-                    wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
-                    ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD,
-                    wintypes.HANDLE]
-                k32.GetFileInformationByHandleEx.restype = wintypes.BOOL
-                k32.GetFileInformationByHandleEx.argtypes = [
-                    wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
-                k32.CloseHandle.argtypes = [wintypes.HANDLE]
-
-                class FILE_BASIC_INFO(ctypes.Structure):
-                    _fields_ = [("CreationTime", ctypes.c_longlong),
-                                ("LastAccessTime", ctypes.c_longlong),
-                                ("LastWriteTime", ctypes.c_longlong),
-                                ("ChangeTime", ctypes.c_longlong),
-                                ("FileAttributes", wintypes.DWORD)]
-
-                invalid = ctypes.cast(wintypes.HANDLE(-1), ctypes.c_void_p).value
-                _WIN32_METADATA = (ctypes, k32, FILE_BASIC_INFO, invalid)
-            except (OSError, AttributeError, ValueError) as e:
-                log.warning("content identity: no Windows change token available "
-                            "(%s: %s); source digests will be recomputed",
-                            type(e).__name__, e)
-    return _WIN32_METADATA or None
-
-
-def _windows_change_time(path):
-    """FILE_BASIC_INFO.ChangeTime for `path` (None when it can't be read).
-
-    Measured cheaper than ``os.stat`` (one metadata handle, no path
-    re-resolution), so validating the memo costs nothing next to the v1 stat walk
-    it replaces."""
-    api = _win32_metadata_api()
-    if api is None:
-        return None
-    ctypes, k32, basic_info, invalid = api
-    # 0 access + share-all + FILE_FLAG_BACKUP_SEMANTICS: metadata only, never
-    # blocking a workbook another process has open.
-    handle = k32.CreateFileW(str(path), 0, 7, None, 3, 0x02000000, None)
-    if not handle or handle == invalid:
-        return None
-    try:
-        info = basic_info()
-        if not k32.GetFileInformationByHandleEx(
-                handle, 0, ctypes.byref(info), ctypes.sizeof(info)):
-            return None
-        return int(info.ChangeTime)
-    finally:
-        k32.CloseHandle(handle)
-
-
-def _memoizable(token):
-    """True when `token`'s change stamp is old enough to be trusted (see
-    ``_RACY_WINDOW_NS``). A token with no change stamp is never memoizable."""
-    if token is None:
-        return False
-    changed_ns = (token[-1] - _FILETIME_EPOCH_TICKS) * 100
-    return (time.time_ns() - changed_ns) > _RACY_WINDOW_NS
+# The token machinery and the memo itself live in the stdlib-only leaf
+# `content_token`, so the other content-identity readers (the published
+# comparison members, the TSN library workbook) share ONE memo with this one.
+# The names below are the established surface here and stay bound to it.
+_HASH_BLOCK = content_token.HASH_BLOCK
+_DIGEST_MEMO = content_token.MEMO
+_DIGEST_MEMO_MAX = content_token.MEMO_MAX
+_FILETIME_EPOCH_TICKS = content_token.FILETIME_EPOCH_TICKS
+_RACY_WINDOW_NS = content_token.RACY_WINDOW_NS
+_change_token = content_token.change_token
+_windows_change_time = content_token.windows_change_time
+_memoizable = content_token.memoizable
 
 
 def content_digest(path):
@@ -1972,13 +1929,13 @@ def content_digest(path):
 
     Raises OSError when the file cannot be read — callers turn that into the
     ``_UNREADABLE`` fingerprint rather than a silent match."""
-    path = Path(path)
-    token = _change_token(path, path.stat())
-    key = os.path.normcase(str(path))
-    if token is not None:
-        cached = _DIGEST_MEMO.get(key)
-        if cached is not None and cached[0] == token:
-            return cached[1]
+    path = os.fspath(path)
+    # `path_token` is `_change_token(path, os.stat(path))` read through one
+    # handle; an unreadable file has no token and the open below raises for it.
+    token = content_token.path_token(path)
+    cached = content_token.lookup(path, token)
+    if cached is not None:
+        return cached
     digest = hashlib.sha256()
     with open(path, "rb") as f:
         while True:
@@ -1988,14 +1945,8 @@ def content_digest(path):
             digest.update(block)
     value = digest.hexdigest()
     if token is not None and _memoizable(token):
-        try:
-            after = _change_token(path, path.stat())
-        except OSError:  # silent-ok: an unstattable file is simply not memoized
-            after = None
-        if after == token:
-            if len(_DIGEST_MEMO) >= _DIGEST_MEMO_MAX:
-                _DIGEST_MEMO.clear()   # bounded: a cleared memo only costs a re-hash
-            _DIGEST_MEMO[key] = (token, value)
+        if content_token.path_token(path) == token:
+            content_token.remember(path, token, value)
     return value
 
 
@@ -2014,7 +1965,19 @@ def fingerprint(folder):
     The v1 -> v2 schema change makes every fingerprint recorded by an older build
     compare unequal, so each cell and consolidated workbook reads stale exactly
     ONCE and rebuilds against content identity (the required metadata-only
-    migration)."""
+    migration).
+
+    Inside a `read_scope` one folder is fingerprinted once."""
+    cache = getattr(_READ_SCOPE, "cache", None)
+    if cache is None:
+        return _fingerprint_now(folder)
+    key = ("fingerprint", os.path.normcase(str(folder)))
+    if key not in cache:
+        cache[key] = _fingerprint_now(folder)
+    return cache[key]
+
+
+def _fingerprint_now(folder):
     folder = Path(folder)
     try:
         # scandir (not iterdir): the name filter and is_file() test come from

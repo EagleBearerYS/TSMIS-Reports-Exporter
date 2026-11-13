@@ -2,7 +2,16 @@
 
 A single-screen marketing/landing page for TSMIS Reports Exporter, served by
 **GitHub Pages** from the **`gh-pages`** branch at
-`https://yunusshaikh7.github.io/TSMIS-Reports-Exporter/`.
+`https://eaglebearerys.github.io/TSMIS-Reports-Exporter/`.
+
+> **The address moved with the account rename (2026-10-12).** A GitHub Pages site
+> lives under the owner's name and, unlike a repository, an old Pages address does
+> NOT redirect: `yunusshaikh7.github.io/TSMIS-Reports-Exporter/` stopped working
+> that day. Checked 2026-11-13: Pages reports the site built at the new address,
+> while the repository's own *Website* field still showed the old one — and the
+> page's canonical link, Open Graph URL, sitemap and Search Console property were
+> written for the old address. Re-point those on the `gh-pages` branch and in the
+> repository settings before sharing the link.
 
 It is deliberately **separate from `main`**: `gh-pages` is an orphan branch that
 holds *only* the site, so the app code and the `docs/` knowledge library never mix
@@ -69,7 +78,7 @@ silently blocked by Chromium (fixed v0.21.0; see `docs/lessons.md` §12).
   indexing* + submit `sitemap.xml`). This is the real indexing lever.
 - **Caveat:** `robots.txt` on a *project* page (`/TSMIS-Reports-Exporter/robots.txt`)
   is **not authoritative** — crawlers only honor `robots.txt` at the domain root
-  (`yunusshaikh7.github.io/robots.txt`, which belongs to the user site). It's
+  (`eaglebearerys.github.io/robots.txt`, which belongs to the user site). It's
   harmless here; the Search Console submission is what counts.
 
 ## Conventions

@@ -132,6 +132,10 @@ function makeMockApi() {
         label: "ARS / Test", status: "denied", checked_at: "09:14",
         detail: "Authenticated but not in the TSMIS group.", url: "", reports: {} },
     },
+    // '<src>-<env>' -> the TSMIS site its next export comes from: the tag the
+    // Export tab's "Saves to" line puts on today's run folder.
+    site_hosts: { "ssor-prod": "dev", "ssor-test": "dev", "ssor-dev": "dev",
+                  "ars-prod": "dev", "ars-test": "dev", "ars-dev": "dev" },
     matrix: null,
     matrix_queue: [],            // v0.16.0 pending jobs
     matrix_current: null,        // v0.16.0 running job
@@ -1958,9 +1962,28 @@ function makeMockApi() {
     set_matrix_report: async (rk, visible) => {
       const hidden = new Set(st.matrix_hidden || []);
       if (visible) hidden.delete(rk); else hidden.add(rk);
-      if (hidden.size >= 5) return { error: "Keep at least one report on the matrix." };
       st.matrix_hidden = [...hidden];
       return { ok: true, hidden: st.matrix_hidden };
+    },
+    // Add all / Remove all for one matrix's report rows. The row keys come from
+    // that matrix's own mock snapshot, so this cannot drift from what it draws.
+    set_matrix_reports_all: async (which, visible) => {
+      const store = {
+        everything: ["matrix_info", "matrix_hidden"],
+        day: ["day_matrix_info", "day_matrix_hidden"],
+        baseline: ["baseline_matrix_info", "baseline_matrix_hidden"],
+        pve: ["pve_matrix_info", "pve_matrix_hidden"],
+        arcgis: ["arcgis_matrix_info", "arcgis_matrix_hidden"],
+        three_way: ["three_way_matrix_info", "three_way_matrix_hidden"],
+        three_day: ["three_day_matrix_info", "three_day_matrix_hidden"],
+      }[which];
+      if (!store) return { error: "Unknown matrix." };
+      const snap = await mockApi[store[0]]();
+      const keys = (snap.all_rows || []).map((r) => r.key);
+      const hidden = new Set(st[store[1]] || []);
+      keys.forEach((k) => { if (visible) hidden.delete(k); else hidden.add(k); });
+      st[store[1]] = [...hidden];
+      return { ok: true, hidden: st[store[1]] };
     },
     set_matrix_row_order: async (keys) => {
       st.matrix_row_order = (keys || []).filter((k) => typeof k === "string");
@@ -2662,7 +2685,6 @@ function makeMockApi() {
     set_three_way_matrix_report: async (rk, visible) => {
       const hidden = new Set(st.three_way_matrix_hidden || []);
       if (visible) hidden.delete(rk); else hidden.add(rk);
-      if (hidden.size >= MOCK_TW_ROWS.length) return { error: "Keep at least one report on the matrix." };
       st.three_way_matrix_hidden = [...hidden];
       return { ok: true, hidden: st.three_way_matrix_hidden };
     },
@@ -2731,7 +2753,6 @@ function makeMockApi() {
     set_three_day_matrix_report: async (rk, visible) => {
       const hidden = new Set(st.three_day_matrix_hidden || []);
       if (visible) hidden.delete(rk); else hidden.add(rk);
-      if (hidden.size >= MOCK_TD_ROWS.length) return { error: "Keep at least one report on the matrix." };
       st.three_day_matrix_hidden = [...hidden];
       return { ok: true, hidden: st.three_day_matrix_hidden };
     },

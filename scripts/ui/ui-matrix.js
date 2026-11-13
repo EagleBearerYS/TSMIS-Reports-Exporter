@@ -460,7 +460,10 @@ function mxCellContent(cmp, tsnMeta) {
                     + "was written, so the cell is not certified. Build it to "
                     + "produce the workbook and a certified result." };
   }
-  if (!cmp.built) return { cls: "mx-stale", main: "compare", sub: "not built yet" };
+  // Nothing is missing — the comparison simply has not been built. Its own class,
+  // not `mx-stale`: a stale cell strikes its number through, and striking through
+  // the prompt read as "cannot compare".
+  if (!cmp.built) return { cls: "mx-unbuilt", main: "not built", sub: "build it to compare" };
   const d = Number.isFinite(cmp.diff_cells) ? cmp.diff_cells : null;
   const os = Number.isFinite(cmp.one_sided) ? cmp.one_sided : null;
   if (cmp.completion === "partial" && d != null && os != null) {
@@ -511,6 +514,50 @@ function mxHeadBtn(iconName, title, extra, onClick) {
   b.title = title; b.setAttribute("aria-label", title);
   b.appendChild(icon(iconName)); b.onclick = onClick;
   return b;
+}
+
+// The trash button on a column header. It takes the column off the matrix and
+// nothing else — the tooltip says so, because a trash can reads as "delete my
+// files" — and it shows the bridge's refusal (a column whose job is still
+// running stays put), which every caller used to drop on the floor.
+function mxRemoveColumnBtn(label, remove, rerender) {
+  return mxHeadBtn("i-trash",
+    `Take the ${label} column off the matrix (its exports and comparisons are kept)`,
+    "mxch-rm", async () => {
+      const r = await remove();
+      if (r && r.error) showMessage("error", "Can't remove the column", r.error);
+      await rerender();
+    });
+}
+
+// A snapshot that came back as an error (the bridge turns any exception into
+// one): say so in the grid. Every renderer used to carry on into `snap.rows` and
+// leave a blank grid with nothing wired and nothing said.
+function mxSnapshotFailed(grid, snap) {
+  if (!snap || !snap.error) return false;
+  grid.style.gridTemplateColumns = ""; grid.style.gridTemplateRows = "";
+  grid.textContent = "";
+  const empty = document.createElement("div");
+  empty.className = "dm-empty";
+  empty.textContent = "This matrix could not be read: " + snap.error
+    + " Open another tab and come back to try again; if it keeps happening, send the "
+    + "log files (Logs, bottom right).";
+  grid.appendChild(empty);
+  return true;
+}
+
+// Stop all cancels the running job AND empties the queue — hours of work on a
+// statewide run — so it asks first. Clear queued (jobs not yet started) does not.
+async function confirmStopAll() {
+  const waiting = ((S.st && S.st.matrix_queue) || []).length;
+  const ok = await showConfirm({
+    title: "Stop everything?",
+    message: "This stops the job that is running"
+      + (waiting ? ` and drops the ${waiting} waiting in the queue` : "")
+      + ". What has already been saved is kept; the rest can be started again later.",
+    confirmLabel: "Stop all",
+  });
+  if (ok) api.matrix_stop_all();
 }
 
 function mxHeaderBtns(label, onReexport, onRebuild) {
@@ -588,7 +635,7 @@ function mxTsnPicker(tm, locked, rerender) {
       + "\nNot consolidated yet — Consolidate to build one TSN workbook.";
   } else {
     name.textContent = "No TSN file";
-    name.title = "Choose a TSN workbook, or drop district PDFs into the TSN input folder and consolidate.";
+    name.title = "Choose a TSN workbook here, or import this report's TSN files under Settings ▸ TSN reports.";
   }
   fileLine.append(dot, name);
   wrap.appendChild(fileLine);
@@ -696,19 +743,90 @@ function mxToggleChip(label, isOn, title, locked, commit, rerender) {
   return b;
 }
 
+// The Reports group of a matrix's options corner: how many reports are on the
+// matrix, Add all / Remove all, then one chip per report. Every matrix draws it
+// through here, so the seven corners cannot drift apart.
+//
+// Remove all exists because narrowing a 22-row matrix to the two or three reports
+// wanted used to take one click — and one full re-render — per report taken off.
+// It leaves the grid empty on purpose (see mxNoRows); the next step is to click
+// the chips wanted.
+//
+// `which` names the matrix for the one bulk endpoint; `setOne(key, next)` is that
+// matrix's own per-row endpoint. `opts.suffix(r)` adds to a chip's label and
+// `opts.tip(r)` to its tooltip. The two bulk buttons carry the chips' `.mx-toggle`
+// hook deliberately: every matrix's lock sweep already greys that class while a
+// job runs, and they have no other reason to be disabled.
+function mxReportToggles(hostId, which, snap, locked, setOne, rerender, opts) {
+  const host = $(hostId);
+  if (!host) return;
+  opts = opts || {};
+  host.textContent = "";
+  const all = snap.all_rows || [];
+  const hidden = new Set(snap.hidden || []);
+  const shown = all.filter((r) => !hidden.has(r.key)).length;
+
+  // How many are on, beside the group's own "Reports" label (the queue group's
+  // "(2 waiting)" does the same), so the two buttons keep one line to themselves.
+  const label = host.previousElementSibling;
+  if (label && label.classList.contains("mc-label")) {
+    let count = label.querySelector(".mx-queue-count");
+    if (!count) {
+      count = document.createElement("span");
+      count.className = "mx-queue-count";
+      label.append(" ", count);
+    }
+    count.textContent = `(${shown} of ${all.length} shown)`;
+  }
+
+  const bar = document.createElement("div");
+  bar.className = "mx-bulk";
+  const bulk = (text, iconName, title, visible) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "mx-toggle mx-toggle-all";
+    b.title = title; b.disabled = locked;
+    b.append(icon(iconName), Object.assign(document.createElement("span"), { textContent: text }));
+    b.onclick = () => mxBusyClick(b, async () => {
+      const r = await api.set_matrix_reports_all(which, visible);
+      if (r && r.error) { showMessage("error", "Can't change the reports", r.error); return; }
+      await rerender();
+    });
+    return b;
+  };
+  bar.append(
+    bulk("Add all", "i-check", "Put every report back on this matrix", true),
+    bulk("Remove all", "i-x",
+      "Take every report off this matrix, then click the ones you want. "
+      + "Nothing is deleted — exports and comparisons stay where they are.", false));
+  host.appendChild(bar);
+
+  all.forEach((r) => {
+    const isOn = !hidden.has(r.key);
+    host.appendChild(mxToggleChip(
+      r.label + (opts.suffix ? opts.suffix(r) : ""), isOn,
+      (isOn ? "Remove " : "Add ") + r.label + (opts.tip ? opts.tip(r) : ""), locked,
+      (next) => setOne(r.key, next), rerender));
+  });
+}
+
+// Every report is off the matrix (Remove all, or the last chip). Say so, and
+// where the reports are, rather than drawing a header row over nothing.
+function mxNoRows(grid) {
+  grid.style.gridTemplateColumns = ""; grid.style.gridTemplateRows = "";
+  grid.textContent = "";
+  const empty = document.createElement("div");
+  empty.className = "dm-empty";
+  empty.textContent = "No reports on this matrix. Click the ones you want under "
+    + "Matrix options ▸ Reports, or Add all.";
+  grid.appendChild(empty);
+}
+
 // Config zone (bottom-right): report + environment show/hide toggles + the global
 // "set all comparisons to…" control.
 function renderMatrixConfig(snap, locked) {
-  const rtog = $("matrixReportToggles");
-  if (rtog) {
-    rtog.textContent = "";
-    const hidden = new Set(snap.hidden || []);
-    (snap.all_rows || []).forEach((r) => {
-      const isOn = !hidden.has(r.key);
-      rtog.appendChild(mxToggleChip(r.label, isOn, (isOn ? "Hide " : "Show ") + r.label, locked,
-        (next) => api.set_matrix_report(r.key, next), renderMatrix));
-    });
-  }
+  mxReportToggles("matrixReportToggles", "everything", snap, locked,
+    (key, next) => api.set_matrix_report(key, next), renderMatrix);
   const etog = $("matrixEnvToggles");
   if (etog) {
     etog.textContent = "";
@@ -859,19 +977,19 @@ async function renderMatrix() {
   let snap;
   try { snap = await api.matrix_info(); } catch (e) { return; }
   if (seq !== _matrixRenderSeq) return;   // a newer render started; drop this one
+  if (mxSnapshotFailed(grid, snap)) return;
   if (!snap || !snap.rows) return;
   const envs = snap.envs, locked = !!(S.st && S.st.task);
-  // All rows or all columns hidden (only reachable via a hand-edited config — the
-  // bridge keeps at least one of each): show guidance instead of a blank grid, but
-  // still render the config zone so the user can turn something back on.
+  // No rows (Remove all, or the last report chip) or no columns (only reachable
+  // via a hand-edited config — the bridge keeps one environment on): say so
+  // instead of drawing a blank grid, and still render the config zone so
+  // something can be turned back on.
   if (!snap.rows.length || !envs.length) {
-    grid.style.gridTemplateColumns = ""; grid.style.gridTemplateRows = "";
-    grid.textContent = "";
-    const empty = document.createElement("div");
-    empty.className = "dm-empty";
-    empty.textContent = (!snap.rows.length ? "All reports" : "All environments")
-      + " are hidden — turn one back on under Matrix options.";
-    grid.appendChild(empty);
+    mxNoRows(grid);
+    if (snap.rows.length) {
+      grid.firstChild.textContent =
+        "All environments are hidden — turn one back on under Matrix options.";
+    }
     renderMatrixConfig(snap, locked);
     updateMatrixProgress();
     return;
@@ -998,13 +1116,13 @@ async function renderMatrix() {
       acts.appendChild(mxActBtn("i-refresh", "Re-export this report for this environment (live)",
         false, async () => {
           const r = await api.refresh_cell_export(rk, env);
-          if (r && r.error) showMessage("error", "Can't refresh", r.error);
+          if (r && r.error) showMessage("error", "Can't re-export", r.error);
         }));
       const supported = cmp && cmp.supported !== false;
       if (cmp !== null && supported) {
         acts.appendChild(mxActBtn("i-compare", "Rebuild this comparison", false, async () => {
           const r = await api.refresh_cell_comparison(rk, env);
-          if (r && r.error) showMessage("error", "Can't compare", r.error);
+          if (r && r.error) showMessage("error", "Can't rebuild", r.error);
         }));
         if (cmp.built) {
           const ob = mxActBtn("i-external", "Open this comparison workbook (values copy)",
@@ -1076,7 +1194,7 @@ async function renderMatrix() {
   if (btn) btn.onclick = async () => {
     const r = await api.recompute_matrix("stale");
     if (r && r.nothing) showMessage("info", "Up to date", "Every comparison is current.");
-    else if (r && r.error) showMessage("error", "Can't refresh", r.error);
+    else if (r && r.error) showMessage("error", "Can't rebuild", r.error);
   };
   const openFolderBtn = $("btnOpenComparisons");
   if (openFolderBtn) openFolderBtn.onclick = async () => {
@@ -1106,7 +1224,7 @@ async function renderDayMatrix() {
   let snap;
   try { snap = await api.day_matrix_info(); } catch (e) { return; }
   if (seq !== _dayRenderSeq) return;      // a newer render started; drop this one
-  if (!snap) return;
+  if (!snap || mxSnapshotFailed(grid, snap)) return;
   const days = snap.days || [], locked = !!(S.st && S.st.task);
   const today = snap.today;          // the one EXPORTABLE column (past = locked)
   grid.dataset.srcEnv = snap.source_env || snap.source || "";   // env-access flags key on the source env
@@ -1167,19 +1285,18 @@ async function renderDayMatrix() {
   // Report show/hide toggles (parity with the Everything matrix's config zone).
   // The " (soon)" suffix below is defensive — every report is wired as of v0.17.0,
   // so it only renders if a future report ships before its by-day comparator does.
-  const rtog = $("dayMatrixReportToggles");
-  if (rtog) {
-    rtog.textContent = "";
-    const hidden = new Set(snap.hidden || []);
-    (snap.all_rows || []).forEach((r) => {
-      const isOn = !hidden.has(r.key);
-      rtog.appendChild(mxToggleChip(r.label + (r.supported ? "" : " (soon)"), isOn,
-        (isOn ? "Hide " : "Show ") + r.label, locked,
-        (next) => api.set_day_matrix_report(r.key, next), renderDayMatrix));
-    });
-  }
+  mxReportToggles("dayMatrixReportToggles", "day", snap, locked,
+    (key, next) => api.set_day_matrix_report(key, next), renderDayMatrix,
+    { suffix: (r) => (r.supported ? "" : " (soon)") });
+  _dayExportRows = (snap.rows || []).filter((rk) => (snap.row_supported || {})[rk]).length;
 
   grid.textContent = "";
+  if (!snap.rows.length) {
+    mxNoRows(grid);
+    wireDayMatrixFooter();
+    updateDayMatrixProgress();
+    return;
+  }
   if (!days.length) {
     grid.style.gridTemplateColumns = ""; grid.style.gridTemplateRows = "";
     const empty = document.createElement("div");
@@ -1213,10 +1330,7 @@ async function renderDayMatrix() {
     if (d === today && exportable) {
       btns.appendChild(mxHeadBtn("i-refresh",
         `Export every report for ${d} (today) from TSMIS, then compare vs TSN`,
-        "mxch-reexport", async () => {
-          const r = await api.export_day_column();
-          if (r && r.error) showMessage("error", "Can't export", r.error);
-        }));
+        "mxch-reexport", exportDayColumn));
     }
     btns.append(
       mxHeadBtn("i-compare", `Rebuild every report for ${d}`, "mxch-rebuild", async () => {
@@ -1224,9 +1338,7 @@ async function renderDayMatrix() {
         if (r && r.nothing) showMessage("info", "Nothing to rebuild", "No comparable cells in this day.");
         else if (r && r.error) showMessage("error", "Can't rebuild", r.error);
       }),
-      mxHeadBtn("i-trash", `Remove the ${d} column`, "mxch-rm", async () => {
-        await api.remove_day_matrix_day(d); await renderDayMatrix();
-      }));
+      mxRemoveColumnBtn(d, () => api.remove_day_matrix_day(d), renderDayMatrix));
     h.appendChild(btns);
     dndAttach(h, h, d, "dm-day", "x", () => days.slice(), async (order) => {
       const r = await api.set_day_matrix_day_order(order);
@@ -1376,6 +1488,30 @@ function dmConsolidatedBadge(date, state) {
   return b;
 }
 
+// "Export today →" and today's column button pull EVERY report on the matrix
+// from TSMIS, every route — hours at statewide scale — so they ask first, as the
+// Everything matrix's row and column re-exports do. One report (a row or a cell)
+// starts straight away. With no report on the matrix there is nothing to confirm:
+// the bridge says so.
+let _dayExportRows = 0;      // how many reports today's column would export
+async function exportDayColumn() {
+  const n = _dayExportRows;
+  if (n > 0) {
+    const ok = await showConfirm({
+      title: "Export today's column?",
+      message: `This exports ${n === 1 ? "the 1 report" : `all ${n} reports`} on this matrix `
+        + "live from TSMIS, every route, then consolidates and compares each one. "
+        + "It can take hours, and runs as a queued job you can reorder or cancel."
+        + "\n\nTo export fewer, take the others off under Matrix options ▸ Reports first."
+        + "\n\nStart it?",
+      confirmLabel: "Export",
+    });
+    if (!ok) return;
+  }
+  const r = await api.export_day_column();
+  if (r && r.error) showMessage("error", "Can't export", r.error);
+}
+
 function wireDayMatrixFooter() {
   const ba = $("btnDayBuildAll");
   if (ba) ba.onclick = async () => {
@@ -1395,10 +1531,7 @@ function wireDayMatrixFooter() {
     if (r && r.error) showMessage("error", "Can't open", r.error);
   };
   const ex = $("btnDayExportToday");
-  if (ex) ex.onclick = async () => {
-    const r = await api.export_day_column();
-    if (r && r.error) showMessage("error", "Can't export", r.error);
-  };
+  if (ex) ex.onclick = exportDayColumn;
   const cb = $("btnDayCancel");
   if (cb) cb.onclick = () => api.cancel_run();
   const pb = $("btnDayPause");
@@ -1490,7 +1623,7 @@ async function renderBaselineMatrix() {
   let snap;
   try { snap = await api.baseline_matrix_info(); } catch (e) { return; }
   if (seq !== _blRenderSeq) return;       // a newer render started; drop this one
-  if (!snap) return;
+  if (!snap || mxSnapshotFailed(grid, snap)) return;
   const days = snap.days || [], locked = !!(S.st && S.st.task);
   const bl = snap.baseline || {};
 
@@ -1564,19 +1697,17 @@ async function renderBaselineMatrix() {
     });
   }
 
-  const rtog = $("baselineMatrixReportToggles");
-  if (rtog) {
-    rtog.textContent = "";
-    const hidden = new Set(snap.hidden || []);
-    (snap.all_rows || []).forEach((r) => {
-      const isOn = !hidden.has(r.key);
-      rtog.appendChild(mxToggleChip(r.label + (r.supported ? "" : " (soon)"), isOn,
-        (isOn ? "Hide " : "Show ") + r.label, locked,
-        (next) => api.set_baseline_matrix_report(r.key, next), renderBaselineMatrix));
-    });
-  }
+  mxReportToggles("baselineMatrixReportToggles", "baseline", snap, locked,
+    (key, next) => api.set_baseline_matrix_report(key, next), renderBaselineMatrix,
+    { suffix: (r) => (r.supported ? "" : " (soon)") });
 
   grid.textContent = "";
+  if (!snap.rows.length) {
+    mxNoRows(grid);
+    wireBaselineMatrixFooter();
+    updateBaselineMatrixProgress();
+    return;
+  }
   if (!days.length) {
     grid.style.gridTemplateColumns = ""; grid.style.gridTemplateRows = "";
     const empty = document.createElement("div");
@@ -1614,9 +1745,7 @@ async function renderBaselineMatrix() {
           }));
     }
     btns.appendChild(
-      mxHeadBtn("i-trash", `Remove the ${d} column`, "mxch-rm", async () => {
-        await api.remove_baseline_matrix_day(d); await renderBaselineMatrix();
-      }));
+      mxRemoveColumnBtn(d, () => api.remove_baseline_matrix_day(d), renderBaselineMatrix));
     h.appendChild(btns);
     dndAttach(h, h, d, "bl-day", "x", () => days.slice(), async (order) => {
       const r = await api.set_baseline_matrix_day_order(order);
@@ -1789,7 +1918,7 @@ async function renderPveMatrix() {
   let snap;
   try { snap = await api.pve_matrix_info(); } catch (e) { return; }
   if (seq !== _pveRenderSeq) return;      // a newer render started; drop this one
-  if (!snap) return;
+  if (!snap || mxSnapshotFailed(grid, snap)) return;
   const days = snap.days || [], locked = !!(S.st && S.st.task);
 
   const srcSel = $("pveMatrixSource");
@@ -1836,19 +1965,16 @@ async function renderPveMatrix() {
     });
   }
 
-  const rtog = $("pveMatrixReportToggles");
-  if (rtog) {
-    rtog.textContent = "";
-    const hidden = new Set(snap.hidden || []);
-    (snap.all_rows || []).forEach((r) => {
-      const isOn = !hidden.has(r.key);
-      rtog.appendChild(mxToggleChip(r.label, isOn,
-        (isOn ? "Hide " : "Show ") + r.label, locked,
-        (next) => api.set_pve_matrix_report(r.key, next), renderPveMatrix));
-    });
-  }
+  mxReportToggles("pveMatrixReportToggles", "pve", snap, locked,
+    (key, next) => api.set_pve_matrix_report(key, next), renderPveMatrix);
 
   grid.textContent = "";
+  if (!snap.rows.length) {
+    mxNoRows(grid);
+    wirePveMatrixFooter();
+    updatePveMatrixProgress();
+    return;
+  }
   if (!days.length) {
     grid.style.gridTemplateColumns = ""; grid.style.gridTemplateRows = "";
     const empty = document.createElement("div");
@@ -1883,9 +2009,7 @@ async function renderPveMatrix() {
           if (r && r.nothing) showMessage("info", "Nothing to rebuild", "No comparable cells in this day.");
           else if (r && r.error) showMessage("error", "Can't rebuild", r.error);
         }),
-      mxHeadBtn("i-trash", `Remove the ${d} column`, "mxch-rm", async () => {
-        await api.remove_pve_matrix_day(d); await renderPveMatrix();
-      }));
+      mxRemoveColumnBtn(d, () => api.remove_pve_matrix_day(d), renderPveMatrix));
     h.appendChild(btns);
     dndAttach(h, h, d, "pve-day", "x", () => days.slice(), async (order) => {
       const r = await api.set_pve_matrix_day_order(order);

@@ -84,12 +84,7 @@ def _cell(ws, st, value, font=None, fill=None, align=None):
 
 def _plain(ws, value):
     """A bare value for the hot path — only formula-looking text needs a cell."""
-    if isinstance(value, str) and core.is_formula_injection(value):
-        from openpyxl.cell import WriteOnlyCell
-        c = WriteOnlyCell(ws, value=value)
-        c.data_type = "s"
-        return c
-    return value
+    return core.plain_value(ws, value)
 
 
 def _link(ws, st, row):
@@ -537,6 +532,7 @@ def _write_grid(wb, st, sc, rows, compared, days, events):
     ws.freeze_panes = "C3"
     labels = grid_labels(sc, days)
     _widths(ws, GRID_LEAD_WIDTHS + field_widths(sc))
+    sink = core._SheetRows(ws)           # the widths above are declared by now
     ws.append(_grid_legend(ws, st, sc, days))
     ws.append(_header(ws, st, labels, grey=shown_only(sc)))
     ws.auto_filter.ref = (f"A{GRID_FIRST_ROW - 1}:{get_column_letter(len(labels))}"
@@ -557,27 +553,36 @@ def _write_grid(wb, st, sc, rows, compared, days, events):
                 on_2 = changed
             elif presence == "d23":
                 on_3 = changed
-        out = [_plain(ws, _route_of(rows, rec)), _plain(ws, compared.locations[k]),
-               (_cell(ws, st, td.presence_short(presence, days), st.font[tone],
-                      st.fill[tone]) if tone else td.presence_short(presence, days)),
-               changed, on_2, on_3]
-        if not changed:
-            # Nothing differs: every cell is the newest day's own text.
-            newest = next(trim[d][rec[d]] for d in (2, 1, 0) if rec[d] is not None)
-            out.extend(_plain(ws, v) for v in newest[1:])
-            ws.append(out)
-            continue
-        for f, code in enumerate(state):
-            texts = td.texts_of(trim, rec, f)
-            text = grid_text(code, texts)
-            if code == "D":
-                out.append(_cell(ws, st, text, st.font["two"], st.fill["two"]))
-            elif code in td.CHANGED_CODES:
-                cls = td.CLASS_OF[code]
-                out.append(_cell(ws, st, text, st.font[cls], st.fill[cls]))
+        label = td.presence_short(presence, days)
+
+        def fill_row(put, plain, k=k, rec=rec, state=state, tone=tone, label=label,
+                     changed=changed, on_2=on_2, on_3=on_3):
+            plain(_route_of(rows, rec))
+            plain(compared.locations[k])
+            if tone:
+                put(label, st.font[tone], fill=st.fill[tone], guard=True)
             else:
-                out.append(_plain(ws, text))
-        ws.append(out)
+                plain(label, False)          # the writer's own label, as it is
+            plain(changed, False)
+            plain(on_2, False)
+            plain(on_3, False)
+            if not changed:
+                # Nothing differs: every cell is the newest day's own text.
+                newest = next(trim[d][rec[d]] for d in (2, 1, 0) if rec[d] is not None)
+                for v in newest[1:]:
+                    plain(v)
+                return
+            for f, code in enumerate(state):
+                text = grid_text(code, td.texts_of(trim, rec, f))
+                if code == "D":
+                    put(text, st.font["two"], fill=st.fill["two"], guard=True)
+                elif code in td.CHANGED_CODES:
+                    cls = td.CLASS_OF[code]
+                    put(text, st.font[cls], fill=st.fill[cls], guard=True)
+                else:
+                    plain(text)
+
+        sink.row_mixed(fill_row)
 
 
 # --------------------------------------------------------------------------- #

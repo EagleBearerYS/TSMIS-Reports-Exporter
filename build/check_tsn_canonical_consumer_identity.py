@@ -603,7 +603,7 @@ def test_capture_carries_its_source_record():
                   "identity": {"report_id": "OTM22270",
                                "event_id": "4843742",
                                "reference_date": "09/15/2025",
-                               "submitter": "TRLBUGNI",
+                               "submitter": "TRXXXXXX",
                                "generated_time": "09/15/25 08:12",
                                "location_criteria": "STATEWIDE"}}
         identity = tsn_library.normalized_workbook_identity(library)

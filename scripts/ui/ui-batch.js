@@ -25,7 +25,17 @@ function renderBatchResume(resume) {
   rb.disabled = locked; rb.onclick = () => api.resume_batch();
   const db = document.createElement("button");
   db.className = "btn btn-subtle"; db.textContent = "Discard";
-  db.disabled = locked; db.onclick = () => api.discard_batch();
+  db.disabled = locked;
+  db.onclick = async () => {
+    // Discard forgets the saved batch for good, in one click — ask first.
+    const ok = await showConfirm({
+      title: "Discard the unfinished batch?",
+      message: "The environments it already finished keep their files. The ones "
+        + "left will not be exported unless you start a new run.",
+      confirmLabel: "Discard",
+    });
+    if (ok) api.discard_batch();
+  };
   row.append(rb, db);
   el.append(msg, row);
 }

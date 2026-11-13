@@ -26,6 +26,26 @@ def _api_method(fn):
     return wrapper
 
 
+def _snapshot_endpoint(fn):
+    """A read-only js_api endpoint that returns a matrix snapshot: `_api_method`
+    plus one `artifact_store.read_scope`, so the snapshot, its add-day picker and
+    its day tags read each export folder ONCE between them instead of once per
+    question. Never use it on an endpoint that builds or writes: a build's
+    freshness checks must read the disk every time."""
+    def scoped(self, *args, **kwargs):
+        import artifact_store            # lazy: keeps this module import-light
+        import consolidation_meta
+        try:
+            with artifact_store.read_scope():
+                return fn(self, *args, **kwargs)
+        finally:
+            # Whatever this snapshot had to hash or decode is now known; keep it
+            # for the next launch (throttled, and a no-op when nothing is new).
+            consolidation_meta.flush_persistent_caches()
+    scoped.__name__ = fn.__name__
+    return _api_method(scoped)
+
+
 def _task_endpoint(kind):
     """A js_api endpoint that RUNS UNDER the single-task gate (S3 / DUP-03):
     wraps `_api_method`, claims `kind` via `self._claim_task_error` — B8's

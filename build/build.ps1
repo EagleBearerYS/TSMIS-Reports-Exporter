@@ -139,6 +139,25 @@ if ($SelfTest) {
         throw "frozen self-test failed (exit $($proc.ExitCode)) -- see output above"
     }
     Write-Host "==> Frozen self-test PASSED (the EXACT shipped exe runs every code path)."
+
+    # The self-test just RAN the shipped exe from its own folder, so the folder
+    # now holds a first-run data tree: the self-test's log (with this machine's
+    # paths in it) and the empty TSN / ArcGIS library skeletons. The folder is
+    # zipped as-is, so remove them: a release must not carry another machine's
+    # log, and a new copy creates all four on its first launch anyway. (Nothing
+    # of value can be here: PyInstaller rebuilt this folder a moment ago.)
+    foreach ($leftover in @("data", "output", "tsn_library", "arcgis_layers")) {
+        $leftoverPath = Join-Path $AppDir $leftover
+        if (Test-Path -LiteralPath $leftoverPath) {
+            Remove-Item -LiteralPath $leftoverPath -Recurse -Force
+        }
+    }
+    $extras = Get-ChildItem -LiteralPath $AppDir -Force |
+        Where-Object { $_.Name -notin @(("{0}.exe" -f $env:TSMIS_APP_NAME), "_internal", "Start Here.txt", "IT-README.txt") }
+    if ($extras) {
+        throw ("unexpected items left in the app folder after the self-test: " + (($extras | ForEach-Object { $_.Name }) -join ", "))
+    }
+    Write-Host "==> Removed the self-test's first-run data (the folder is exactly the bundle again)."
 }
 
 # --- 6. Optional self-signing (interim) -----------------------------------

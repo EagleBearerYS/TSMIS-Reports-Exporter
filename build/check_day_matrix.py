@@ -440,6 +440,24 @@ def main():
         check("hide a report row ok",
               a.set_day_matrix_report("ramp_summary", False).get("ok"))
         a.set_day_matrix_report("ramp_summary", True)
+        # Remove all: an empty grid that still lists every report, and no job
+        # that would resolve to nothing — "Export today" with no report on the
+        # matrix used to queue, drop without a word and leave an empty column.
+        days_before = settings.get_day_matrix_days()
+        check("Remove all empties the by-day matrix",
+              a.set_matrix_reports_all("day", False).get("ok")
+              and a.day_matrix_info()["rows"] == []
+              and len(a.day_matrix_info()["all_rows"]) == len(day_matrix.row_keys()))
+        gone = a.export_day_column()
+        check("Export today with no report on the matrix is refused, and says why",
+              "no report" in (gone.get("error") or "")
+              and a._coord.current_job is None
+              and settings.get_day_matrix_days() == days_before)
+        check("Build all on the emptied matrix has nothing to do",
+              a.rebuild_day_matrix("all").get("nothing") is True)
+        check("Add all brings every report back",
+              a.set_matrix_reports_all("day", True).get("ok")
+              and set(a.day_matrix_info()["rows"]) == day_matrix.row_keys())
 
         print("gui_api bridge — build/rebuild onto the shared queue:")
         check("build unknown report rejected",

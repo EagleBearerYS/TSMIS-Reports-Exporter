@@ -688,6 +688,30 @@ def test_active_check_soft_busy():
           and a._coord.task == "export")
     a._coord.release()
 
+    # The exclusion is about the browser: a task that never starts one is not
+    # turned away, and it leaves the running check alone.
+    for kind in ("consolidate", "compare", "validate"):
+        a._active_check = True
+        a._active_check_supersede.clear()
+        err = a._claim_task_error(kind)
+        check(f"a {kind} task starts during the check (no browser involved)",
+              err is None and a._coord.task == kind)
+        check(f"...and the {kind} task did not supersede the check",
+              not a._active_check_supersede.is_set())
+        a._coord.release()
+    a._active_check = True
+    a._active_check_supersede.clear()
+    err = a._claim_task_error("consolidate", needs_browser=True)
+    check("the website capture (a browser under the consolidate slot) still waits",
+          bool(err) and "background" in err["error"] and a._coord.task is None
+          and a._active_check_supersede.is_set())
+    for kind in ("batch", "reset"):
+        a._active_check_supersede.clear()
+        err = a._claim_task_error(kind)
+        check(f"a {kind} task still waits for the check",
+              bool(err) and "background" in err["error"] and a._coord.task is None)
+    a._active_check = False
+
 
 
 def test_cancel_never_leaks_to_next_queued_job():

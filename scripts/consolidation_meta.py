@@ -48,6 +48,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Mapping, Optional
 
+import content_token
 import outcome
 import output_state
 from comparison_contract import ArtifactGeneration, AttemptState, ComparisonOutcome
@@ -248,6 +249,10 @@ def _read_meta_pair(consolidated):
     """Return final/sentinel from one layout, preferring any new state entry."""
     final = meta_path(consolidated)
     sentinel = final.with_name(final.name + _COMPARISON_SENTINEL_SUFFIX)
+    # Which layout is read depends on whether EITHER new-layout entry exists, so
+    # both are dependencies of the answer even when the legacy pair is used.
+    _note_dependency(final)
+    _note_dependency(sentinel)
     if os.path.lexists(final) or os.path.lexists(sentinel):
         return final, sentinel
     final = legacy_meta_path(consolidated)
@@ -900,12 +905,65 @@ def _comparison_publication_lease(parent, commit_guard=None):
         local_lock.release()
 
 
+# --------------------------------------------------------------------------- #
+# Dependency capture for `read_comparison_headline`.
+#
+# A strict comparison read consults a small, data-dependent set of files: the
+# workbook, its sidecar and sentinel in whichever layout holds them, every peer
+# member with its own pair, and the payload chunks. While a headline read is in
+# progress, each reader below records the file it is ABOUT to consult together
+# with that file's state at that instant — a change token, or "absent" — so the
+# finished answer can be reused exactly as long as every one of those states
+# still holds. Outside a headline read this is a no-op.
+# --------------------------------------------------------------------------- #
+_DEPENDENCIES = threading.local()
+_ABSENT_STATE = "absent"
+
+
+def _dependency_state(path):
+    """`_ABSENT_STATE`, a change token, or None when the entry cannot be bound."""
+    try:
+        st = os.lstat(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return _ABSENT_STATE
+    except (OSError, ValueError):  # silent-ok: an unbindable entry is never memoized
+        return None
+    return content_token.change_token(path, st)
+
+
+def _note_dependency(path):
+    seen = getattr(_DEPENDENCIES, "seen", None)
+    if seen is None:
+        return
+    text = str(path)
+    key = os.path.normcase(text)
+    if key not in seen:
+        seen[key] = (text, _dependency_state(text))
+
+
 def _bound_file_digest(path):
-    """Return a stable ordinary file's sha256/size/mtime facts, or None."""
+    """Return a stable ordinary file's sha256/size/mtime facts, or None.
+
+    The digest is served from the shared change-token memo when the file's token
+    is the one it was hashed under (CMP-AUD-080's rule, the same memo
+    `artifact_store.content_digest` uses): a matrix snapshot asks for each
+    published workbook's digest three times, and those workbooks run to hundreds
+    of megabytes. Every identity test below still runs on every call; only the
+    read of unchanged bytes is skipped."""
     path = Path(path)
+    _note_dependency(path)
     before = _ordinary_file_stat(path)
     if before is None:
         return None
+    token = content_token.change_token(path, before)
+    cached = content_token.lookup(path, token)
+    if cached is not None:
+        return {
+            "sha256": cached,
+            "size": before.st_size,
+            "mtime_ns": before.st_mtime_ns,
+            "mtime": before.st_mtime,
+        }
     flags = (os.O_RDONLY | getattr(os, "O_BINARY", 0)
              | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NOINHERIT", 0))
     try:
@@ -939,8 +997,11 @@ def _bound_file_digest(path):
             or after.st_size != opened.st_size
             or after.st_mtime_ns != opened.st_mtime_ns):
         return None
+    value = digest.hexdigest()
+    if token is not None and content_token.change_token(path, after) == token:
+        content_token.remember(path, token, value)
     return {
-        "sha256": digest.hexdigest(),
+        "sha256": value,
         "size": opened.st_size,
         "mtime_ns": opened.st_mtime_ns,
         "mtime": opened.st_mtime,
@@ -963,6 +1024,7 @@ def _unique_json_object(pairs):
 def _read_bound_bytes(path, max_bytes, label="sidecar"):
     """Identity-bind and read one bounded ordinary file, or return ``_ABSENT``."""
     path = Path(path)
+    _note_dependency(path)
     before = _ordinary_file_stat(path)
     if before is None:
         try:
@@ -2453,6 +2515,7 @@ def _comparison_mtime_state(meta, workbook):
         built_at = float(built_at)
     except (OverflowError, ValueError):  # silent-ok: malformed mtime is an explicit untrusted state
         return "malformed"
+    _note_dependency(workbook)
     current = _safe_mtime(workbook)
     if not math.isfinite(built_at):
         return "malformed"
@@ -2679,6 +2742,265 @@ def read_comparison_outcome(path) -> Optional[ComparisonSidecarOutcome]:
     if isinstance(final, _ParsedComparison):
         return _validate_comparison_peers(path, final)
     return None
+
+
+@dataclass(frozen=True)
+class ComparisonHeadline:
+    """What a snapshot shows of one published comparison.
+
+    The strict record's trust state plus the handful of typed values a matrix
+    cell renders. It deliberately carries no pairing trace or diagnostics: those
+    can run to megabytes per comparison and no snapshot reads them."""
+    trusted: bool
+    current: bool
+    completion: str
+    skipped_inputs: Optional[int]
+    failed_inputs: Optional[int]
+    diagnostic: Optional[str]
+    source: str
+    verdict: Optional[str] = None
+    differing_cells: Optional[int] = None
+    side_a_only_rows: Optional[int] = None
+    side_b_only_rows: Optional[int] = None
+    typed_completion: Optional[str] = None
+    pairing_quality: Optional[str] = None
+    generation_id: Optional[str] = None
+
+
+_HEADLINE_MEMO = {}                # normcased workbook path -> (dependencies, headline)
+_HEADLINE_MEMO_MAX = 4096
+
+
+def _headline_of(record):
+    if record is None:
+        return None
+    typed = record.comparison_outcome if record.trusted else None
+    generation = record.artifact_generation if record.trusted else None
+    return ComparisonHeadline(
+        trusted=record.trusted,
+        current=record.current,
+        completion=record.completion,
+        skipped_inputs=record.skipped_inputs,
+        failed_inputs=record.failed_inputs,
+        diagnostic=record.diagnostic,
+        source=record.source,
+        verdict=typed.verdict if typed is not None else None,
+        differing_cells=typed.counts.differing_cells if typed is not None else None,
+        side_a_only_rows=typed.counts.side_a_only_rows if typed is not None else None,
+        side_b_only_rows=typed.counts.side_b_only_rows if typed is not None else None,
+        typed_completion=typed.completion if typed is not None else None,
+        pairing_quality=typed.pairing_quality if typed is not None else None,
+        generation_id=generation.generation_id if generation is not None else None,
+    )
+
+
+def read_comparison_headline(path) -> Optional[ComparisonHeadline]:
+    """`read_comparison_outcome`'s verdict for `path`, reduced to what a snapshot
+    renders, and reused while nothing it was read from has changed.
+
+    Every matrix snapshot asked the strict reader about every built cell, and the
+    strict reader hashes each member workbook and decodes the whole typed payload
+    — seconds per snapshot once a few day columns are built. The answer is a pure
+    function of the files the strict reader consults, so it is kept against the
+    change token of each of them (and the absence of each one it found absent).
+    A hit therefore proves the same thing the full read would: same workbook
+    bytes, same sidecars, same payload chunks, no sentinel that was not there.
+
+    The entry is written only when every dependency's state was the same before
+    its file was consulted and after the whole read, and each present file's
+    change stamp is outside the racy window (`content_token.memoizable`). A
+    dependency with no obtainable change token is never memoized, so that path
+    keeps the full read. The first read, and any read after a change, is the
+    strict reader itself."""
+    path = Path(path)
+    key = os.path.normcase(str(path))
+    entry = _HEADLINE_MEMO.get(key)
+    if entry is not None:
+        dependencies, value = entry
+        if all(_dependency_state(text) == state for text, state in dependencies):
+            return value
+    outer = getattr(_DEPENDENCIES, "seen", None)
+    seen = {}
+    _DEPENDENCIES.seen = seen
+    try:
+        record = read_comparison_outcome(path)
+    finally:
+        _DEPENDENCIES.seen = outer
+    value = _headline_of(record)
+    dependencies = tuple(seen.values())
+    settled = bool(dependencies) and all(
+        state is not None
+        and (state == _ABSENT_STATE or content_token.memoizable(state))
+        and _dependency_state(text) == state
+        for text, state in dependencies)
+    if settled:
+        if len(_HEADLINE_MEMO) >= _HEADLINE_MEMO_MAX:
+            _HEADLINE_MEMO.clear()     # bounded: a cleared memo only costs a re-read
+        _HEADLINE_MEMO[key] = (dependencies, value)
+        _headline_persist["dirty"] = True
+    elif _HEADLINE_MEMO.pop(key, None) is not None:
+        _headline_persist["dirty"] = True
+    return value
+
+
+# --------------------------------------------------------------------------- #
+# Keeping the read-side memos across launches.
+#
+# Without this the first matrix snapshot after every start re-reads what the
+# previous session already proved: every export file is hashed again and every
+# built comparison's payload decoded again, which is the slowest the app ever
+# is, at the moment the user has just opened it. Nothing new is trusted: a
+# stored digest or headline is served only while every file it was derived from
+# still carries the same change token, exactly as in memory. The headline file
+# is bound to the app version that wrote it, because a headline is the strict
+# reader's verdict and a newer reader may judge the same files differently.
+# --------------------------------------------------------------------------- #
+_HEADLINE_PERSIST_SCHEMA = 1
+_HEADLINE_PERSIST_MIN_INTERVAL_S = 20.0
+_HEADLINE_FIELD_TYPES = {
+    "trusted": (bool,), "current": (bool,), "completion": (str,),
+    "skipped_inputs": (int, type(None)), "failed_inputs": (int, type(None)),
+    "diagnostic": (str, type(None)), "source": (str,),
+    "verdict": (str, type(None)), "differing_cells": (int, type(None)),
+    "side_a_only_rows": (int, type(None)), "side_b_only_rows": (int, type(None)),
+    "typed_completion": (str, type(None)), "pairing_quality": (str, type(None)),
+    "generation_id": (str, type(None)),
+}
+_headline_persist = {"path": None, "dirty": False, "saved_at": 0.0}
+_headline_persist_lock = threading.Lock()
+
+
+def _headline_to_json(value):
+    if value is None:
+        return None
+    return {name: getattr(value, name) for name in _HEADLINE_FIELD_TYPES}
+
+
+def _headline_from_json(data):
+    """A stored headline, or raise ValueError — never a half-typed record."""
+    if data is None:
+        return None
+    if not isinstance(data, dict) or set(data) != set(_HEADLINE_FIELD_TYPES):
+        raise ValueError("headline fields are not the current set")
+    for name, types in _HEADLINE_FIELD_TYPES.items():
+        item = data[name]
+        if not isinstance(item, types) or (isinstance(item, bool) and bool not in types):
+            raise ValueError(f"headline field {name!r} has the wrong type")
+    return ComparisonHeadline(**data)
+
+
+def _dependencies_from_json(data):
+    if not isinstance(data, list) or not data:
+        raise ValueError("headline dependencies are missing")
+    out = []
+    for item in data:
+        if not isinstance(item, list) or len(item) != 2 or not isinstance(item[0], str):
+            raise ValueError("headline dependency is malformed")
+        text, state = item
+        if state == _ABSENT_STATE:
+            out.append((text, _ABSENT_STATE))
+            continue
+        if (not isinstance(state, list) or len(state) != 5
+                or not all(isinstance(part, int) and not isinstance(part, bool)
+                           for part in state)
+                or state[-1] <= 0):
+            raise ValueError("headline dependency token is malformed")
+        out.append((text, tuple(state)))
+    return tuple(out)
+
+
+def reload_persistent_caches():
+    """Merge both memo files into memory again, after a hosted job (another
+    process) saved what it learned. A no-op until `enable_persistent_caches`."""
+    with _headline_persist_lock:
+        path = _headline_persist["path"]
+    if path is None:
+        return
+    content_token.reload()
+    _load_headlines(path, replace=True)
+
+
+def enable_persistent_caches(cache_dir):
+    """Keep the digest memo and the comparison headlines in `cache_dir` across
+    launches. Never raises: an absent, unreadable, or other-version file is an
+    empty memo, which only costs the first read."""
+    cache_dir = Path(cache_dir)
+    content_token.enable_persistence(cache_dir / "digests.json")
+    path = cache_dir / "comparison_headlines.json"
+    loaded = _load_headlines(path, replace=False)
+    with _headline_persist_lock:
+        _headline_persist["path"] = path
+    log.info("comparison headline memo: %d entries loaded", loaded)
+    return loaded
+
+
+def _load_headlines(path, replace):
+    loaded = 0
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:  # silent-ok: no memo yet is the first-launch state
+        data = None
+    except (OSError, ValueError) as e:
+        log.info("comparison headline memo unreadable (%s: %s); starting empty",
+                 type(e).__name__, e)
+        data = None
+    if (isinstance(data, dict)
+            and data.get("schema_version") == _HEADLINE_PERSIST_SCHEMA
+            and data.get("app_version") == producer_app_version()
+            and isinstance(data.get("entries"), dict)):
+        for key, entry in data["entries"].items():
+            if key in _HEADLINE_MEMO:
+                if not replace:
+                    continue
+            elif len(_HEADLINE_MEMO) >= _HEADLINE_MEMO_MAX:
+                continue
+            try:
+                if not isinstance(key, str) or not isinstance(entry, dict):
+                    raise ValueError("headline entry is malformed")
+                dependencies = _dependencies_from_json(entry.get("deps"))
+                value = _headline_from_json(entry.get("headline"))
+            except (TypeError, ValueError):  # silent-ok: a bad entry is simply not loaded
+                continue
+            _HEADLINE_MEMO[key] = (dependencies, value)
+            loaded += 1
+    return loaded
+
+
+def flush_persistent_caches(force=False):
+    """Write both memos when they changed (throttled unless `force`). Never raises."""
+    content_token.flush(force=force)
+    with _headline_persist_lock:
+        path = _headline_persist["path"]
+        if path is None or not _headline_persist["dirty"]:
+            return
+        now = time.monotonic()
+        if (not force and now - _headline_persist["saved_at"]
+                < _HEADLINE_PERSIST_MIN_INTERVAL_S):
+            return
+        entries = {}
+        for key, (dependencies, value) in dict(_HEADLINE_MEMO).items():
+            entries[key] = {
+                "deps": [[text, state if state == _ABSENT_STATE else list(state)]
+                         for text, state in dependencies],
+                "headline": _headline_to_json(value),
+            }
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump({"schema_version": _HEADLINE_PERSIST_SCHEMA,
+                           "app_version": producer_app_version(),
+                           "entries": entries}, f, separators=(",", ":"))
+            os.replace(tmp, path)
+        except (OSError, TypeError, ValueError) as e:
+            log.info("comparison headline memo could not be saved (%s: %s)",
+                     type(e).__name__, e)
+            with contextlib.suppress(OSError):
+                tmp.unlink()
+            return
+        _headline_persist["dirty"] = False
+        _headline_persist["saved_at"] = now
 
 
 def require_published_comparison(path, result) -> ComparisonSidecarOutcome:
