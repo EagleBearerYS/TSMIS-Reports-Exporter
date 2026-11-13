@@ -3,6 +3,99 @@
 All notable changes to TSMIS Reports Exporter, newest first. Each GitHub
 release shows only its own section (see `build/gen_release_notes.py`).
 
+## v0.53.0 — 2026-11-13
+
+Comparisons build faster, the window stays usable while a job runs, and everything a
+first-time user meets was gone over. No comparison result changes: each workbook holds
+the values v0.52.1 writes.
+
+**Speed**
+
+- **The big comparisons build 2.5 to 3 times faster.** The large sheets of a comparison
+  workbook are written directly instead of one cell object at a time. The file that
+  comes out is byte for byte the same.
+
+  | Comparison (real exports) | v0.52.1 | v0.53.0 |
+  |---|---:|---:|
+  | Clean Road Ramp vs TSN | 88 s | 28 s |
+  | Highway Sequence vs TSN, with its live-formulas copy | 5 min 24 s | 2 min 8 s |
+
+- **The window keeps answering while a job runs.** Matrix comparisons, the TSN
+  consolidation and the ArcGIS report builds now run in their own process, so
+  switching tabs, scrolling and Stop no longer wait behind the job. If a PC will not
+  start that process the job runs the way it used to, and the log file
+  (`tsmis-gui.log`) says worker processes are disabled for the session.
+- **Matrix tabs open without re-reading every comparison.** With three days built,
+  opening the vs TSN matrix took 6.6 s (14 s the first time after a start); it now
+  takes under a second, and the PDF vs Excel and ArcGIS matrices about 0.15 s. The
+  remembered answers are kept in `data\cache\` and are used only while the files they
+  came from are unchanged. Deleting that folder costs one slower open.
+- **Fixed: the window sometimes opened half built**, with tabs or buttons missing
+  until the app was restarted.
+
+The app still runs one task at a time: an export waits for a comparison, and the
+other way round.
+
+**For people new to the app**
+
+- **Add all / Remove all** above the Reports chips in every matrix's Matrix options
+  (Everything, vs TSN, vs Baseline, PDF vs Excel, Three Days, Reports vs ArcGIS,
+  Three-way). A matrix can be emptied and then filled with just the reports wanted.
+  The Export tab's and Export Everything's report lists get **All / None**.
+- **Three buttons ask before they act:** *Export today* on the vs TSN matrix (it
+  starts a statewide export of every report on the matrix), *Stop all*, and *Discard*
+  on a paused Export Everything batch.
+- **Messages that say what to do.** Signing in off the network says the TSMIS site
+  could not be reached and to check the network or VPN. Export Everything says why an
+  environment stopped, and points to *Settings ▸ Use development site* when the main
+  site does not offer a report. A PC with only Microsoft Edge is told exports will use
+  Edge. *Refresh all layers* without ArcGIS Pro says ArcGIS Pro is needed. At start-up
+  the Activity log notes an app folder that cannot be written to, or one so deep that
+  Windows and Excel path limits will bite (`C:\TSMIS` is the suggestion).
+- **Layout at the default window size and at 150% scaling.** The Compare and ArcGIS
+  sub-tabs wrap instead of running off the side, file paths wrap instead of being cut,
+  the Settings buttons no longer cover the Debugging group, report names in a matrix
+  are shown in full, and a cell with no comparison yet reads *not built*.
+- **The Export tab's "Saves to" line names the real folder**, site included (for
+  example `output\2026-11-13 ssor-prod main-site\`).
+- **Fixed: Open comparisons folder.** Clicking it on the Everything matrix before the
+  first comparison was built made every later comparison there fail.
+- **Fixed: the right-hand card on the ArcGIS tab** kept showing the previous sub-tab's
+  status.
+- **`Start Here.txt` and `IT-README.txt` describe the app as it is now**: the eleven
+  reports in both editions, the run-folder names, the main and development sites, the
+  matrices, where the data lives and which programs and addresses the app uses. A new
+  check holds every button and tab they name to the app itself.
+- **The updater asks the repository under its current name.** The GitHub account was
+  renamed in October; v0.52.1 and older reach new releases through GitHub's redirect
+  from the old name.
+
+**How it was checked**
+
+- Speed: the released v0.52.1 and this version each ran the matrix workers over their
+  own copy of the same real exports, 34 cells across all six matrices. In all 41
+  comparison workbooks every part of the file is identical except the creation time
+  and the cells that name the run (a folder path, the fingerprint of an input rebuilt
+  for the run). The 55,011 values the comparisons publish (counts, per-column
+  breakdowns, pairing) are equal. Not run through a matrix: eight
+  PDF-edition rows vs TSN and six PDF vs Excel rows; their PDF conversion was compared
+  on its own (682 files, identical).
+- Readiness: the full check suite, the packaged self-test, a fresh copy of the
+  packaged app driven in its real window, and the real data on this PC through a copy
+  of its settings.
+- Not checked: sign-in and export need the TSMIS site, and the worker process needs a
+  managed PC to prove it is allowed there. Both are for the work PC.
+
+**Maintenance**
+
+- `check_shipped_readmes.py` holds the two shipped text files to the UI, and
+  `tools/ui_walk.py` screenshots every view of the preview and reports anything that
+  overflows.
+- Audit scripts no longer name the account printed on the reports they were written
+  from, and `check_no_account_names.py` keeps account names out of the repository.
+- The self-test build removes its own first-run data, so the packaged folder holds
+  only the app and its two text files.
+
 ## v0.52.1 — 2026-11-09
 
 The Three Days Matrix gets the Comparison output option the other matrices have.

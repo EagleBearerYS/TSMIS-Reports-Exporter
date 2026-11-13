@@ -12,7 +12,19 @@ touching.
 
 ## Current status and work
 
-**Current release: v0.52.1 (2026-11-09)** — the Three Days Matrix gets the
+**Current release: v0.53.0 (2026-11-13)** — **faster comparisons, a window that stays
+responsive, and a readiness pass for new users.** The big comparison sheets are
+written as row XML directly (Clean Road Ramp vs TSN 88 s → 28 s, every package member
+byte-identical), matrix jobs run in a worker process so the window keeps answering,
+and a matrix tab opens from memos instead of re-hashing every built comparison
+([comparison-engine.md](comparison-engine.md) §2b; [gui.md](gui.md), "Where the time
+went when the app felt slow"). Every matrix has **Add all / Remove all** above its
+Reports chips, first-run defects and layout at the default window size are fixed, and
+`Start Here.txt` and the IT notes describe the current app and are held to the UI by
+`check_shipped_readmes.py` ([gui.md](gui.md), "What a first-time user needed"). The
+app still runs one task at a time ([roadmap.md](roadmap.md) I1).
+
+v0.52.1 gave the Three Days Matrix the
 **Comparison output** option the other matrices have: *Also write a live-formulas
 copy* writes `… (formulas).xlsx` beside each three-day workbook, the same sheets with
 every number calculated in Excel from the three days' values, and
