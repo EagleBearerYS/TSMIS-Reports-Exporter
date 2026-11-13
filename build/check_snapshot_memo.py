@@ -101,9 +101,22 @@ def tokens(tmp):
           ct._ONE_HANDLE_OK is True)
     check("a missing file has no token (and does not raise)",
           ct.path_token(tmp / "absent.bin") is None)
+    # A change stamp is only as fine as the clock behind it: a rewrite inside the
+    # same tick as the last write leaves the token unmoved (a CI runner did exactly
+    # that to this check). That is the case the racy window exists for, so the two
+    # claims are held apart: a fresh stamp is never trusted, and a SETTLED file --
+    # the only kind a memo holds -- cannot be rewritten without its token moving.
+    now_ticks = ct.FILETIME_EPOCH_TICKS + time.time_ns() // 100
+    check("a change stamp inside the racy window is not trusted, an older one is",
+          not ct.memoizable(reference[:-1] + (now_ticks,))
+          and ct.memoizable(reference[:-1] + (now_ticks - 50_000_000,)))
+    _settle()
+    settled = ct.path_token(probe)
+    check("a file left alone keeps its token, and it is trusted once settled",
+          settled == reference and ct.memoizable(settled))
     _tamper_in_place(probe)
-    check("the token moves on a same-size, timestamp-restored rewrite",
-          ct.path_token(probe) != reference)
+    check("the token moves on a same-size, timestamp-restored rewrite of a settled file",
+          ct.path_token(probe) != settled)
 
 
 def bound_digest(tmp):
