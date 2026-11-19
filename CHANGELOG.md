@@ -3,6 +3,99 @@
 All notable changes to TSMIS Reports Exporter, newest first. Each GitHub
 release shows only its own section (see `build/gen_release_notes.py`).
 
+## v0.54.0 — 2026-11-18
+
+The Clean Road Highway report the app builds from the ArcGIS layers now lists points the
+way the TSMIS site's file does, so the Reports vs ArcGIS comparison pairs more rows and
+leaves fewer on one side only. The layer library grows from 40 layers to 43. The Clean
+Road builds were also held, column by column, against the vendor's list of the layer
+each attribute comes from.
+
+**After updating, on the PC with ArcGIS Pro**
+
+1. ArcGIS ▸ Layers ▸ **Refresh all layers**. Calibration Point, HPMS F System and
+   Posted Speed Limit are new and read *missing* until this has run.
+2. ArcGIS ▸ ArcGIS reports ▸ **Refresh all reports**. Clean Road Highway and Clean
+   Road Ramp read *built by an older version of the app* until they are refreshed.
+3. Rebuild the Clean Road rows on **Reports vs ArcGIS** and **Three-way**.
+
+**Clean Road Highway vs ArcGIS**
+
+- **Points are listed the way the site lists them.** The site's file has a row at every
+  landmark, at each side of a postmile equation and at the end of each county, whether
+  or not anything else changes there. The build now writes the same rows, zero miles
+  long, and reads each one at its point the way the site does. A landmark, an equation
+  or a route break belongs to its own roadbed. Several landmarks at one postmile are a
+  row each, and an equation's row names all of them.
+- **Segments that begin where nothing changes are joined.** The layers split a stretch
+  wherever any layer changes, including layers the file has no column for. The
+  comparison joins a build segment to the one before it when no column the file
+  reports changes there, so it no longer reads as a row only the build has.
+- **A zero-length row agrees on either side.** Where the road changes at a point, the
+  site's row holds the values of the stretch that ends there or of the one that begins
+  there. The comparison counts a cell as a difference only when it matches neither.
+  The Notes sheet's POINT ROWS and SEGMENTS paragraphs give the counts.
+
+  The 2026-11-06 development-site export against the layers of 2026-10-30, with and
+  without the three changes above:
+
+  | Clean Road Highway | Without | v0.54.0 |
+  |---|---:|---:|
+  | Rows paired | 49,146 | 51,322 |
+  | Only in the ArcGIS build | 8,174 | 3,180 |
+  | Only in the TSMIS file | 4,065 | 1,889 |
+  | Differing cells | 48,204 | 45,236 |
+
+  The differing cells are counted over 2,176 more paired rows than before. What still
+  differs is listed by cause, each with its count, in the roadmap (TW13 to TW18).
+- **The other Highway comparisons read the new rows too.** The Three-way comparison
+  settles a zero-length row the same way. TSN has no zero-length rows, so in the
+  build's comparison with TSN most of them stand alone, and its Notes sheet says so.
+- Highway Detail's build from the layers is unchanged.
+
+**Layers**
+
+- **Three more layers, 43 in all:** Calibration Point, HPMS F System and Posted Speed
+  Limit. They come last in the list, so the 40 files already in a library keep their
+  numbers. No build reads them yet. Calibration Point and HPMS F System hold the
+  postmile equations and the functional class the site's file reports, and Posted
+  Speed Limit is on the vendor's list.
+- **Calibration Point is kept in part.** The layer holds the calibration points of
+  every LRS network in the state. The library keeps the postmile network's rows
+  (`NetworkId = 2`), the ones the site reads, and the manifest's Data Source says so.
+- **A renamed layer says what it is called now.** When the service lists a layer under
+  another name, that layer fails and its message gives the name the service uses. The
+  other layers are not affected.
+
+**Also**
+
+- **A build made by an older version of the app reads out of date.** The ArcGIS
+  reports tab and the matrix rows say *built by an older version of the app — refresh
+  it* when the rules a report is built with have changed since it was built.
+- **Each Reports vs ArcGIS comparison says where both sides came from.** The Notes
+  sheet names the feature service the layers were exported from beside the export's
+  own data source, and lists each column with the layer and field it is built from.
+  Held against the vendor's source list of 2026-11-16, Highway's 29 columns and Ramp's
+  9 all come from the listed layer and field. Intersection is built from the IM tables
+  the site reads; the list names a Master Intersection layer the library does not
+  hold.
+- **Clean Road Ramp writes the create date** from SHS Ramp's inventory start date, the
+  source the list names. The site leaves that column blank, so it is shown as context
+  and is not counted as a difference.
+
+**How it was checked**
+
+- The full check suite, with new checks for the point rows
+  (`check_clean_road_points.py`) and for the source list
+  (`check_clean_road_sources.py`).
+- The real 2026-11-06 export through the comparison, which gave the table above.
+- `tools/clean_road_layer_check.py` held the new build against the raw layer files:
+  its segment rows differ from their layers on 2 cells of 1.44 million, the same two
+  as before. Zero-length rows are judged apart, and the tool prints their tally.
+- Not checked: nothing here has run on the work PC. The three new layers have never
+  been exported by a real ArcGIS Pro, and Calibration Point's filter is new there. If
+  one of them fails, the other layers still refresh and no build needs the three.
+
 ## v0.53.0 — 2026-11-13
 
 Comparisons build faster, the window stays usable while a job runs, and everything a

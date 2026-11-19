@@ -12,8 +12,24 @@ touching.
 
 ## Current status and work
 
-**Current release: v0.53.0 (2026-11-13)** — **faster comparisons, a window that stays
-responsive, and a readiness pass for new users.** The big comparison sheets are
+**Current release: v0.54.0 (2026-11-18)** — **the Clean Road Highway build lists
+points the way the site's file does, and the layer library holds 43 layers.** A
+landmark, an equation side or a county end with no segment of its own is a zero-length
+row read at its point (build version 3). The vs-TSMIS comparison joins build segments
+that begin where nothing the file reports changes and reads a zero-length row on
+either stretch that meets at its postmile, and a build an older builder made reads
+out of date. On the 2026-11-06 export: 51,322 paired rows (49,146 without these
+changes), 3,180 only in the build (8,174), 1,889 only in the site's file (4,065)
+([comparison-engine.md](comparison-engine.md) §9n;
+[planning/cleanroad-highways.md](planning/cleanroad-highways.md), "Points, read the
+way the site lists them" and "What is left on the Highway file"). `clean_road_sources.py`
+holds the vendor's source list as data and `check_clean_road_sources.py` holds the
+builds to it. Calibration Point, HPMS F System and Posted Speed Limit joined the layer
+refresh; no build reads them yet. The work PC owes the refresh and the rebuilds
+([roadmap.md](roadmap.md) B0e).
+
+v0.53.0 brought faster comparisons, a window that stays responsive, and a readiness
+pass for new users. The big comparison sheets are
 written as row XML directly (Clean Road Ramp vs TSN 88 s → 28 s, every package member
 byte-identical), matrix jobs run in a worker process so the window keeps answering,
 and a matrix tab opens from memos instead of re-hashing every built comparison
