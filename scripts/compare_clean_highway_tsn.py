@@ -125,6 +125,13 @@ _NOTES_LINES = (
         "postmile is deliberately not key material — where the two systems "
         "cut a stretch differently the rows still pair, and the end shows as "
         "a field difference instead of two one-sided rows.",
+        "ZERO-LENGTH ROWS: the build (since 2026-11-18) follows the TSMIS "
+        "site's file, which lists every landmark, each side of a postmile "
+        "equation and each county's end as a row; where no segment begins at "
+        "such a point the build writes a row of length 0 there. The TSN "
+        "extract has no zero-length row at all, so most of these stand alone "
+        "on the ArcGIS side: the new file's layout, not a data difference. "
+        "Filter THY_LENGTH_MILES_AMT = 0 on the ArcGIS sheet to see them.",
         "Dates are compared as ISO dates (format never counts); amount "
         "columns compare as canonical numbers ('02' = '2', '9.60' = '9.6'); "
         "the landmark text is edge-trimmed on both sides (the TSN extract "

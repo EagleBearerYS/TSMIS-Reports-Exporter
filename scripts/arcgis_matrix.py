@@ -330,12 +330,19 @@ def build_state(key, drop=None, inventory=None, attempts=None):
     st["drop_fingerprint"] = rec_drop.get("fingerprint") or None
     current = (drop if drop is not None else arcgis_layers.drop_info()).get("fingerprint")
     st["drop_current"] = bool(current and st["drop_fingerprint"] == current)
+    # A build is also only as current as the rules that made it: each builder
+    # numbers its rules (BUILD_VERSION) and writes the number into its record,
+    # so a build an older app made reads out of date until it is refreshed.
+    now = getattr(s.build, "BUILD_VERSION", None)
+    st["build_current"] = now is None or extra.get("build_version") == now
     st["comparable_now"] = trusted and outcome.comparable(st["completion"])
     st["identity"] = _build_identity(path)
     if not st["comparable_now"]:
         st["stale"], st["stale_reason"] = True, "outcome_untrusted"
     elif not st["drop_current"]:
         st["stale"], st["stale_reason"] = True, "drop_changed"
+    elif not st["build_current"]:
+        st["stale"], st["stale_reason"] = True, "build_changed"
     else:
         st["stale"], st["stale_reason"] = False, ""
     return st

@@ -25,6 +25,7 @@ from pathlib import Path
 
 import arcgis_layers
 import clean_road_layers as crl
+import clean_road_sources
 import consolidate_clean_highway as cch
 import consolidation_meta
 import outcome
@@ -341,6 +342,7 @@ def report_facts(path):
     keys = {"As-of date": "asof", "Build version": "build_version",
             "Report": "report", "Records written": "rows", "Routes": "routes",
             "Layer library": "layer_library",
+            "Layer service": "layer_service",
             "Layer drop exported": "drop_exported",
             "Layer drop fingerprint": "drop_fingerprint"}
     facts = {}
@@ -387,7 +389,8 @@ def read_rows(path, spec):
 # --------------------------------------------------------------------------- #
 # the workbook
 # --------------------------------------------------------------------------- #
-def _write_workbook(module, out_path, rows, stats, asof_text, lib_root, drop):
+def _write_workbook(module, out_path, rows, stats, asof_text, lib_root, drop,
+                    service=""):
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
@@ -433,6 +436,7 @@ def _write_workbook(module, out_path, rows, stats, asof_text, lib_root, drop):
         ("Build version", module.BUILD_VERSION),
         ("As-of date", asof_text),
         ("Layer library", str(lib_root)),
+        ("Layer service", service or "(not recorded)"),
         ("Layer drop exported", drop.get("exported") or "(unknown)"),
         ("Layer drop fingerprint", drop.get("fingerprint") or "(unknown)"),
         ("Records written", stats["rows"]),
@@ -499,7 +503,8 @@ def _consolidate(module, events, confirm_overwrite, out_path, asof, lib_root):
             message=f"The layers produced no {module.SPEC.noun_plural} to "
                     "project — check the layer library and the as-of date.")
     root = Path(lib_root) if lib_root else crl.root()
-    _write_workbook(module, out_path, rows, stats, asof_text, root, drop)
+    _write_workbook(module, out_path, rows, stats, asof_text, root, drop,
+                    service=clean_road_sources.library_service(index))
     spec = module.SPEC
     result = ConsolidateResult(
         status="ok",

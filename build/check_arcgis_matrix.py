@@ -75,9 +75,14 @@ def _touch_export(base, subdir, name="r001.xlsx"):
 
 
 def _stub_build(path, drop_fingerprint, sidecar_key="arcgis_report_build",
-                asof="2026-08-19", completion=oc.COMPLETE, payload=b"PK build"):
+                asof="2026-08-19", completion=oc.COMPLETE, payload=b"PK build",
+                build_version=None):
     """A stand-in layer build: a file + the trusted outcome sidecar a real build
-    publishes, carrying the drop it came from."""
+    publishes, carrying the drop it came from and the number of the builder's
+    rules (the Highway Detail builder's own unless another is given)."""
+    import arcgis_report_highway_detail as hd_builder
+    if build_version is None:
+        build_version = hd_builder.BUILD_VERSION
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(payload)
     res = ConsolidateResult(status="ok", completion=completion,
@@ -86,6 +91,7 @@ def _stub_build(path, drop_fingerprint, sidecar_key="arcgis_report_build",
     ok = consolidation_meta.write_outcome(
         path, res, extra={sidecar_key: {
             "asof": asof, "rows": 42, "routes": 3,
+            "build_version": build_version,
             "layer_drop": {"fingerprint": drop_fingerprint,
                            "exported": "2026-08-19"}}})
     assert ok, "sidecar publish failed"
@@ -337,6 +343,15 @@ def test_library_and_snapshot_states():
             check("the add-day tags name both editions",
                   agm.available_day_reports(SRC) == {DAY: ["HD", "HD-PDF"]})
             shutil.rmtree(day / "highway_detail_pdf")
+
+            # a build an OLDER builder made: comparable, but the row says rebuild
+            _stub_build(hd_build, DROP["fingerprint"], build_version=0)
+            b = agm.library_snapshot()["builds"]["highway_detail"]
+            check("a build an older version of its builder made reads stale with "
+                  "reason build_changed, yet stays comparable",
+                  b["stale"] and b["stale_reason"] == "build_changed"
+                  and b["drop_current"] and not b["build_current"]
+                  and b["comparable_now"])
 
             # a build from ANOTHER drop: still comparable, but the row says rebuild
             _stub_build(hd_build, "v2:3:olderdrop")

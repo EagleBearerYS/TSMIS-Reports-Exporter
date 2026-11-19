@@ -49,11 +49,13 @@ log = logging.getLogger("tsmis.arcgis_refresh")
 SERVICE_DEFAULT = ("https://rhapps-prod.dot.ca.gov/server/rest/services/"
                    "TSMIS/lrs_tsmis/FeatureServer")
 
-# The 40-layer library in its file order (the NN_ prefix of a fresh library),
-# with each layer's id on the default service as the 2026-08-19 manual export
-# recorded them. The worker matches layers by NAME from the service's own layer
-# list when it can; these ids are the fallback. Same names as
-# clean_road_layers.EXPECTED_LAYERS (asserted by check_arcgis_refresh).
+# The layer library in its file order (the NN_ prefix of a fresh library),
+# with each layer's id on the default service: the first 40 as the 2026-08-19
+# manual export recorded them, the last three as the vendor's source list of
+# 2026-11-16 numbers them (`clean_road_sources`). The worker matches layers by
+# NAME from the service's own layer list when it can; these ids are the
+# fallback. Same names as clean_road_layers.EXPECTED_LAYERS (asserted by
+# check_arcgis_refresh).
 LIBRARY_LAYERS = (
     ("Traffic Volume Ramps", 157), ("SHS Route Break", 133),
     ("SHS Ramp Pt", 132), ("SHS Landmark", 123),
@@ -77,9 +79,22 @@ LIBRARY_LAYERS = (
     ("IM Intersection Approach Segments", 146),
     ("IM Intersection Detail", 151), ("IM Intersection Route Table", 147),
     ("Route Direction", 304),
+    # Added 2026-11-18, after the vendor's source list: what the site's Clean
+    # Road code reads, or the list names, and the library lacked. Last, so the
+    # 40 files of an existing library keep their numbers.
+    ("Calibration Point", 1), ("HPMS F System", 91),
+    ("Posted Speed Limit", 107),
 )
 LAYER_IDS = dict(LIBRARY_LAYERS)
 LAYER_ORDER = {name: i for i, (name, _id) in enumerate(LIBRARY_LAYERS, start=1)}
+
+# A layer the library holds IN PART: {layer: the where clause it is exported
+# with}. Calibration Point carries the calibration points of every LRS network
+# in the state, far more than one Excel sheet holds; the site's code reads the
+# postmile network's alone (`hsl.js` queryEquationPointsFromNetwork:
+# "NetworkId = 2"), which is where its postmile equations come from, so that
+# is what the library keeps. The manifest's Data Source says so.
+LAYER_FILTERS = {"Calibration Point": "NetworkId = 2"}
 
 # A 27-row layer: the ArcGIS Pro check reads and exports it in seconds.
 PROBE_LAYER = "SHS Tolls"
@@ -274,7 +289,9 @@ class _Refresher:
             r = self.results.get(ev.get("name"))
             if r is not None:
                 r["server_rows"] = ev.get("rows")
-            self.events.on_log(f"  {ev.get('name')}: {int(ev.get('rows') or 0):,} rows on the server")
+            part = LAYER_FILTERS.get(ev.get("name"))
+            self.events.on_log(f"  {ev.get('name')}: {int(ev.get('rows') or 0):,} rows on the server"
+                               + (f" where {part}" if part else ""))
         elif kind == "layer_warning":
             self.events.on_log(f"  note: {ev.get('name')}: {ev.get('message')}")
         elif kind == "alive":
@@ -359,7 +376,7 @@ class _Refresher:
         old_row = self.index.get(name)
         self.index[name] = {
             "file": target.name, "rows": info["data_rows"], "fields": info["fields"],
-            "path": name, "source": ev.get("url") or "",
+            "path": name, "source": _data_source(ev),
             "exported_at": exported_at,
             "exported_by": (f"TSMIS Exporter {_app_version()}"
                             + (f" · ArcGIS Pro {version}" if version else ""))}
@@ -403,6 +420,14 @@ class _Refresher:
         self.progress()
 
 
+def _data_source(ev):
+    """The manifest's Data Source for an exported layer: its URL, and the
+    where clause when only part of the layer was asked for."""
+    url = ev.get("url") or ""
+    where = ev.get("where")
+    return f"{url} (rows where {where})" if url and where else url
+
+
 def _runtime_line(facts):
     bits = []
     if facts.get("arcgis_version"):
@@ -418,7 +443,7 @@ def _runtime_line(facts):
 
 
 def resolve_layers(layers):
-    """The layers to refresh, in library order: all 40 when `layers` is empty.
+    """The layers to refresh, in library order: every one when `layers` is empty.
     Raises ValueError for a name that isn't a library layer."""
     if not layers:
         return [name for name, _id in LIBRARY_LAYERS]
@@ -429,6 +454,16 @@ def resolve_layers(layers):
         if name not in wanted:
             wanted.append(name)
     return [name for name, _id in LIBRARY_LAYERS if name in wanted]
+
+
+def _layer_request(name, inventory):
+    """One layer of the worker's request: its name, fallback id and staging
+    file, and the where clause of a layer the library holds in part."""
+    req = {"name": name, "id": LAYER_IDS[name],
+           "out": str(staging_dir() / _target_name(name, inventory))}
+    if name in LAYER_FILTERS:
+        req["where"] = LAYER_FILTERS[name]
+    return req
 
 
 def no_python_message():
@@ -456,7 +491,7 @@ def signin_hint(facts):
 
 def refresh(layers=None, events=None, cancel_event=None, on_progress=None,
             python=None, launcher=None, service=SERVICE_DEFAULT):
-    """Export `layers` (default: all 40) from the feature service with ArcGIS
+    """Export `layers` (default: every one) from the feature service with ArcGIS
     Pro and swap each finished one into the library. Returns a RefreshResult.
     Never raises for an ordinary failure (no ArcGIS Pro, sign-in, a bad
     layer) -- it says so in the result and the per-layer outcomes."""
@@ -484,9 +519,7 @@ def refresh(layers=None, events=None, cancel_event=None, on_progress=None,
     events.on_log("=" * 60)
     run.progress("Starting ArcGIS Pro…")
     request = {"protocol": 1, "mode": "export", "service": service,
-               "layers": [{"name": n, "id": LAYER_IDS[n],
-                           "out": str(staging_dir() / _target_name(n, run.inventory))}
-                          for n in names]}
+               "layers": [_layer_request(n, run.inventory) for n in names]}
     try:
         outcome = arcgis_pro.run_worker(session_dir(), request, run.on_event,
                                         cancel_event, python, launcher=launcher)

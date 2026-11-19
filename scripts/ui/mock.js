@@ -905,7 +905,7 @@ function makeMockApi() {
     };
     step();
   }
-  // ---- ArcGIS ▸ Layers (v0.46.0): the 40-layer library (the 2026-08-19
+  // ---- ArcGIS ▸ Layers (v0.46.0): the layer library (the first 40 with the 2026-08-19
   // manual drop's row counts) + ArcGIS Pro's status. Parity with
   // arcgis_refresh.library_status() + arcgis_pro.status().
   const _HD = ["Highway Detail", "Clean Road: Highway"];
@@ -934,6 +934,8 @@ function makeMockApi() {
     ["IM Intersection Approach Segments", 143389, _ID],
     ["IM Intersection Detail", 38914, _ID], ["IM Intersection Route Table", 160785, []],
     ["Route Direction", 291, []],
+    ["Calibration Point", null, []], ["HPMS F System", null, []],
+    ["Posted Speed Limit", null, []],
   ];
   const MOCK_AGL_SERVICE = "https://rhapps-prod.dot.ca.gov/server/rest/services/TSMIS/lrs_tsmis/FeatureServer";
   const mockAgl = {
@@ -946,9 +948,11 @@ function makeMockApi() {
       last: null })),
     last_run: null, last_probe: null,
   };
-  // County Code is staged but missing in the preview, so the "missing" row state shows.
-  Object.assign(mockAgl.layers.find((l) => l.name === "County Code"),
-                { present: false, file: null, rows: null, size: null, exported_at: null });
+  // County Code is staged but missing in the preview, so the "missing" row state shows;
+  // so are the three layers added 2026-11-18, as in a library not refreshed since.
+  for (const name of ["County Code", "Calibration Point", "HPMS F System", "Posted Speed Limit"])
+    Object.assign(mockAgl.layers.find((l) => l.name === name),
+                  { present: false, file: null, rows: null, size: null, exported_at: null });
   function mockAglInfo() {
     const present = mockAgl.layers.filter((l) => l.present);
     const cur = st.matrix_current;

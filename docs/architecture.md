@@ -305,7 +305,7 @@ Inspector's proven pattern), and `arcgis_refresh.py` checks each exported layer,
 swaps it in (replaced files → `arcgis_layers/_previous/`) and rewrites the INDEX —
 see [gui.md](gui.md) "The ArcGIS tab".
 Since **v0.29.0 the ArcGIS TAB consumes it**: `clean_road_layers.py` verifies the
-drop against the 40-layer manifest + the INDEX row counts,
+drop against the 43-layer manifest + the INDEX row counts,
 `consolidate_clean_highway.py` builds OUR own 74-column CA HIGHWAYS clean-road
 table from the layers (county+PM overlay, as-of the TSN extract's date) into
 `output/arcgis_cleanroad/`, and `compare_clean_highway_tsn.py` diffs it against

@@ -270,7 +270,7 @@ class _Report:
         pdf = _is_print(export_path)
         rows_m = crt.load_site(export_path, self.profile, pdf=pdf, collapse=pdf)
         rows_n = crt.load_tsn(tsn_path, self.profile, collapse=pdf)
-        rows_a = self._load_build(build_path, pdf)
+        rows_a = self._load_build(build_path, pdf, rows_m)
         return (ctc.same_source_render_rows(rows_m),
                 ctc.same_source_render_rows(rows_n),
                 ctc.same_source_render_rows(rows_a), pdf)
@@ -423,12 +423,19 @@ def _layer_index(library):
     return {}
 
 
-def _highway_build_rows(path, pdf):
-    return cha._load_build(path, collapse=pdf)
+def _highway_build_rows(path, pdf, rows_site):
+    """The Highway build as written — every layer breakpoint a segment — with
+    its zero-length rows reading either stretch that meets at their postmile,
+    as the two-sided comparison reads them (`cha._settle_point_rows`). TSN
+    lists no zero-length row, so this touches the TSMIS pairing alone."""
+    rows, spans = cha._read_build(path, collapse=pdf)
+    cha._settle_point_rows(rows, spans, rows_site)
+    return rows
 
 
 def _point_build_rows(compare):
-    return lambda path, pdf: compare._COMPARE._load_build(path, collapse=pdf)
+    return lambda path, pdf, _rows_site: compare._COMPARE._load_build(
+        path, collapse=pdf)
 
 
 _HIGHWAY_NOTES = (
@@ -444,6 +451,13 @@ _HIGHWAY_NOTES = (
     "and a route suffix filled on some rows only.",
     "Cells where the build could not place its source span (the HF-01 anchors) "
     "are 'undecided' — never counted as a finding against any side.",
+    "The site lists every landmark, each side of a postmile equation and each "
+    "county's end as a row; the build writes a zero-length row where no segment "
+    "begins at such a point, and TSN's table has none (0 of its 60,083 rows have "
+    "zero length). So these rows read as in TSMIS and ArcGIS, not in TSN: the "
+    "new file's layout, not a data difference. A zero-length row sits where two "
+    "stretches meet, and its cells agree with the site's on either stretch's "
+    "value.",
 )
 
 HIGHWAY = _Report("clean_highway", cha, cch, _highway_build_rows, _highway_trace(),
