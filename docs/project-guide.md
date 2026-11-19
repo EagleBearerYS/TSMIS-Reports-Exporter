@@ -161,7 +161,7 @@ layer and field the build reads; the counts live in the workbook's sidecar.
 
 **Clean Road (v0.29.0) builds the HIGHWAY clean-road file**: our
 own CA HIGHWAYS table from the owner's per-layer ArcGIS exports in
-`arcgis_layers/` (the 40-layer library; county+PM overlay as-of the TSN extract's own
+`arcgis_layers/` (the 43-layer library; county+PM overlay as-of the TSN extract's own
 date; per-column Provenance colour-coded by tier), compared vs the TSN extract in both
 flavors with every column indexed to its source layer and the 25 context columns
 tinted grey in the values sheet (v0.32.0). **`chc.HEADER` is the TSN extract's own
@@ -630,6 +630,11 @@ scripts/                     the engine (console-free) + console & GUI drivers +
   arcgis_report_intersection_detail.py   the IM layers rendered as Intersection Detail —
                              a POINT report, so no segmentation: the row universe, the
                              Major/Minor leg rule, and the per-column overlay carry rule
+  clean_road_sources.py      the vendor's Clean Road source list as data (2026-11-17): the
+                             layer and field of each Highway / Ramp attribute, the service's
+                             97 layers by number, what the list names that the file or the
+                             site's code does not carry; the builds are checked against it
+                             and the comparisons print it with the layers' feature service
   three_way.py               the three-way engine (v0.51.0): TSMIS vs TSN vs ArcGIS cell
                              classes, pairing anchored on the report through compare_core's
                              own keying, the values workbook, the counts in its sidecar

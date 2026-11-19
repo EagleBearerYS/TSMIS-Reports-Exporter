@@ -470,7 +470,11 @@ five probe rounds — these supersede the open items above):**
   It also lost 148 rows the site has and about 730 TSN has (136 of them both): both
   cut at points where the layers show no change, even inside one network segment.
   The build keeps cutting at every span boundary. A segmentation-insensitive
-  comparison, not a merge rule, is what would close this.
+  comparison, not a merge rule, is what would close this. **Closed that way on
+  2026-11-17 for the vs-TSMIS comparison only** ("The vendor's source list" below):
+  the comparison, not the build, joins a segment that begins where nothing the file
+  reports changes, and never one the site's file has a row at, so neither loss can
+  happen. TSN and the three-way still read the build as written.
 - **The ADT family**: reduce the Traffic Volume spans to the WINNING vintage
   (latest AADT_YEAR, then newest slice) BEFORE the overlay — every vintage's
   edges would otherwise fabricate cuts. The value at a span's BEGIN is its
@@ -523,3 +527,216 @@ canary bindings doc once blessed; the residual known-diff classes are the
 0.001-mi boundary slivers, the eff-date composites, TSN's X rows, and the
 ±5–10% attribute-coverage holes on multi-county spans whose odometers are
 blank (chain-walk needs them).
+
+## The vendor's source list (2026-11-16) and what it changed
+
+The TSMIS vendor documented where each Clean Road attribute comes from: the
+feature-service layer, by name and number, for the 34 Highway and 12 Ramp attributes
+of the business requirement, one source for its 32 Intersection attributes, and the
+service's 97 layers and tables. The app holds it as data in
+`scripts/clean_road_sources.py`; the file itself and the requirement workbook stay in
+the local corpus. Read with the site's own code (the 9.1 and the 11.17 dev captures,
+whose three Clean Road modules, Highway Log engine, shared plumbing and data-source
+config are identical) it settles three things.
+
+**1. The Highway and Ramp builds read the layers the list names.**
+`build/check_clean_road_sources.py` holds them to it column by column: all 29 Highway
+columns the list covers and all 9 Ramp columns are built from the layer AND field it
+names, and every library layer carries the number the list gives it. The list numbers
+its layers on a development copy of the service; the numbers are the same on the
+production service the library is refreshed from (`00_INDEX.xlsx` records each one).
+
+| | Attributes on the list | With a column in the file | Built from the listed layer and field |
+|---|---:|---:|---:|
+| Highway | 34 | 30 (29 columns: toll and forest share one) | 29 of 29 |
+| Ramp | 12 | 8 (9 columns: design code and description) | 9 of 9 |
+| Intersection | 32 | n/a | another source, below |
+
+**2. What the list names that the file or the site's code does not carry.**
+
+- No column in the site's file: `Posted_Speed_Limit` (Posted Speed Limit #107, in the
+  library's layer list since 2026-11-18), `Facility_Name` (SHS Tolls #138),
+  `Thru_Num_Lanes_L` / `_R` (#139 / #140); for Ramp `Side_of_Hwy`, `Ramp_Length`,
+  `Ramp_Num_Lanes` and the `Ramp_Name` key itself.
+- `Toll_Type` (SHS Tolls #138): the list says the site's code does not read it, and the
+  code agrees: `THY_TOLL_FOREST_CODE` is SHS Forest HWY's flag alone. The build writes a
+  toll span as TASAS code 1, so the comparison shows the toll roads (finding TW8).
+- `RAM_CREATE_DATE`: the list names SHS Ramp's `InventoryItemStartDate`. The site
+  leaves the column blank (`src: null`; blank on all 15,215 rows of the 2026-11-06
+  export). The Ramp build writes it since this change, shown as context and never
+  counted, the way it already writes the odometer.
+- Intersection: the list names one flat `Master Intersection` layer on another
+  service, with a `Major_*` / `Minor_*` field per leg. The site's code reads the IM
+  tables of the main service instead (#151, #0, #146, #150 and the three span layers),
+  and so does the build, which reproduces the site's file to 3,073 differing cells on
+  16,381 paired rows, 2,548 of them the two begin dates. The library holds no Master
+  Intersection layer, so nothing here reads or checks that source. The list maps the
+  two begin dates to the leg's own effective date, which is what the build writes and
+  the site does not (TW4).
+
+**The three layers added to the refresh (2026-11-18, owner's call).** Calibration Point
+(#1), HPMS F System (#91) and Posted Speed Limit (#107) are library layers now, last in
+the list so the first 40 keep their file numbers (`arcgis_refresh.LIBRARY_LAYERS`). No
+build reads them yet: the site reads its postmile equations from the calibration points
+(TW10) and `THY_FUNCTIONAL_CLASS_CODE` from HPMS F System, and both wait on a first
+real export to be wired and measured. Calibration Point is exported in part
+(`LAYER_FILTERS`: `NetworkId = 2`, the postmile network, the rows the site's own query
+asks for), because the layer holds the calibration points of every LRS network in the
+state; the manifest's Data Source states the clause. The work PC owes the first refresh.
+
+**3. Which data each side came from is stated, not assumed.** A build records the
+feature service its layers were pulled from (the marker sheet's `Layer service`), and a
+vs-TSMIS comparison prints it beside the data source the export's file name records. An
+SSOR prod export against the default library reads the same service; an export from
+the site's ARS source, or from another environment, is flagged as a different service.
+
+### Segments, read the way the file is defined
+
+The business requirement asks for "homogenous segments of all the highway inventory
+data items" that "break and restart at the county boundary" (items 8 and 10). The
+site's Highway Log pipeline, the engine the list names for this file, works that way:
+it drops an attribute-change boundary at which no reported field changes, and the four
+block effective dates are not among the fields (`highway_log.js`). The build cuts at
+every layer breakpoint, as the TSN table does.
+
+So the **vs-TSMIS comparison** (`compare_clean_highway_arcgis._join_unchanged`) joins a
+build segment to the one that ends where it begins when:
+
+- it carries no landmark, equation or break,
+- no counted column differs across the boundary, the END postmile, the length and the
+  four block effective dates aside, and
+- the site's file has no row keyed at that postmile.
+
+The last condition is what the 2026-11-03 merge experiment lacked: a boundary the site
+also cuts stays a paired row, so its cells still compare. A joined boundary carries no
+attribute change, so no difference a reader could act on is hidden. A landmark,
+equation or break belongs to the postmile a segment begins at, so the segment being
+joined may carry none, while the one it joins may (and keeps it). The build workbook,
+the vs-TSN comparison and the three-way are untouched. The Notes sheet states both
+counts.
+
+**Measured** on the 2026-11-06 dev-site export against the 2026-10-30 layers, build as
+of 2026-11-06:
+
+| | Without the join | With it |
+|---|---:|---:|
+| Paired segments | 49,146 | 49,146 |
+| Only in the build | 8,174 | 3,744 |
+| Only in the site's file | 4,065 | 4,065 |
+| Differing cells | 48,204 | 41,865 |
+| Segments joined | | 4,430 (3,794 nothing changes, 636 a date only) |
+
+The 6,339 fewer cells are END PM and LENGTH on the segments that used to stop at a cut
+the site does not have. What the remaining one-sided rows are is roadmap TW15. One more
+thing the same data showed: the site's file is not the same from run to run on its
+longest routes (TW13), so part of every count on those routes is the site's own.
+
+### Points, read the way the site lists them (2026-11-18)
+
+The site's file is the Highway Log's row list written flat (`clean_highway.js`
+`clh_buildSegments`): one row for every landmark of the route (SHS Landmark #123), each
+side of every postmile equation, the end of each county the route runs on from, each
+city's begin, and each place an attribute changes. The build made a row only where a
+Highway Group span put a segment, and its point layers did not read a point's roadbed.
+Since 2026-11-18 it follows the site (`consolidate_clean_highway`, `site_points`, build
+version 3):
+
+- **A point belongs to its own roadbed** (its PM suffix). A landmark, equation or route
+  break on the left roadbed of an independent alignment cuts and labels the L rows
+  alone. Before, every point cut and labelled both roadbeds: 823 of the build-only rows
+  of 2026-11-17.
+- **Every landmark and each side of an equation is a row.** Where no segment of that
+  roadbed begins there (the last postmile of a space, the plain road where an
+  independent alignment begins, a place with no Highway Group span) it is a
+  zero-length row. Several landmarks at one postmile are a row each in AR order, the
+  last one the segment's (272 of the 293 such postmiles of the 2026-11-06 export follow
+  that order). An equation's row carries the landmarks of every roadbed at its
+  postmile, joined with ` / `, and they make no rows of their own (the site folds a
+  landmark into an equation by PM prefix + postmile alone: 001 MON R82.739's
+  left-roadbed `END LT INDEP ALIGN`).
+- **A county the route runs on from ends in a zero-length row** carrying its last
+  segment's values (`hl_queryCountyEnds`).
+- **The names the site leaves out are left out**: a `BEGIN` / `END REALIGNMENT` marker
+  where a named landmark shares its postmile (under the prefixes the site's pattern
+  knows: none, H, M, N, R), and `SELF INTERSECT`.
+
+A zero-length row is read at the point the way the site reads a row there
+(`_seg_at_point`, `_ArFill.at`, from `queryRangeLayer` / `hl_queryRangeLayerS` /
+`hl_queryLayer122Field`): the spans that hold the measure, ends included, with one that
+begins within 1e-5 past it, and of those the one that begins last, so the last postmile
+of a space reads the stretch that follows it; the nearest span within 0.005 where none
+holds it; the left-roadbed layers at the postmile's own measure on the left alignment;
+the network date and segment order by the spans that hold the measure and nothing
+more; a landmark's own inventory date where no network-date span holds the row. A
+landmark is placed by the layer's own RouteID and AR measure, an equation by its
+postmile (277 of 743 equation rows agree on every value that way, 188 placed by their
+landmark, 84 read a hair before). Segment rows keep the offsets and break markers they
+had: a point row takes no part in either.
+
+**In the vs-TSMIS comparison** (`compare_clean_highway_arcgis`):
+
+- A `BEGIN` / `END REALIGNMENT` name reads with the row's PM prefix, as the site
+  spells it (`END R REALIGNMENT`). The layer's own name has none.
+- A zero-length row sits where two stretches meet, and either stretch's value is right
+  at that point. Which one the site prints turns on a difference below its own 1e-5
+  tolerance between the LRS's translation of the postmile and the layers' stored
+  measures (001 SLO R7.531 reads the stretch that begins there, 001 MEN R56.064 the one
+  that ends), which no layer file carries. So a cell of a zero-length row agrees when
+  it shows the stretch that begins there or the one that ends there
+  (`_settle_point_rows`). A value that is neither still counts.
+- A zero-length row is never joined into a segment.
+
+**Measured** on the 2026-11-06 dev-site export against the 2026-10-30 layers, build as
+of 2026-11-06:
+
+| | 2026-11-17 (segments joined) | 2026-11-18 (points) |
+|---|---:|---:|
+| Paired rows | 49,146 | 51,322 |
+| Only in the build | 3,744 | 3,180 |
+| Only in the site's file | 4,065 | 1,889 |
+| Differing cells | 41,865 | 45,236 |
+| Zero-length rows in the build | 0 | 2,365 |
+| ... of them reading the ending stretch in some cell | | 366 rows, 1,532 cells |
+
+The cells rise because 2,176 more rows are compared. On the newly paired
+zero-length rows the largest columns are END PM and length (the site gives a
+zero-length row the END of its next row, and its landmark row is the first segment of
+the following space where the build keys that segment in its own space).
+
+**Against the raw layers** (`tools/clean_road_layer_check.py file`, which shares none of
+the build's logic): the build's segment rows differ from their own layers on 2 cells of
+1,440,106 judged, the same two as before the change (TW12). It has 774 fewer segment
+rows than the 2026-11-17 build, the cuts a point on the other roadbed used to make. Its
+2,365 zero-length rows are judged apart, because that check reads a row's own county +
+prefix space alone: 40,383 cells equal the stretch there and 6,713 read the stretch on
+the other side of the postmile, which is the reading described above.
+
+**Against TSN.** The TSN extract has no zero-length row at all (0 of 60,083), so most
+of the build's stand alone on the ArcGIS side there, by the new file's layout. Measured
+with the build as of 2025-09-08 against the extract, keyed pairing in memory: 235 more
+rows pair (52,927 to 53,162), TSN-only rows fall 7,156 to 6,921, and the build has
+2,429 zero-length rows, 1,789 of them with no TSN row. The vs-TSN and three-way Notes say so. **Highway Detail** keeps
+the rule it was measured with (`site_points=False`): the build it reads is byte-equal
+to the one the old code wrote for 2026-11-06, checked on the real layers.
+
+### What is left on the Highway file, and whose it is (2026-11-18)
+
+Every class below was measured on the 2026-11-06 export. The build is the LRS as of
+the day; none of these is a build artifact any more.
+
+| Class | Rows | Cause |
+|---|---:|---|
+| Only in the build: a layer the site does not scan changes | 660 | The site collects change points from 18 layers (`hl_queryAttributeChangePairs`). SHS Special Feature R #135 (290 rows), a city's END (356: only city begins are rows), tolls and forest (10) and non-add mileage (2) are not among them, though `clean_highway.js` lists every one of those columns as a record trigger. |
+| Only in the build: a span ends and none follows | 200 | The site takes a span's begin as a change point, never its end. Where a median, barrier or left-roadbed span stops and the layer has a gap, the file carries the old value on (080 CC 2.538: the barrier ends, the site's row runs to 2.565 with it). |
+| Only in the build: the left roadbed of an independent alignment | 142 | On `_S` routes the site scans the five left-roadbed layers alone, so a median or barrier change along the left roadbed makes no row (080 NEV R5.934L to R8.835L). |
+| Only in the build: the site's duplicate check has no county | 180 | The site keeps one attribute-change point per PM prefix + postmile + suffix on a ROUTE and drops one whose key any landmark on the route holds (`_pmKeyOf`, `_attrPmBest`, `basePmKeys`). A change at CC 13.486 is lost when another county has a landmark at 13.486. 6.7% of the missing rows against 0.08% of paired ones (landmark) and 3.9% against 0.3% (another change). |
+| Only in the build: lost on the day | 266 | 121 are in the site's file on 10-22, 10-30 and 11-03 and missing on 11-06 (78 on route 002); 145 come and go (route 001). TW13. |
+| The same boundary, keyed up to 0.005 mi apart | 245 pairs | The build keys on the span's stored postmile, the site on the LRS's translation of its AR measure. |
+| Only in the build: the first segment of a postmile space | 321 | The site lists it under another key: its row at that place is the landmark, equation or county end, which keeps its own postmile identity, and the change point at the same odometer is dropped as a duplicate. 120 match a site row of another prefix or roadbed exactly by END and length (001 SLO plain 7.531 to 7.59 is the site's `R7.531`); 146 are a county's first segment with no site row ending there in that county, the ends-of-county finding of 2026-11-13 seen from the build; 55 end where a site row of another length ends. |
+| Only in the site's file: an attribute row the build has no boundary for | 1,222 | 1,134 of them lie under a retired LRS row. The site's range queries filter on inventory dates only, so beside 172,749 current rows of the 18 layers they keep 434,092 retired ones (`LRSToDate` set), which `_lrsDedupRetired` removes only where a current row has the same postmile extent and start date. Where a recalibration came with new inventory the retired rows stay, at stale AR measures (TW11 is this, seen in the values). 462 are on route 001. |
+| Only in the site's file: equations | 275 | Equations the Equation Points layer does not carry (TW10). The site pairs the postmile network's calibration points; the library gets that layer on its next refresh. |
+| Only in the site's file: no postmile | 186 | The site could not translate the row's AR to a postmile. Keyed on the odometer, unpairable. |
+
+Not yet measured cell by cell: how many of the differing cells on paired rows are the
+retired rows above. The rate is 0.71 differing value cells a row where a retired row
+lies over the place and 0.42 where none does.

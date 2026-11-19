@@ -32,6 +32,7 @@ scripts_path()
 from openpyxl import Workbook, load_workbook  # noqa: E402
 
 import arcgis_clean_road_build as acb  # noqa: E402
+import arcgis_refresh  # noqa: E402
 import arcgis_report_clean_intersection as acri  # noqa: E402
 import arcgis_report_clean_ramp as acrr  # noqa: E402
 import arcgis_report_intersection_detail as ari  # noqa: E402
@@ -398,7 +399,7 @@ def test_ramp(tmp):
            _pt("001_000100", 0.606, 1.6),
            _pt("001_000100", 0.5, 1.5, LRSToDate=D(2021, 1, 1)),        # history
            _pt("001_000300", 2.0, 3.0, InventoryItemStartDate=D(2027, 1, 1))]  # future
-    attrs = [_attrs("001_000100"),
+    attrs = [_attrs("001_000100", InventoryItemStartDate=D(1980, 5, 6)),
              _attrs("001_000200", Ramp_Design="L- Loop-w/o Left Turn",
                     Ramp_On_Off_Ind="1- ON", Area4_Ind="No")]
     dirs = [{"ROUTE": 1, "FROM_": "S", "TO_": "N"}]
@@ -435,20 +436,32 @@ def test_ramp(tmp):
              a["RAM_BEGIN_DATE"], a["RAM_SEG_ORDER_ID"], a["RAM_HIGHWAY_GROUP"],
              a["RAM_POP_GROUP"], a["RAM_NETWORK_ID"], a["RAM_EXTRACT_DATE"])
             == ("12", "ORA", "001", "02/25/1976", "150", "D", "U", "2", "10/05/2026"), a)
-    c.check("the odometer the requirements ask for is written; the other unsourced "
-            "columns stay blank",
-            a["RAM_BEGIN_OFFSET_AMT"] == "1.6"
+    written = ("RAM_BEGIN_OFFSET_AMT", "RAM_CREATE_DATE")
+    c.check("the odometer the requirements ask for and the create date the vendor's "
+            "source list names (SHS Ramp's own inventory start date, not the ramp "
+            "point's) are written; the other unsourced columns stay blank",
+            a["RAM_BEGIN_OFFSET_AMT"] == "1.6" and a["RAM_CREATE_DATE"] == "05/06/1980"
+            and a["RAM_BEGIN_DATE"] == "02/25/1976"
             and all(not r[col] for r in rows for col in crc.RAMP.unsourced
-                    if col != "RAM_BEGIN_OFFSET_AMT"), a)
+                    if col not in written), a)
+    wb = load_workbook(out, read_only=True)
+    marker = {str(r[0]): r[1] for r in wb[acb.MARKER_SHEET].iter_rows(values_only=True)}
+    wb.close()
+    c.check("the build records the feature service its layers came from (none in "
+            "this synthetic library, and it says so)",
+            marker.get("Layer service") == "(not recorded)"
+            and acb.report_facts(out).get("layer_service") == "(not recorded)",
+            marker.get("Layer service"))
 
     site_rows = [dict(r) for r in rows]
     for r in site_rows:
-        r["RAM_BEGIN_OFFSET_AMT"] = ""          # the site leaves it blank
+        r["RAM_BEGIN_OFFSET_AMT"] = ""          # the site leaves both blank
+        r["RAM_CREATE_DATE"] = ""
         r["RAM_EXTRACT_DATE"] = "10/22/2026"
     site = _site_export(tmp / "ram_site_same", crc.RAMP, "001", site_rows)
     got = _counts(cmp_ram.compare(str(out), str(site), str(tmp / "r1.xlsx"), **_q()))
     c.check("the build against the site's file of the same ramps: a clean match "
-            "(the blank odometer and the extract date are context)",
+            "(the blank odometer and create date and the extract date are context)",
             got == {"paired_rows": 2, "side_a_only_rows": 0, "side_b_only_rows": 0,
                     "differing_cells": 0}, got)
     site_rows[0]["RAM_DESIGN_DESC"] = "Diamond Type Ramp"
@@ -462,7 +475,7 @@ def test_ramp(tmp):
 
 
 # --------------------------------------------------------------------------- #
-def _arc_build(path, rows, skipped=0, marked=0):
+def _arc_build(path, rows, skipped=0, marked=0, service=None):
     """A minimal CA HIGHWAYS build workbook: the build's sheet + exact header
     and its marker sheet (the role gate)."""
     wb = Workbook()
@@ -473,9 +486,20 @@ def _arc_build(path, rows, skipped=0, marked=0):
         ws.append([r.get(h) for h in chc.ARC_HEADER])
     mk = wb.create_sheet(chc.ARC_MARKER_SHEET)
     mk.append(["As-of date", ASOF])
+    if service is not None:
+        mk.append(["Layer service", service])
     mk.append(["Skipped source spans", skipped])
     mk.append(["Marked anchor cells", marked])
     wb.save(path)
+
+
+def _notes_text(path):
+    wb = load_workbook(path, read_only=True)
+    try:
+        return " ".join(str(v) for row in wb["Notes"].iter_rows(values_only=True)
+                        for v in row if v)
+    finally:
+        wb.close()
 
 
 def _thy(begin, end, **kw):
@@ -540,6 +564,86 @@ def test_highway(tmp):
                     "differing_cells": 1}, got)
 
 
+def test_highway_segments(tmp):
+    print("Clean Road Highway: the build's segments read the way the site's file is cut:")
+    site_fmt = dict(THY_COUNTY_CODE="SD.", THY_LEFT_ROAD_EFF_DATE="07/13/1973")
+    rows = [
+        _thy("0", "0.305"),
+        _thy("0.305", "0.5"),                                       # nothing changes
+        _thy("0.5", "0.9", THY_LEFT_ROAD_EFF_DATE="1990-01-01"),    # only a date
+        _thy("0.9", "1.2", THY_LT_LANES_AMT="3"),                   # an attribute
+        _thy("1.2", "1.5", THY_LT_LANES_AMT="3",
+             THY_LANDMARK_SHORT_DESC="SOME BRIDGE"),                # a landmark
+        _thy("1.5", "1.8", THY_LT_LANES_AMT="3"),                   # the site has a row
+        _thy("1.8", "2.0", THY_LT_LANES_AMT="3", THY_ADT_AMT="9"),  # context only
+        _thy("2.0", "2.3", THY_LT_LANES_AMT="3",
+             THY_LANDMARK_SHORT_DESC="END BRIDGE"),                 # a landmark...
+        _thy("2.3", "2.6", THY_LT_LANES_AMT="3"),                   # ...then nothing
+    ]
+    build = tmp / "clean_highway_segments.xlsx"
+    _arc_build(build, rows, service=arcgis_refresh.SERVICE_DEFAULT)
+    site_rows = [
+        _thy("0", "0.9", **site_fmt),
+        _thy("0.9", "1.2", THY_LT_LANES_AMT="03", **site_fmt),
+        _thy("1.2", "1.5", THY_LT_LANES_AMT="03",
+             THY_LANDMARK_SHORT_DESC="SOME BRIDGE", **site_fmt),
+        _thy("1.5", "2.0", THY_LT_LANES_AMT="03", **site_fmt),
+        _thy("2.0", "2.6", THY_LT_LANES_AMT="03",
+             THY_LANDMARK_SHORT_DESC="END BRIDGE", **site_fmt),
+    ]
+    site = _site_export(tmp / "hwy_segments", crc.HIGHWAY, "005", site_rows)
+    out = tmp / "h4.xlsx"
+    res = cmp_hwy.compare(str(build), str(site), str(out), events=_Quiet(),
+                          confirm_overwrite=lambda p: True, mode="values")
+    got = _counts(res)
+    c.check("a build segment that begins where nothing the file reports changes, or "
+            "where only a block effective date changes, is joined to the one before "
+            "it — also when that one begins at a landmark, which it keeps; an "
+            "attribute change, a landmark and a postmile the site has a row at each "
+            "keep their segment — the nine build segments read as the site's five, "
+            "ends and lengths included",
+            got == {"paired_rows": 5, "side_a_only_rows": 0, "side_b_only_rows": 0,
+                    "differing_cells": 0}, got)
+    notes = _notes_text(out)
+    c.check("the Notes say how many were joined, and why",
+            "4 build segments were joined" in notes
+            and "3 begin where nothing this file reports changes" in notes
+            and "1 where only a block effective date changes" in notes, notes[:900])
+    c.check("the three-way comparison still reads the build as written (no join)",
+            len(cmp_hwy._load_build(str(build), collapse=False)) == 9)
+    c.check("the Notes name the feature service and say the export's SSOR prod source "
+            "reads that same service; and they hold the build against the vendor's "
+            "source list, layer numbers shown",
+            "DATA SOURCE" in notes and "both sides come from one data source" in notes
+            and "all 29 agree" in notes and "SHS Median #124 (Median_Type)" in notes
+            and "Posted_Speed_Limit" in notes, notes[:900])
+
+    # the same build against an export the site took from its other data source
+    ars = tmp / "hwy_ars" / "clean_road_highway_consolidated 2026-11-13 ars-prod dev-site.xlsx"
+    ars.parent.mkdir(parents=True, exist_ok=True)
+    ars.write_bytes(site.read_bytes())
+    out = tmp / "h5.xlsx"
+    cmp_hwy.compare(str(build), str(ars), str(out), events=_Quiet(),
+                    confirm_overwrite=lambda p: True, mode="values")
+    notes = _notes_text(out)
+    c.check("an export taken from the site's ARS source is flagged: it reads a "
+            "different service from the one the layers came from",
+            "ARS prod source" in notes and "DIFFERENT service" in notes, notes[:900])
+
+    # a sliver the site also cuts is never joined, and a join never crosses a roadbed
+    rows = [_thy("0", "0.5", THY_PM_SUFFIX_CODE="R"),
+            _thy("0.5", "0.9", THY_PM_SUFFIX_CODE="L")]
+    build = tmp / "clean_highway_roadbeds.xlsx"
+    _arc_build(build, rows)
+    site = _site_export(tmp / "hwy_roadbeds", crc.HIGHWAY, "005",
+                        [_thy("0", "0.5", THY_PM_SUFFIX_CODE="R", **site_fmt)])
+    got = _counts(cmp_hwy.compare(str(build), str(site), str(tmp / "h6.xlsx"), **_q()))
+    c.check("a segment on the other roadbed is never joined to one that happens to end "
+            "at its begin postmile",
+            got == {"paired_rows": 1, "side_a_only_rows": 1, "side_b_only_rows": 0,
+                    "differing_cells": 0}, got)
+
+
 def main():
     print("the registry:")
     eds = {e.key: e for e in arcgis_reports.editions()}
@@ -562,6 +666,7 @@ def main():
         test_intersection_by_ar(tmp)
         test_ramp(tmp)
         test_highway(tmp)
+        test_highway_segments(tmp)
     return c.summary()
 
 

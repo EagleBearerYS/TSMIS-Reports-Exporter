@@ -52,6 +52,8 @@ function agbStatus(b, m) {
   if (b.stale_reason === "drop_changed")
     return { text: `built from older layers${b.drop_exported ? " (" + b.drop_exported + ")" : ""} — refresh it`,
              cls: "warn" };
+  if (b.stale_reason === "build_changed")
+    return { text: "built by an older version of the app — refresh it", cls: "warn" };
   return { text: "current" + (b.completion === "partial" ? " · partial (its notes sheet says why)" : ""),
            cls: "ok" };
 }

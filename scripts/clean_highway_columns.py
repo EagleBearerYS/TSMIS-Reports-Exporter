@@ -207,9 +207,11 @@ PROVENANCE = {
                                 "decimals (the extract's own 4th-decimal "
                                 "arithmetic wobble never counts)"),
     "THY_LANDMARK_SHORT_DESC": (_S, "SHS Landmark", "Landmarks_Short",
-                                "the landmark point(s) at the segment's begin "
-                                "postmile — the longest text where several "
-                                "share it"),
+                                "the landmark at the row's begin postmile on "
+                                "the row's own roadbed. Several at one "
+                                "postmile are a row each, a zero-length one "
+                                "but the last; an equation's row carries them "
+                                "all, joined with ' / '"),
     "THY_POPULATION_CODE": (_S, "SHS Population", "Population_Code", ""),
     "THY_POPULATION_EFF_DATE": (_S, "SHS Population", "InventoryItemStartDate",
                                 "BUILD-ONLY: the TSN extract has no such "
@@ -230,7 +232,8 @@ PROVENANCE = {
                                "no maintenance layer anywhere in the ~90-layer "
                                "list — owner question outstanding"),
     "THY_EQUATE_CODE": (_S, "Equation Points", "(point coverage)",
-                        "E where a row starts at an equation point"),
+                        "E where a row starts at an equation point — a "
+                        "zero-length row where no segment begins there"),
     "THY_BREAK_DESC": (_Y, "SHS Route Break + (structure)", "Route_Break_Type",
                        "BEG/END/CNTY/D-C/DIST from the overlay; R-BR/U-BR "
                        "from Route Break points; BEGL/ENDR at "

@@ -21,6 +21,21 @@ unconstructed gap (14.057–17.461), TSN skips the PM range too, and its 340
 statewide HG=X inventory rows have no layer counterpart — they surface
 one-sided in the comparison by design.
 
+POINTS (2026-11-18, `site_points`). The site lists every landmark of a route,
+each side of every postmile equation and the end of each county as a row. So a
+landmark, equation or route break belongs to its own roadbed (its PM suffix):
+one on the left roadbed of an independent alignment cuts and labels the L rows
+alone. Where no segment of that roadbed begins at a landmark or equation point
+— the last postmile of a space, the plain road where an independent alignment
+begins, a place with no Highway Group span — the point is a ZERO-LENGTH row,
+read at the point the way the site reads a row there (`_seg_at_point`). Several
+landmarks at one postmile are a row each, the last the segment's; an equation's
+row takes them all. A county the route runs on from ends in a zero-length row
+too. Segment rows keep the offsets and break markers they had: a point row
+takes no part in either. The TSN extract has no zero-length row at all, so
+against TSN these rows stand alone, by the new file's layout; a REPORT that was
+measured without them passes `site_points=False` and builds as before.
+
 The output keeps the FULL 74-column THY header (owner decision 2026-07-22) in
 three tiers: sourced (painted from a mapped layer), no-TSMIS-source (present +
 empty + noted), and TSN-internal bookkeeping (present + empty + noted;
@@ -45,6 +60,7 @@ import arcgis_layers
 import city_codes
 import clean_highway_columns as chc
 import clean_road_layers as crl
+import clean_road_sources
 import consolidation_meta
 import outcome
 import paths
@@ -56,7 +72,7 @@ REPORT_NAME = "Clean Road Highway (ArcGIS)"
 SHEET_NAME = chc.ARC_SHEET
 MARKER_SHEET = chc.ARC_MARKER_SHEET
 MARKED_SHEET = chc.ARC_MARKED_SHEET
-BUILD_VERSION = 2
+BUILD_VERSION = 3
 FILENAME = "clean_highway_built.xlsx"
 OUT_DIR = paths.OUTPUT_ROOT / "arcgis_cleanroad"
 OUT_PATH = OUT_DIR / FILENAME
@@ -111,6 +127,17 @@ _SPAN_ID = ["District", "RouteNum", "RouteSuffix", "Alignment", "BeginCounty",
             "InventoryItemStartDate", "LRSFromDate", "LRSToDate", "RouteID"]
 _POINT_ID = ["RouteNum", "RouteSuffix", "Alignment", "County", "PMPrefix",
              "PMMeasure", "LRSFromDate", "LRSToDate"]
+# What places a point beyond its postmile, read where the layer has it: its
+# roadbed (the PM suffix — R / L on an independent alignment, X on an
+# unconstructed one) and its own RouteID + AR measure, which is where the site
+# samples a landmark's row. The Equation Points table gives no AR place: its
+# `fromMeasure` is not a measure on the AR network (001 SB R36.5 carries
+# 150.777 where the landmark at that postmile sits at AR 151.241), so an
+# equation is placed by its postmile.
+_POINT_PLACE = {"LMK": ("RouteID", "ARMeasure"),
+                "EQP": (None, None),
+                "RBR": ("RouteID", "ARMeasure")}
+_POINT_PLACE_COLS = ("PMSuffix", "ODMeasure", "InventoryItemStartDate")
 # Read as optional columns: a skipped-span record (HF-01) documents what the
 # unplaceable row DID have (its AR measures, LocError) — never used to place
 # it; the AR measures of every placeable span also feed `_ArFill`.
@@ -433,14 +460,28 @@ def _skip_warning(s):
             f"not asserted{tail}")
 
 
+class _Point:
+    """One landmark / equation / route-break point: its value, its roadbed
+    ("" for the plain road, else its PM suffix), its place on the AR network
+    and its own inventory date (None where the layer file does not say)."""
+    __slots__ = ("value", "roadbed", "rid", "ar", "od", "item")
+
+    def __init__(self, value, roadbed="", rid=None, ar=None, od=None, item=None):
+        self.value, self.roadbed = value, roadbed
+        self.rid, self.ar, self.od, self.item = rid, ar, od, item
+
+
 def _read_point_layer(lib, index, tag, *, asof, events, points):
     """Stream one point layer's as-of rows into `points[(route, county,
-    prefix)][tag]` = {pm_units: [values]} (several points can share a PM)."""
+    prefix)][tag]` = {pm_units: [_Point]} (several points can share a PM)."""
     layer, attrs = POINT_LAYERS[tag]
     entry = index.get(layer) or {}
+    rid_col, ar_col = _POINT_PLACE[tag]
+    place = tuple(c for c in (*_POINT_PLACE_COLS, rid_col, ar_col) if c)
     n_asof = 0
-    for r in crl.stream_layer(lib["present"][layer], _POINT_ID + attrs,
-                              layer_name=layer, expected_rows=entry.get("rows")):
+    for r in crl.stream_layer(lib["present"][layer], _POINT_ID + attrs + list(place),
+                              layer_name=layer, expected_rows=entry.get("rows"),
+                              optional=place):
         # Equation points are PERMANENT PM-line facts: the layer stamps its
         # own LOAD date as LRSFromDate (measured: all 1,570 say 2026-01-14),
         # so an as-of filter on it would erase every equate. Only a real
@@ -457,8 +498,14 @@ def _read_point_layer(lib, index, tag, *, asof, events, points):
         route = _route_token(r["RouteNum"], r["RouteSuffix"])
         county = crl.norm_county(r["County"])
         prefix = crl.dot_none(r["PMPrefix"]).strip().upper()
+        rid = r[rid_col] if rid_col else None
         points[(route, county, prefix)].setdefault(tag, {}).setdefault(
-            pm, []).append(r[attrs[0]])
+            pm, []).append(_Point(
+                r[attrs[0]], crl.dot_none(r["PMSuffix"]).strip().upper(),
+                rid if isinstance(rid, str) and rid else None,
+                crl.to_serial(r[ar_col]) if ar_col else None,
+                crl.to_serial(r["ODMeasure"]),
+                crl.to_serial(r["InventoryItemStartDate"])))
     events.on_log(f"  {layer}: {n_asof:,} as-of points")
 
 
@@ -466,6 +513,14 @@ def _read_point_layer(lib, index, tag, *, asof, events, points):
 # every attribute layer but the row-making Highway Group, the network date and
 # the ADT interpolation source.
 _AR_FILL_TAGS = tuple(t for t in SPAN_LAYERS if t not in ("HG", "NET", "TVS"))
+
+# Reading a layer at one point's AR (`_ArFill.at`), the site's two tolerances
+# (shared.js queryRangeLayer): a span that begins within 1e-5 of the point
+# counts as beginning at it (consecutive spans are stored a hair apart), and a
+# point no span touches snaps to the nearest within 0.005.
+_POINT_BRIDGE = 0.00001
+_POINT_SNAP = 0.005
+_POINT_FAR = 0.5
 
 
 class _ArFill:
@@ -543,6 +598,70 @@ class _ArFill:
             if ar <= to and home != own and (best is None or span.rank > best.rank):
                 best = span
         return best
+
+    def place(self, route, county, prefix, pm_units, align):
+        """(RouteID, AR measure) of a postmile on `align`, or (None, None)."""
+        return self._calibration().translate(route, county, prefix,
+                                             pm_units / crl.PM_SCALE, align)
+
+    def _around(self, tag, rid, ar, reach):
+        """`tag`'s (begin, end, span) on `rid` lying within `reach` of `ar`."""
+        frms, spans, longest = self._layer(tag, rid)
+        out = []
+        i = bisect_right(frms, ar + reach)
+        while i > 0:
+            i -= 1
+            frm, to, span, _home = spans[i]
+            if frm < ar - longest - reach:
+                break
+            if to >= ar - reach:
+                out.append((frm, to, span))
+        return out
+
+    def at(self, tag, first, then=None, *, exact=False, far=False,
+           snap_first_only=False):
+        """The `_Span` of `tag` at ONE place on the AR network, read exactly
+        as the site reads a layer for a row (shared.js `queryRangeLayer`,
+        highway_log.js `hl_queryRangeLayerS` / `hl_queryLayer122Field`).
+
+        `first` and `then` are (RouteID, AR) places: the layer is read at
+        `first`, and at `then` only when no span there holds the measure (the
+        site's `_P` fallback for a left-roadbed read). A span HOLDS a measure
+        from its begin to its end, both included. With the holding spans goes
+        one that begins within 1e-5 past the measure — consecutive spans are
+        stored a hair apart — and of them all the one that begins LAST is
+        read, so a point where one span hands over to the next reads the
+        next. Where nothing holds the measure the nearest span within 0.005
+        is read (`far`: within half a mile when the measure lies beyond all
+        the layer has on that RouteID — the left roadbed's calibration can
+        stop short of the right's); `snap_first_only` looks for it only on
+        the first place that has the layer at all. `exact` is the network-date
+        read: holding spans only, no bridge, no snap."""
+        places = [p for p in (first, then)
+                  if p is not None and p[0] is not None and p[1] is not None]
+        for rid, ar in places:
+            held = [s for s in self._around(tag, rid, ar, 0.0)
+                    if s[0] <= ar <= s[1]]
+            if not held:
+                continue
+            if not exact:
+                held += [s for s in self._around(tag, rid, ar, _POINT_BRIDGE)
+                         if ar < s[0] <= ar + _POINT_BRIDGE]
+            return max(held, key=lambda s: s[0])[2]
+        if exact:
+            return None
+        for rid, ar in places:
+            frms, spans, _longest = self._layer(tag, rid)
+            if not spans:
+                continue
+            reach = _POINT_SNAP
+            if far and (ar < frms[0] or ar > max(s[1] for s in spans)):
+                reach = _POINT_FAR
+            near = min(self._around(tag, rid, ar, reach),
+                       key=lambda s: max(s[0] - ar, ar - s[1], 0.0), default=None)
+            if near is not None or snap_first_only:
+                return near[2] if near is not None else None
+        return None
 
 
 def _sibling_rid(rid, align):
@@ -1238,6 +1357,8 @@ def _paint_row(route, county, prefix, b, e, seg, kind, pts, asof_date,
     if net is not None:
         put("THY_RECORD_DATE", crl.serial_to_date(crl.to_serial(net.vals[0])))
         put("THY_SEG_ORDER_ID", _seg_num(seg, "NET", 1))
+    elif b in pts.get(_LANDMARK_DATE, ()):
+        put("THY_RECORD_DATE", crl.serial_to_date(pts[_LANDMARK_DATE][b]))
 
     if kind in ("base", "R"):
         _paint_block(row, seg, "R", primary_eff)
@@ -1361,18 +1482,174 @@ def _overlap_len(window, intervals):
     return total
 
 
+# A point's roadbed (its PM suffix) and the kind of row it belongs to: the
+# plain road's base rows, or the R / L rows of an independent alignment.
+_ROADBED_KIND = {"": "base", "R": "R", "L": "L"}
+_KIND_ROADBED = {kind: roadbed for roadbed, kind in _ROADBED_KIND.items()}
+_KIND_ORDER = {"base": 0, "R": 1, "L": 2}
+# Two landmark names the site treats on their own (hsl.js `queryLandmarks`,
+# highway_log.js `hl_suppressRealignmentLandmarks`): a SELF INTERSECT landmark
+# is never a row, and a BEGIN / END REALIGNMENT marker is left out where a
+# named landmark shares its postmile — under the prefixes the site's own
+# pattern knows.
+_SELF_INTERSECT = "self intersect"
+_REALIGNMENT = ("begin realignment", "end realignment")
+_REALIGNMENT_PREFIXES = ("", "H", "M", "N", "R")
+# What joins the landmark names a postmile equation's row takes on.
+LANDMARK_JOIN = " / "
+# In a roadbed's label view (`_site_view`): {pm_units: the inventory date of
+# the landmark the row there is named for}. Where no network-date span holds
+# a row, the site dates it by its landmark (highway_log.js `hl_buildResults`:
+# `netStartMap.get(...) || p.startDate`).
+_LANDMARK_DATE = "landmark date"
+
+
+def _points_on(pts, roadbed):
+    """`pts` = {tag: {pm_units: [_Point]}} narrowed to one roadbed, as
+    {tag: {pm_units: [values]}}. `roadbed` None keeps every point whatever
+    its roadbed — a report that does not take the site's point rules."""
+    out = {}
+    for tag, by_pm in pts.items():
+        kept = {}
+        for pm, found in by_pm.items():
+            values = [p.value for p in found
+                      if roadbed is None or p.roadbed == roadbed]
+            if values:
+                kept[pm] = values
+        if kept:
+            out[tag] = kept
+    return out
+
+
+def _listed_landmarks(pts, prefix):
+    """{(roadbed, pm_units): [_Point]} — the landmarks of one postmile space
+    that the site lists, each point's in the site's order: AR ascending, then
+    the layer's own order (measured on the 2026-11-06 export: 272 of the 293
+    postmiles that carry several). One name at one place counts once.
+
+    At an equation's postmile the landmarks of EVERY roadbed are the
+    equation's: the site folds a landmark into an equation row by PM prefix +
+    postmile alone (highway_log.js `_eqKeyOf`), so 001 MON R82.739's `END LT
+    INDEP ALIGN`, a left-roadbed point, is named on the equation's row and has
+    none of its own. They are listed under each roadbed the equation has a
+    point on, and under no other."""
+    out = {}
+    for pm, found in pts.get("LMK", {}).items():
+        named = [p for p in found
+                 if p.value is not None and str(p.value) != ""
+                 and str(p.value).lower() != _SELF_INTERSECT]
+        marker = [str(p.value).lower() in _REALIGNMENT
+                  and prefix in _REALIGNMENT_PREFIXES for p in named]
+        if not all(marker):
+            named = [p for p, is_marker in zip(named, marker) if not is_marker]
+        seen = set()
+        for i in sorted(range(len(named)),
+                        key=lambda i: (named[i].ar if named[i].ar is not None
+                                       else float("inf"), i)):
+            p = named[i]
+            if (p.value, p.ar) in seen:
+                continue
+            seen.add((p.value, p.ar))
+            out.setdefault((p.roadbed, pm), []).append(p)
+    for pm, equations in pts.get("EQP", {}).items():
+        here = [key for key in out if key[1] == pm]
+        if not here:
+            continue
+        folded = sorted((p for key in here for p in out.pop(key)),
+                        key=lambda p: p.ar if p.ar is not None else float("inf"))
+        for roadbed in {q.roadbed for q in equations}:
+            out[(roadbed, pm)] = list(folded)
+    return out
+
+
+def _site_view(pts, listed, roadbed):
+    """One roadbed's labels as `_paint_row` reads them, {tag: {pm_units:
+    [values]}}: its equation and route-break points, and at each landmark
+    point the ONE name the row that begins there carries — the last the site
+    lists there (the earlier ones are rows of their own, `_point_rows`), or
+    all of them joined where the point is an equation's: the site folds an
+    equation's landmarks into the equation's row."""
+    view = _points_on({tag: by_pm for tag, by_pm in pts.items() if tag != "LMK"},
+                      roadbed)
+    equated = view.get("EQP", {})
+    names, dates = {}, {}
+    for (on, pm), found in listed.items():
+        if on != roadbed:
+            continue
+        if pm in equated:
+            names[pm] = [LANDMARK_JOIN.join(str(p.value) for p in found)]
+            item = next((p.item for p in found if p.item is not None), None)
+        else:
+            names[pm] = [found[-1].value]
+            item = found[-1].item
+        if item is not None:
+            dates[pm] = item
+    if names:
+        view["LMK"] = names
+    if dates:
+        view[_LANDMARK_DATE] = dates
+    return view
+
+
+def _r_kind(seg):
+    hg = seg.get("HG")
+    if hg is None:
+        return None
+    return "R" if crl.code_of(hg.vals[0]) == "R" else "base"
+
+
+def _l_kind(seg):
+    hg = seg.get("HG")
+    return "L" if hg is not None and crl.code_of(hg.vals[0]) == "L" else None
+
+
+def _cut_at_points(segments, kind_of, cuts):
+    """Overlay segments [(b, e, seg)] of the rows' kinds only, each cut at
+    the points of ITS kind (`cuts` = {kind: sorted pm_units}), as
+    [(b, e, seg, kind)]. A landmark on the left roadbed of an independent
+    alignment is no boundary of the right one."""
+    out = []
+    for b, e, seg in segments:
+        kind = kind_of(seg)
+        if kind is None:
+            continue
+        at = cuts.get(kind, ())
+        i = bisect_right(at, b)
+        while i < len(at) and at[i] < e:
+            out.append((b, at[i], seg, kind))
+            b = at[i]
+            i += 1
+        out.append((b, e, seg, kind))
+    return out
+
+
 def _build_cp(route, county, prefix, rbucket, lbucket, pts, asof_date,
-              primary_eff=True, ar_fill=None):
+              primary_eff=True, ar_fill=None, site_points=True):
     """All rows for one (route, county, prefix): base rows outside the
-    independent windows, R/L rows inside them. HG coverage GAPS yield NO row
-    at all — measured on the ORA 001 unconstructed gap, TSN skips the PM
+    independent windows, R/L rows inside them. HG coverage GAPS yield no
+    segment row — measured on the ORA 001 unconstructed gap, TSN skips the PM
     range entirely (its 340 statewide HG=X inventory rows have no layer
-    counterpart and surface one-sided in the comparison, by design)."""
+    counterpart and surface one-sided in the comparison, by design).
+
+    `pts` = {tag: {pm_units: [_Point]}}. With `site_points` the points are
+    read the way the site lists them: a point belongs to its own roadbed — it
+    cuts and labels that roadbed's rows only — and every landmark the site
+    lists and each side of an equation is a row, a zero-length one where no
+    segment of its roadbed begins there (`_point_rows`, marked rec["point"]).
+    Without it every point cuts and labels every roadbed and makes no row, as
+    the build did before the points' roadbeds were read."""
     hg_l = lbucket.get("HG", [])
     win_l = _merge_windows([(s.b, s.e) for s in hg_l
                             if crl.code_of(s.vals[0]) == "L"])
-    cuts = sorted({pm for tag in ("LMK", "EQP", "RBR")
-                   for pm in pts.get(tag, {})})
+    if site_points:
+        listed = _listed_landmarks(pts, prefix)
+        on = {kind: _site_view(pts, listed, roadbed)
+              for kind, roadbed in _KIND_ROADBED.items()}
+    else:
+        on = dict.fromkeys(_KIND_ROADBED, _points_on(pts, None))
+    cuts = {kind: sorted({pm for tag, by_pm in found.items()
+                          if tag != _LANDMARK_DATE for pm in by_pm})
+            for kind, found in on.items()}
 
     # The base/R universe: everything on the R alignment, plus the left-side
     # layers (their L-alignment PMs coincide with R off the independent
@@ -1385,14 +1662,10 @@ def _build_cp(route, county, prefix, rbucket, lbucket, pts, asof_date,
         clipped = _clip_spans(lbucket.get(tag, []), win_l, inside=False)
         if clipped:
             spans_r[tag] = [(s.b, s.e, s, s.rank) for s in clipped]
-    rows = []
-    for b, e, seg in crl.overlay(spans_r, cuts=cuts):
-        hg = seg.get("HG")
-        if hg is None:
-            continue
-        kind = "R" if crl.code_of(hg.vals[0]) == "R" else "base"
-        rows.append(_paint_row(route, county, prefix, b, e, seg, kind, pts,
-                               asof_date, primary_eff, ar_fill))
+    segs_r = crl.overlay(spans_r)
+    rows = [_paint_row(route, county, prefix, b, e, seg, kind, on[kind],
+                       asof_date, primary_eff, ar_fill)
+            for b, e, seg, kind in _cut_at_points(segs_r, _r_kind, cuts)]
 
     # The L universe: the L-alignment whole-road spans exist only on the
     # independent stretches; left-side layers clipped INTO those windows.
@@ -1402,12 +1675,14 @@ def _build_cp(route, county, prefix, rbucket, lbucket, pts, asof_date,
         clipped = _clip_spans(lbucket.get(tag, []), win_l, inside=True)
         if clipped:
             spans_l[tag] = [(s.b, s.e, s, s.rank) for s in clipped]
-    for b, e, seg in crl.overlay(spans_l, cuts=cuts):
-        hg = seg.get("HG")
-        if hg is None or crl.code_of(hg.vals[0]) != "L":
-            continue
-        rows.append(_paint_row(route, county, prefix, b, e, seg, "L", pts,
-                               asof_date, primary_eff, ar_fill))
+    segs_l = crl.overlay(spans_l)
+    rows += [_paint_row(route, county, prefix, b, e, seg, kind, on[kind],
+                        asof_date, primary_eff, ar_fill)
+             for b, e, seg, kind in _cut_at_points(segs_l, _l_kind, cuts)]
+    if site_points:
+        rows += _point_rows(route, county, prefix, pts, listed, rows,
+                            {"R": segs_r, "L": segs_l}, asof_date, primary_eff,
+                            ar_fill)
 
     # The Left block of a base or R row, and the Right block of an L row, are
     # read off the other alignment's layers at the row's midpoint, whatever
@@ -1416,16 +1691,257 @@ def _build_cp(route, county, prefix, rbucket, lbucket, pts, asof_date,
     # 1973-06-08 and its lanes; 004 CC's R rows past the Left roadbed's end at
     # R4.629 read the divided road's left side; 125 SD's divided rows inside
     # the Left window read the Left roadbed. TSN blanks the other roadbed's
-    # values on independent rows and keeps only the date.
+    # values on independent rows and keeps only the date. (A point row placed
+    # on the AR network has read both blocks there already.)
     left = {t: lbucket.get(t, []) for t in _LEFT_TAGS}
     other = {"base": ("L", left), "R": ("L", left),
              "L": ("R", {t: rbucket.get(t, []) for t in _RIGHT_TAGS})}
     for rec in rows:
+        if rec.get("placed"):
+            continue
         block, spans = other[rec["kind"]]
         seg = _block_at(spans, rec["b"], rec["e"], ar_fill, route, county, prefix,
                         block)
         _paint_block(rec["row"], seg, block, primary_eff)
     return rows
+
+
+def _point_rows(route, county, prefix, pts, listed, rows, segs, asof_date,
+                primary_eff, ar_fill):
+    """The zero-length rows of one postmile space: the site lists every
+    landmark of the route and both sides of every equation as a row (hsl.js
+    `queryLandmarks`, `queryEquationPointsFromNetwork`), wherever the Highway
+    Group spans happen to begin.
+
+      * A point no segment of its roadbed begins at is a row of its own: the
+        END of a postmile space (001 SLO R7.531 `END REALIGNMENT`), the plain
+        road where an independent alignment begins, a place the space has no
+        span over.
+      * Where a point carries several landmarks, the site gives each its row
+        and the LAST one the segment (001 SB R31.042: `SJCT 1; 1/135SEP
+        51-34R` at zero length, then `SJCT135; STEP-DOWN CONN` over 0.968).
+        An equation's row takes all its landmarks, joined, and they make no
+        rows of their own.
+
+    A point row reads every layer at the point itself, the way the site
+    reads a row there (`_seg_at_point`); a point with no place on the AR
+    network reads the overlay segment running on from its postmile, else the
+    one ending there. `listed` = `_listed_landmarks`; `segs` = {"R" / "L":
+    that alignment's overlay segments}; `rows` the space's segment rows."""
+    begun = {(rec["kind"], rec["b"]) for rec in rows}
+    equations = pts.get("EQP", {})
+    wanted = {}             # (roadbed, pm) -> ([landmark _Point or None], [_Point])
+    for (roadbed, pm), found in listed.items():
+        equated = any(q.roadbed == roadbed for q in equations.get(pm, ()))
+        names = [] if equated else list(found[:-1])
+        if (_ROADBED_KIND.get(roadbed), pm) not in begun:
+            names.append(None)      # the row the view's own name goes on
+        if names:
+            wanted[(roadbed, pm)] = (names, found)
+    for pm, found in equations.items():
+        for q in found:
+            if ((q.roadbed, pm) not in listed
+                    and (_ROADBED_KIND.get(q.roadbed), pm) not in begun):
+                wanted.setdefault((q.roadbed, pm), ([None], [q]))
+    out, views = [], {}
+    for (roadbed, pm), (names, found) in sorted(wanted.items()):
+        kind = _ROADBED_KIND.get(roadbed, "base")
+        align = "L" if roadbed == "L" else "R"
+        seg = _seg_at_point(
+            ar_fill, found, route, county, prefix, pm, align,
+            by_postmile=any(q.roadbed == roadbed for q in equations.get(pm, ())))
+        placed = seg is not None
+        if not placed:
+            seg = _seg_from(segs[align], pm) or _seg_until(segs[align], pm) or {}
+        if roadbed not in views:
+            views[roadbed] = _site_view(pts, listed, roadbed)
+        for name in names:
+            rec = _paint_row(route, county, prefix, pm, pm, seg, kind,
+                             views[roadbed], asof_date, primary_eff,
+                             None if placed else ar_fill)
+            row = rec["row"]
+            row[_COL["THY_PM_SUFFIX_CODE"]] = roadbed or None
+            if name is not None:
+                row[_COL["THY_LANDMARK_SHORT_DESC"]] = name.value
+                if seg.get("NET") is None:
+                    row[_COL["THY_RECORD_DATE"]] = (
+                        crl.serial_to_date(name.item) if name.item is not None else None)
+            if placed and kind != "base":
+                _paint_block(row, seg, "L" if kind == "R" else "R", primary_eff)
+            rec.update(point=True, placed=placed, tvs=None, od=None)
+            out.append(rec)
+    return out
+
+
+def _seg_from(segments, pm):
+    """The overlay segment that begins at or runs through `pm`, or None."""
+    for b, e, seg in segments:
+        if b <= pm < e:
+            return seg
+    return None
+
+
+def _seg_until(segments, pm):
+    """The overlay segment that ends at `pm`, or None."""
+    for b, e, seg in segments:
+        if b < pm <= e:
+            return seg
+    return None
+
+
+def _seg_at_point(ar_fill, found, route, county, prefix, pm, align,
+                  by_postmile=False):
+    """{tag: span} — every layer but the ADT source read at ONE point the way
+    the site reads a row there, or None when the point has no place on the AR
+    network. The point's place is the layer's own RouteID + AR measure where
+    it gives one on `align`'s alignment, else its postmile translated — and
+    its postmile translated for an equation's row (`by_postmile`): the site
+    places an equation from the postmile network's calibration point, not
+    from the landmark beside it (measured on the 2026-11-06 export: 277 of
+    743 equation rows agree on every value placed by postmile, 188 placed by
+    their landmark, 84 read a hair before the postmile).
+
+    The site reads (highway_log.js `hl_buildResults`): the whole-road and
+    right-roadbed layers at the row's own place, and for a row on the left
+    alignment at that same measure on the right RouteID when the left has
+    nothing there; the left-roadbed layers on the left RouteID at the
+    postmile's LEFT measure (the two alignments are calibrated apart), else on
+    the right RouteID at the row's own; the network date and segment order on
+    the right RouteID, by the spans that hold the measure and nothing more."""
+    if ar_fill is None:
+        return None
+    side = "_S" if align == "L" else "_P"
+    own = next(((p.rid, p.ar) for p in found
+                if p.rid and p.ar is not None and p.rid.endswith(side)), None)
+    if by_postmile:
+        translated = ar_fill.place(route, county, prefix, pm, align)
+        if translated[0] is not None:
+            own = translated
+    if own is None:
+        own = ar_fill.place(route, county, prefix, pm, align)
+        if own[0] is None:
+            return None
+    main = (_sibling_rid(own[0], "R"), own[1])
+    if align == "L":
+        left, left_else, own_else = own, None, main
+    else:
+        left = ar_fill.place(route, county, prefix, pm, "L")
+        if left[0] is None:
+            left = (_sibling_rid(own[0], "L"), own[1])
+        left_else, own_else = own, None
+    seg = {}
+    for tag, (_layer, _attrs, family) in SPAN_LAYERS.items():
+        if family == "tvs":
+            continue
+        if tag == "NET":
+            span = ar_fill.at(tag, main, exact=True)
+        elif family == "left":
+            span = ar_fill.at(tag, left, left_else, far=True)
+        else:
+            span = ar_fill.at(tag, own, own_else, snap_first_only=True)
+        if span is not None:
+            seg[tag] = span
+    return seg
+
+
+# The columns of a segment row that a county-end row does not carry over: what
+# belongs to the point the segment BEGINS at, and the ADT profile of the
+# stretch.
+_COUNTY_END_BLANK = ("THY_LANDMARK_SHORT_DESC", "THY_EQUATE_CODE", "THY_BREAK_DESC",
+                     "THY_PROFILE_CODE", "THY_ADT_AMT", "THY_CHANGE_PER_MILE_AMT")
+# How far apart (odometer miles) the last segment of one county and the first
+# of the next may lie and the route still run on across the line: the site's
+# own test on the County Code spans (highway_log.js `hl_queryCountyEnds`).
+_COUNTY_GAP = 0.01
+
+
+def _county_end_rows(recs):
+    """{id(a county's last segment row): its county-end row} for one route's
+    ordered segment rows. Where the route runs on from one county into the
+    next, the site lists the END of the departing county as a zero-length row
+    of its own (highway_log.js `hl_queryCountyEnds`: "the departing county's
+    ending values"). The build gives it the values of that county's last
+    segment at that segment's END postmile, and nothing of the point the
+    segment began at. The left roadbed of an independent alignment is
+    parallel mileage and ends no county; a county the route does not reach
+    across (a break at the line, the route's own end) has no such row."""
+    out = {}
+    road = [r for r in recs if r["kind"] != "L"]
+    for last, first in zip(road, road[1:]):
+        if last["county"] == first["county"]:
+            continue
+        if last["od"] is not None and first["od"] is not None:
+            end_od = last["od"] + (last["e"] - last["b"]) / crl.PM_SCALE
+            if abs(first["od"] - end_od) >= _COUNTY_GAP:
+                continue
+        row = list(last["row"])
+        for name in _COUNTY_END_BLANK:
+            row[_COL[name]] = None
+        row[_COL["THY_BEGIN_PM_AMT"]] = row[_COL["THY_END_PM_AMT"]]
+        row[_COL["THY_LENGTH_MILES_AMT"]] = 0.0
+        row[_COL["THY_BEGIN_OFFSET_AMT"]] = row[_COL["THY_END_OFFSET_AMT"]]
+        out[id(last)] = {"row": row, "b": last["e"], "e": last["e"],
+                         "kind": last["kind"], "county": last["county"],
+                         "prefix": last["prefix"], "tvs": None, "od": None,
+                         "point": True}
+    return out
+
+
+def _place_point_rows(recs, groups, county_ends=None):
+    """`recs` — one route's segment rows, ordered and finalized — with the
+    point rows set where they sit: before the segment of their own roadbed
+    that begins at their postmile (the site lists a postmile's zero-length
+    rows first and the segment last), else after the row of their space that
+    begins last at or before them (one of their own roadbed first), before
+    the space's first row when they lie ahead of them all, and after the
+    county's last row when the space has no segment. `groups` = [(the space's
+    segment rows, its point rows)]. A county-end row (`county_ends`) follows
+    its county's last segment and any landmark set there.
+
+    A point row is a place on the road, not a stretch of it: it reads the
+    offset of that place and takes none of the structural break markers, so
+    the offsets and markers of every segment row are what they were without
+    it."""
+    after, before, loose = defaultdict(list), defaultdict(list), []
+    for cp_rows, point_rows in groups:
+        for prow in sorted(point_rows,
+                           key=lambda r: (r["b"], _KIND_ORDER[r["kind"]])):
+            behind = [r for r in cp_rows if r["b"] <= prow["b"]]
+            own = [r for r in behind if r["kind"] == prow["kind"]]
+            anchor = max(own or behind, key=lambda r: r["b"], default=None)
+            if anchor is None and cp_rows:
+                anchor = min(cp_rows, key=lambda r: r["b"])
+            if anchor is None:
+                loose.append(prow)
+                continue
+            starts_here = (anchor["b"], anchor["kind"]) == (prow["b"], prow["kind"])
+            (before if starts_here or anchor["b"] > prow["b"]
+             else after)[id(anchor)].append(prow)
+            _stamp_point_offset(prow, anchor)
+    county_ends = county_ends or {}
+    out = []
+    for rec in recs:
+        out.extend(before.get(id(rec), ()))
+        out.append(rec)
+        out.extend(after.get(id(rec), ()))
+        if id(rec) in county_ends:
+            out.append(county_ends[id(rec)])
+    for prow in loose:
+        at = max((i for i, r in enumerate(out) if r["county"] == prow["county"]),
+                 default=len(out) - 1)
+        out.insert(at + 1, prow)
+    return out
+
+
+def _stamp_point_offset(prow, anchor):
+    """A point row's two offsets: where its postmile falls along the row it
+    is set beside, by that row's own begin offset (blank when it has none)."""
+    base = anchor["row"][_COL["THY_BEGIN_OFFSET_AMT"]]
+    if base is None:
+        return
+    offset = round(base + (prow["b"] - anchor["b"]) / crl.PM_SCALE, 5)
+    prow["row"][_COL["THY_BEGIN_OFFSET_AMT"]] = offset
+    prow["row"][_COL["THY_END_OFFSET_AMT"]] = offset
 
 
 def _block_at(spans, b, e, ar_fill, route, county, prefix, align):
@@ -1514,11 +2030,17 @@ def _finalize_route(recs):
 
 
 def _build_route(route, buckets, points, asof_date, primary_eff=True,
-                 ar_fill=None):
+                 ar_fill=None, site_points=True):
     """Every output row for one route token, ordered along the route (county
-    groups by odometer — ordering only, never a value — then PM)."""
+    groups by odometer — ordering only, never a value — then PM). With
+    `site_points` (see `_build_cp`) a postmile space that holds only points
+    is built too, and the point rows are set in after the segment rows are
+    ordered, offset and marked, so those read exactly as without them."""
     keys = [k for k in buckets if k[0] == route]
-    cps = sorted({(k[2], k[3]) for k in keys})
+    spaces = {(k[2], k[3]) for k in keys}
+    if site_points:
+        spaces |= {(k[1], k[2]) for k in points if k[0] == route}
+    cps = sorted(spaces)
     county_od = {}
     for county, prefix in cps:
         ods = [s.od
@@ -1532,21 +2054,26 @@ def _build_route(route, buckets, points, asof_date, primary_eff=True,
     order = {c: i for i, c in enumerate(
         sorted(county_od, key=lambda c: county_od[c]))}
 
-    recs = []
+    recs, groups = [], []
     for county, prefix in cps:
         rbucket = buckets.get((route, "R", county, prefix), {})
         lbucket = buckets.get((route, "L", county, prefix), {})
         pts = points.get((route, county, prefix), {})
-        cp_rows = _build_cp(route, county, prefix, rbucket, lbucket, pts,
-                            asof_date, primary_eff, ar_fill)
-        cp_rows.sort(key=lambda r: (r["b"], {"base": 0, "R": 1,
-                                             "L": 2}[r["kind"]]))
+        built = _build_cp(route, county, prefix, rbucket, lbucket, pts,
+                          asof_date, primary_eff, ar_fill, site_points)
+        cp_rows = [r for r in built if not r.get("point")]
+        cp_rows.sort(key=lambda r: (r["b"], _KIND_ORDER[r["kind"]]))
         _apply_adt(cp_rows)
         recs.extend(cp_rows)
+        point_rows = [r for r in built if r.get("point")]
+        if point_rows:
+            groups.append((cp_rows, point_rows))
     recs.sort(key=lambda r: (order.get(r["county"], 99),
                              r["od"] if r["od"] is not None else 1e18,
                              r["b"]))
     _finalize_route(recs)
+    if site_points:
+        recs = _place_point_rows(recs, groups, _county_end_rows(recs))
     return [r["row"] for r in recs]
 
 
@@ -1916,7 +2443,7 @@ def _put_table(ws, put, columns, table_rows):
 
 
 def _write_marker_sheet(wb, asof_date, lib_root, warnings, skips, n_marked,
-                        marked_cells, drop=None):
+                        marked_cells, drop=None, service=""):
     """The build's own record sheet: build identity, the layer DROP it was
     built from (its export date + content fingerprint, so the library can say
     whether the staged drop is still that one), the HF-01 skipped-source
@@ -1945,6 +2472,9 @@ def _write_marker_sheet(wb, asof_date, lib_root, warnings, skips, n_marked,
     pair("Build version", BUILD_VERSION)
     pair("As-of date", asof_date.isoformat())
     pair("Layer library", str(lib_root))
+    # The feature service the library's layers were pulled from (its INDEX's
+    # own record) — a comparison states it beside the export's data source.
+    pair("Layer service", service or "(not recorded)")
     drop = drop or {}
     pair("Layer drop exported", drop.get("exported") or "(unknown)")
     pair("Layer drop fingerprint", drop.get("fingerprint") or "(unknown)")
@@ -2024,7 +2554,8 @@ def _write_workbook(out_path, rows, index, asof_date, lib_root, warnings,
                 cells.append(c)
             prov.append(cells)
     _write_marker_sheet(wb, asof_date, lib_root, warnings, skips, n_marked,
-                        marked_cells, drop=drop)
+                        marked_cells, drop=drop,
+                        service=clean_road_sources.library_service(index))
     _write_marked_sheet(wb, marked_cells)
     tmp = out_path.with_name(out_path.name + ".tmp")
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2070,6 +2601,7 @@ def report_facts(path):
             return facts
         keys = {"As-of date": "asof", "Build version": "build_version",
                 "Layer library": "layer_library",
+                "Layer service": "layer_service",
                 "Layer drop exported": "drop_exported",
                 "Layer drop fingerprint": "drop_fingerprint",
                 "Skipped source spans": "skipped_source_spans"}
@@ -2135,7 +2667,7 @@ def _resolve_asof(asof):
 # --------------------------------------------------------------------------- #
 def consolidate(events=None, confirm_overwrite=None, day=None, *, asof=None,
                 lib_root=None, out_path=None, routes=None, span_tags=None,
-                primary_eff=True):
+                primary_eff=True, site_points=True):
     """Build the CA HIGHWAYS clean-road workbook from the ArcGIS layer library.
 
     `asof` is the reconstruction date (date / ISO text / Excel serial); None
@@ -2152,19 +2684,25 @@ def consolidate(events=None, confirm_overwrite=None, day=None, *, asof=None,
     report — so a report build passes its own set (see
     `arcgis_report_highway_detail.SEGMENT_TAGS`). Columns fed only by an
     omitted layer come out empty, which is why only a caller that does not
-    print them may omit one. None = every layer = the clean-road build."""
+    print them may omit one. None = every layer = the clean-road build.
+
+    `site_points` reads the point layers the way the site lists them (see
+    `_build_cp`): a landmark, equation or route break belongs to its own
+    roadbed, and every landmark and equation point is a row. False keeps a
+    report on the rule its own comparison was measured with."""
     del day     # ConsolidateWorker passes it; the library build has no run days
     events = events or Events()
     try:
         return _consolidate(events, confirm_overwrite, asof=asof,
                             lib_root=lib_root, out_path=out_path, routes=routes,
-                            span_tags=span_tags, primary_eff=primary_eff)
+                            span_tags=span_tags, primary_eff=primary_eff,
+                            site_points=site_points)
     except ValueError as e:
         return ConsolidateResult(status="error", message=str(e))
 
 
 def _consolidate(events, confirm_overwrite, *, asof, lib_root, out_path, routes,
-                 span_tags=None, primary_eff=True):
+                 span_tags=None, primary_eff=True, site_points=True):
     lib_root = Path(lib_root) if lib_root else crl.root()
     out_path = Path(out_path) if out_path else OUT_PATH
     lib = crl.inventory(lib_root)
@@ -2235,7 +2773,7 @@ def _consolidate(events, confirm_overwrite, *, asof, lib_root, out_path, routes,
         if events.is_cancelled():
             return _cancelled(events)
         rows.extend(_build_route(route, buckets, points, asof_date,
-                                 primary_eff, ar_fill))
+                                 primary_eff, ar_fill, site_points))
         if i % 25 == 0 or i == len(all_routes):
             events.on_log(f"  built {i}/{len(all_routes)} routes "
                           f"({len(rows):,} rows)")

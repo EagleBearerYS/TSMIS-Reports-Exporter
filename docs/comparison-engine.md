@@ -1256,6 +1256,15 @@ shows the end as a field diff, instead of two one-sided rows). Role gates keep t
 sides honest (the CMP-AUD-066 pattern): the ArcGIS side REQUIRES the very
 `ArcGIS Build` marker sheet the consolidator writes; the TSN side REJECTS it.
 
+Since 2026-11-18 (build version 3) the build follows the TSMIS site's file in listing
+every landmark, each side of a postmile equation and each county's end as a row, a
+zero-length one where no segment begins there (§9n). The TSN extract has no zero-length
+row (0 of 60,083), so most of those stand alone on the ArcGIS side here: the new file's
+layout, not a data difference, and the Notes say so. Measured with the build as of
+2025-09-08, keyed pairing in memory: 235 more rows pair (52,927 to 53,162) and TSN-only
+rows fall 7,156 to 6,921; 2,429 of the build's 59,034 rows are zero length. The
+workbook itself was not rebuilt on the dev box.
+
 `_SCHEMA`: `side_a="ArcGIS"`, `side_b="TSN"`, `key_field=14`, date fields
 ISO-normalized, amount columns decimal-canonical, and **24 CONTEXT columns** — the
 TSN bookkeeping (id/element/lifecycle/create/update), the TASAS change-tracking
@@ -1462,7 +1471,28 @@ comparisons can never key a record differently; only format reconciliations appl
   onto the site's 74 columns, keeps the build's unplaceable-span anchors NON-ASSERTING
   (HF-01), and uses the site-vs-TSN context set. The site cuts a segment at every event
   point of its Highway Log engine and the build at every layer breakpoint, so one-sided
-  rows are mostly the two segmentations. One vocabulary is read across (v0.51.1):
+  rows are mostly the two segmentations. **Segments are joined the way the file is
+  defined (2026-11-17, `_join_unchanged`).** The business requirement asks for
+  homogeneous segments of the inventory data items, and the site's pipeline drops an
+  attribute-change boundary at which no reported field changes (the four block
+  effective dates are not among them). So a build segment is joined to the one that
+  ends where it begins when it carries no landmark, equation or break, no counted
+  column differs across the boundary (END postmile, length and those four dates aside),
+  and the site's file has no row keyed there. A boundary the site also cuts stays a
+  paired row. The build workbook, vs TSN and the three-way read the build as written.
+  The Notes state how many were joined. **Points are read the way the site lists them
+  (2026-11-18, build version 3).** The site's file has a row for every landmark, each
+  side of a postmile equation and each county's end; the build writes a zero-length row
+  where no segment of that roadbed begins at such a point, and a point belongs to its
+  own roadbed ([planning/cleanroad-highways.md](planning/cleanroad-highways.md) "Points,
+  read the way the site lists them" has the build's rules). In the comparison a `BEGIN` / `END
+  REALIGNMENT` name reads with the row's PM prefix, as the site spells it
+  (`_landmark_as_site`); a zero-length row is never joined into a segment; and its
+  cells agree on either of the two stretches that meet at its postmile
+  (`_settle_point_rows`), because which one the site prints turns on a measure
+  difference below its own 1e-5 tolerance that no layer file carries. A value that is
+  neither stretch's still counts, and the Notes give both counts. One vocabulary is
+  read across (v0.51.1):
   `THY_BREAK_DESC`, where the site writes only SHS Route Break's points (`Route Resume` as
   BEG, `Route Break` as END — `clean_highway.js`) and the build the TSN extract's markers.
   The build's U-BR / R-BR read as BEG / END. Its structural markers (a route's BEG / END,
@@ -1498,7 +1528,17 @@ comparisons can never key a record differently; only format reconciliations appl
   right alignment, FROM on the left). The design description is the domain name whole
   ('D- Diamond Type Ramp'), blank for a code outside the domain. RAM_BEGIN_OFFSET_AMT is
   written from ODMeasure (the business requirements ask for the odometer) and shown as
-  context, since the site leaves it blank.
+  context, since the site leaves it blank. So is RAM_CREATE_DATE (2026-11-17), from SHS
+  Ramp's own InventoryItemStartDate, the source the vendor's list names for it.
+- **Sources and data source (2026-11-17).** `clean_road_sources` holds the vendor's
+  source list of 2026-11-16 as data. Each comparison's Notes say how the build's columns
+  sit against it (Highway 29 of 29 columns from the listed layer and field, Ramp 9 of 9;
+  Intersection reads the IM tables the site's code reads, not the `Master Intersection`
+  layer the list names, which the library does not hold), show each layer with the
+  list's number, and print the feature service the layers were pulled from beside the
+  data source the export's file name records. An ARS export, or one from another
+  environment, is flagged as a different service
+  ([planning/cleanroad-highways.md](planning/cleanroad-highways.md)).
 - **Bound result** (the 2026-10-22 dev-site export vs the 2026-10-05 layers, after the
   2026-11-03 build audit; v0.51.0's numbers in brackets): Intersection 16,382 paired,
   93 / 3 one-sided, 3,075 differing cells [4,079], 2,548 of them the two begin dates;
@@ -1509,12 +1549,33 @@ comparisons can never key a record differently; only format reconciliations appl
   Highway 47,658 · 9,204 / 4,077 · 85,032, 47,439 · 9,423 / 4,196 · 83,796, 47,082 ·
   9,780 / 4,056 · 83,035 and 47,644 · 9,218 / 3,992 · 87,877; Intersection 3,314 /
   3,075 / 3,071 / 3,073 cells; Ramp 20 / 0 / 0 / 18 (§12e has the three-way reading).
+- **With the segment join** (measured 2026-11-17: the 2026-11-06 dev-site export against
+  the 2026-10-30 layers, builds as of 2026-11-06): Highway 49,146 paired, 3,744 / 4,065
+  one-sided, 41,865 cells, with 4,430 build segments joined (3,794 where nothing the file
+  reports changes, 636 where only a block effective date does). The same two files
+  without the join: 49,146 paired, 8,174 / 4,065, 48,204 cells, so no paired segment is
+  lost and the 6,339 fewer cells are END PM and LENGTH. Intersection 16,381 paired, 94 / 3,
+  3,073 cells; Ramp 15,214 paired, 0 / 1, 23 cells.
+- **With the point rows** (measured 2026-11-18, the same two files, build version 3):
+  Highway 51,322 paired, 3,180 / 1,889 one-sided, 45,236 cells, 4,409
+  segments joined, 2,365 zero-length rows in the build, 1,532 cells on 366 of
+  them reading the stretch that ends at the postmile. 2,176 more rows pair and the
+  site-only rows fall by 2,176; the cells rise with the rows compared. What
+  the remaining one-sided rows are, class by class with its cause, is in
+  [planning/cleanroad-highways.md](planning/cleanroad-highways.md) "What is left on the
+  Highway file" and roadmap TW15–TW17.
 - **A site row with no postmile** (385 Highway rows on 001 / 003 in the 2026-10-22
   export) keys on its odometer as `no postmile @ odometer …` in every Clean Road
   comparison (`compare_clean_road_tsn.UNPLACED`) and the Notes sheet counts them by
   route; it used to stop the comparison.
 - Locked by `build/check_arcgis_clean_road.py` (both builds from a synthetic library, all
-  three comparisons) and the registry contract in `check_arcgis_report_intersection`
+  three comparisons, the segment join and the data-source line), by
+  `build/check_clean_road_points.py` (the point rules: a point's roadbed, the
+  zero-length rows and how they are read, several landmarks at one postmile, the names
+  left out, county ends, the realignment spelling, the either-stretch rule), by
+  `build/check_clean_road_sources.py` (the builds against the vendor's source list, the
+  layer numbers, and a build declaring another layer or field is caught) and the
+  registry contract in `check_arcgis_report_intersection`
   (a comparator's context = the build's + the export's own `EXPORT_CONTEXT_FIELDS`).
 
 ### 9o. Three-way comparisons — TSMIS vs TSN vs ArcGIS (`three_way.py`, v0.51.0)
@@ -1559,7 +1620,15 @@ other ("TSN + ArcGIS, missing from the TSMIS report" — the record-level analog
 report differs). So a record is never keyed differently than in either two-sided
 comparison, and on records present on all three, the pairwise counts reproduce theirs:
 `check_three_way` asserts paired rows and differing cells against both comparisons' own
-counts-only previews, and the real-data sweep below did the same statewide.
+counts-only previews, and the real-data sweep below did the same statewide. One
+exception since 2026-11-17: the two-sided Highway vs ArcGIS comparison joins the build's
+segments that begin where nothing the file reports changes (§9n). Since 2026-11-18 the
+build's zero-length point rows read either stretch that meets at their postmile in both
+(`_settle_point_rows`); the TSN extract has no zero-length row, so they show as in TSMIS
+and ArcGIS, not in TSN. The three-way reads
+the build as written, because TSN cuts at many of those boundaries. Its paired rows
+still equal the two-sided comparison's; its ArcGIS-only rows, and the END PM / LENGTH
+cells of the segments before them, are higher by the joined segments.
 
 **Compared columns** = the columns BOTH two-sided comparisons count. Intersection's
 `INX_CONNECTION_ID` and Ramp's `RAM_DESIGN_DESC` are counted only against ArcGIS (TSN numbers

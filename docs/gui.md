@@ -693,10 +693,16 @@ Layers first (and the default):
     **Check ArcGIS Pro**: a queued job that starts ArcPy, reads + exports the
     27-row SHS Tolls layer and compares that file with the library's copy (same
     columns? domain labels or codes?). The last check's result stays on the card.
-  - **Layer library card** — the 40 library layers as a table: name with the builds
+  - **Layer library card** — the 43 library layers as a table: name with the builds
     that read it (`arcgis_refresh.layer_users`, from the registry's
     `REQUIRED_LAYERS`), rows, exported (each layer's own time), size, and the last
-    refresh's per-layer outcome. **Refresh all layers** (confirms first) or tick
+    refresh's per-layer outcome. Three joined on 2026-11-18, last in the list so the
+    first 40 keep their file numbers: Calibration Point, HPMS F System and Posted
+    Speed Limit. No build reads them yet, and a library refreshed before then shows
+    them as missing until its next refresh. Calibration Point is held in part
+    (`arcgis_refresh.LAYER_FILTERS`): only the postmile network's rows, the ones the
+    site's code reads, because the whole layer holds every LRS network in the state.
+    Its Data Source in the manifest says so. **Refresh all layers** (confirms first) or tick
     layers and **Refresh selected**; both queue an `arcgis_refresh` job on the
     shared matrix queue, so builds/comparisons line up behind it and never read a
     half-swapped library. Progress shows the layer being exported; Cancel stops
@@ -708,7 +714,9 @@ Layers first (and the default):
     TSMIS Project Inspector proved on the work PC. The worker reads each layer
     straight from the `lrs_tsmis` FeatureServer by URL (ArcGIS Pro's sign-in is the
     credential; the service's layer list, read once with `arcpy.GetSigninToken()`,
-    matches layers by NAME, with the 2026-08-19 ids as the fallback) and writes it
+    matches layers by NAME, with the 2026-08-19 ids as the fallback; a name the
+    service does not list fails that layer, and the message adds what the service
+    calls the layer at that id) and writes it
     with ArcGIS's **Table To Excel** (field names as headers, coded domains as their
     descriptions — the manual export's dialect). It appends JSON events to a file;
     `arcgis_refresh` checks each finished file (header readable, data rows counted
@@ -765,9 +773,13 @@ Layers first (and the default):
   (`which:"arcgis"` → `ArcgisMatrixCompareWorker`).
   - The **ArcGIS side** card above the grid shows each built report as a chip —
     *as of D · current layers* (green) or *from older layers — refresh it* /
-    *not built yet* (warning) — and links to ArcGIS reports. Each row header's
-    second line says what it is compared with (*vs ArcGIS as of D*, *· older
-    layers*, *no ArcGIS build yet — build it*). A cell whose report has no build
+    *built by an older version — refresh it* / *not built yet* (warning) — and
+    links to ArcGIS reports. Each row header's second line says what it is
+    compared with (*vs ArcGIS as of D*, *· older layers*, *· older build*, *no
+    ArcGIS build yet — build it*). A build reads *older* when the builder's rules
+    have changed since it was made (each builder numbers them, `BUILD_VERSION`,
+    and writes the number into the build's record; `arcgis_matrix.build_state`,
+    stale reason `build_changed`, 2026-11-18). A cell whose report has no build
     reads **needs ArcGIS** and offers a build button, which queues that report's
     refresh — after it lands, the row compares with no other step.
   - Rows are the Excel/PDF export keys, and a report's own key is still its

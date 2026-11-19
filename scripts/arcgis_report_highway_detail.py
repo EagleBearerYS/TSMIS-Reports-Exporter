@@ -632,7 +632,8 @@ def _build_source_table(events, out_path, asof, lib_root):
     dest.parent.mkdir(parents=True, exist_ok=True)
     res = cch.consolidate(events=events, confirm_overwrite=lambda p: True,
                           asof=asof, lib_root=lib_root, out_path=dest,
-                          span_tags=SEGMENT_TAGS, primary_eff=True)
+                          span_tags=SEGMENT_TAGS, primary_eff=True,
+                          site_points=False)
     if res.status != "ok":
         return res
     return dest

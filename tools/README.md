@@ -17,8 +17,10 @@ python tools/clean_road_layer_check.py spot "output/comparisons/arcgis-by-day/<d
 
 `workbook` says what share of the workbook's differences are false (the layer
 says what TSMIS says, so the build was wrong); `file` says how often a file
-differs from its own layers; `spot` prints random cells beside the raw rows for
-a person to read. The as-of is the library's export date
+differs from its own layers, its zero-length rows judged apart (a landmark, an
+equation side or a county end sits where two stretches meet, and this check
+reads only the row's own county + prefix space); `spot` prints random cells
+beside the raw rows for a person to read. The as-of is the library's export date
 (`arcgis_layers/_refresh/last_run.json`). Detail and the 2026-11-03 numbers:
 [docs/comparison-engine.md](../docs/comparison-engine.md) §9o.
 

@@ -1,6 +1,6 @@
 // ArcGIS tab module (v0.29.0, split like the other ui-*.js — same global scope).
 // Five sub-tabs, in the order the work flows:
-//   LAYERS (v0.46.0, first) — the app's own copy of the 40 TSMIS layers and the
+//   LAYERS (v0.46.0, first) — the app's own copy of the TSMIS layers and the
 //                       in-app refresh that replaced the manual export: ArcGIS
 //                       Pro's status + a quick check, every layer with its rows /
 //                       export time / the builds that read it, and Refresh all /
@@ -419,6 +419,7 @@ function agBuildLine(b) {
   const asof = b.asof ? `as of ${b.asof}` : "as-of unknown";
   if (b.stale_reason === "outcome_untrusted") return { text: `${asof} · outcome unknown — refresh it`, cls: "warn" };
   if (b.stale_reason === "drop_changed") return { text: `${asof} · from older layers — refresh it`, cls: "warn" };
+  if (b.stale_reason === "build_changed") return { text: `${asof} · built by an older version — refresh it`, cls: "warn" };
   return { text: `${asof} · current layers`, cls: "ok" };
 }
 
@@ -434,6 +435,7 @@ function agRowSideLine(rk, b, supported) {
   const asof = b.asof ? `vs ArcGIS as of ${b.asof}` : "vs ArcGIS (as-of unknown)";
   if (b.stale_reason === "outcome_untrusted") return { text: "ArcGIS build outcome unknown", cls: "warn" };
   if (b.stale_reason === "drop_changed") return { text: `${asof} · older layers`, cls: "warn" };
+  if (b.stale_reason === "build_changed") return { text: `${asof} · older build`, cls: "warn" };
   return { text: asof, cls: "ok" };
 }
 
@@ -727,7 +729,7 @@ function bindArcgis() {
         + "through it. If it is installed somewhere unusual, use “Choose python.exe…” above.");
       return;
     }
-    const n = (AGL && AGL.expected) || 40;
+    const n = (AGL && AGL.expected) || 43;
     const ok = await showConfirm({
       title: `Refresh all ${n} layers?`,
       message: "ArcGIS Pro exports every TSMIS layer from the service and the app swaps each one "

@@ -38,15 +38,18 @@ INDEX_NAME = "00_INDEX.xlsx"
 INDEX_HEADER = ["Excel File", "ArcGIS Layer or Table", "Rows Exported",
                 "Fields Exported", "ArcGIS Contents Path", "Data Source"]
 
-# The agreed 40-layer library manifest (docs/planning/cleanroad-highways.md),
-# tagged by which clean-road file(s) read each layer: H(ighways),
+# The agreed library manifest (docs/planning/cleanroad-highways.md): the 40
+# layers of the first library and the three added 2026-11-18 after the vendor's
+# source list. Tagged by which clean-road file(s) each belongs to: H(ighways),
 # I(ntersections), R(amps). The GUI status card and the consolidators' missing-
 # layer messages key off this — an .xlsx matching no entry is UNKNOWN (the
 # drop-zone must not accumulate dead weight).
 EXPECTED_LAYERS = {
+    "Calibration Point": "H",
     "City": "HIR",
     "County Code": "H",
     "Equation Points": "H",
+    "HPMS F System": "H",
     "IM Complex Intersection Cross Reference": "I",
     "IM Complex Intersection Influence Segments": "I",
     "IM Intersection Approach Detail": "I",
@@ -54,6 +57,7 @@ EXPECTED_LAYERS = {
     "IM Intersection Detail": "I",
     "IM Intersection Point": "I",
     "IM Intersection Route Table": "I",
+    "Posted Speed Limit": "H",
     "Route Direction": "R",
     "SHS Access Control": "H",
     "SHS Barrier": "H",

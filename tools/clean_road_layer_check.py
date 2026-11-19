@@ -306,8 +306,9 @@ def cmd_file(xlsx, idx):
     ix = {h: i for i, h in enumerate(hdr)}
     cols = [c for c in COLS if c in ix]
     verdicts = collections.Counter()
+    points = collections.Counter()
     by_col = collections.defaultdict(collections.Counter)
-    n = 0
+    n = n_points = 0
     for r in it:
         if not r or r[ix["THY_ROUTE_NAME"]] in (None, ""):
             continue
@@ -318,12 +319,23 @@ def cmd_file(xlsx, idx):
         if q is None:
             verdicts["unkeyed"] += 1
             continue
+        # A zero-length row (a landmark, an equation side, a county end) sits
+        # where two stretches meet. This check reads only the row's own county
+        # + prefix space, so at the last postmile of a space it knows the
+        # stretch that ENDS there and never the one that begins in the next
+        # space, which is the one the site and the build read. Judged apart,
+        # so the headline stays about segments.
+        if q[5] == q[6]:
+            n_points += 1
+            for c in cols:
+                points[classify(idx, q, c, r[ix[c]], r[ix[c]])[0]] += 1
+            continue
         for c in cols:
             v = classify(idx, q, c, r[ix[c]], r[ix[c]])[0]
             verdicts[v] += 1
             by_col[c][v] += 1
     wb.close()
-    print(f"{Path(xlsx).name}: {n:,} rows")
+    print(f"{Path(xlsx).name}: {n:,} rows ({n_points:,} of zero length, judged apart below)")
     judged = verdicts["agree-true"] + verdicts["agree-false"]
     for k, m in verdicts.most_common():
         print(f"  {k:12s} {m:9,d}")
@@ -333,6 +345,12 @@ def cmd_file(xlsx, idx):
     for c in cols:
         v = by_col[c]
         print(f"  {c:30s} {v['agree-true']:10d} {v['agree-false']:12d} {v['none']:14d} {v['multi']:8d}")
+    if n_points:
+        print(f"  zero-length rows ({n_points:,}), against their own space alone: "
+              f"{points['agree-true']:,} cells equal the stretch there, "
+              f"{points['agree-false']:,} do not (the row reads the stretch on the "
+              f"other side of the postmile), {points['none']:,} have no plain span, "
+              f"{points['multi']:,} several")
 
 
 def cmd_workbook(cmp_path, idx):

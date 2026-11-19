@@ -26,6 +26,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import arcgis_clean_road_build as acb
+import clean_road_sources as crs
 import compare_clean_road_tsn as crt
 import compare_tsn_common as ctc
 from paths import today_str
@@ -106,11 +107,8 @@ class CleanRoadArcgisCompare:
             facts = {}
         edition = ("print (read back from its PDF)" if _is_print(export_path)
                    else "Excel export")
-        sourced = [c for c in spec.header if c in self._build.PROVENANCE
-                   and c not in spec.unsourced]
-        table = tuple(
-            f"    {c}  ·  {self._build.PROVENANCE[c][0]} ({self._build.PROVENANCE[c][1]})"
-            for c in sourced)
+        table = crs.point_table_lines(spec, self._build.PROVENANCE, spec.key,
+                                      self.context)
         return (
             f"Side A ({SIDE_A}) is OUR {spec.label} file, built from the ArcGIS "
             f"layer library as of {facts.get('asof') or '(unknown)'} (layers "
@@ -123,6 +121,8 @@ class CleanRoadArcgisCompare:
             "correctness. Across a gap they include network change — refresh "
             "the layers (ArcGIS ▸ Layers), rebuild the report as of the export "
             "day (ArcGIS ▸ ArcGIS reports) and compare again.",
+            crs.source_note(facts.get("layer_service", ""), export_path),
+        ) + crs.notes_lines(spec.key, self._build.PROVENANCE) + (
             "Both sides come from the same layers, so a difference here is a gap "
             "in our reconstruction or a finding about how the site builds its "
             "file — never migration drift.",
@@ -136,13 +136,15 @@ class CleanRoadArcgisCompare:
             "HTML does.",
             "CONTEXT (shown, never counted): the columns the site has no source "
             f"for ({', '.join(spec.unsourced)}) and the extract date."
-            + (" The build writes RAM_BEGIN_OFFSET_AMT from the ramp point's "
-               "odometer, which the site leaves blank."
+            + (" The build writes two of them the site leaves blank: "
+               "RAM_BEGIN_OFFSET_AMT from the ramp point's odometer and "
+               "RAM_CREATE_DATE from SHS Ramp's inventory start date."
                if spec.key == "clean_ramp" else
                " INX_CONNECTION_ID is the layer's INTERSECTION_ID on both "
                "sides, so unlike the vs-TSN comparison it counts."),
         ) + tuple(unplaced) + (
-            "Where each counted column comes from in the build:",
+            "Where each column comes from in the build (# = the number the "
+            "vendor's list gives the layer):",
         ) + table
 
     # -------------------------------------------------------------- compare

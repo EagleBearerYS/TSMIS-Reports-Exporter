@@ -32,9 +32,12 @@ FAKE_ARCPY_SOURCE = r'''
 Configured by configure(spec) or by the JSON file named in TSMIS_FAKE_ARCPY:
 {"version", "signed_in", "portal", "delay", "import_delay", "crash",
 "layers": {id: {"name", "service_name", "header", "rows", "truncate",
-"fail", "delay"}}}. `import_delay` stalls the import (a slow ArcGIS start),
-`crash` kills the process at the first ArcPy call (a dying ArcGIS Python) and
-a `delay` stalls Table To Excel (all layers, or one)."""
+"fail", "delay", "where"}}}. `import_delay` stalls the import (a slow ArcGIS
+start), `crash` kills the process at the first ArcPy call (a dying ArcGIS
+Python) and a `delay` stalls Table To Excel (all layers, or one). A layer's
+`where` is {clause: [column, value]}: a view made with that clause holds the
+rows whose column equals the value; any other clause is refused, as the
+service refuses an expression it cannot read."""
 import json
 import os
 import time
@@ -97,7 +100,7 @@ def _fail(message):
     raise ExecuteError(message)
 
 
-def _make_table_view(url, view):
+def _make_table_view(url, view, where=None):
     _check_halt()
     lid = str(url).rstrip("/").rsplit("/", 1)[-1]
     layer = (_spec.get("layers") or {}).get(lid)
@@ -105,6 +108,12 @@ def _make_table_view(url, view):
         _fail("ERROR 000732: Input Rows: Dataset %s does not exist or is not supported" % url)
     if layer.get("fail"):
         _fail(layer["fail"])
+    if where:
+        rule = (layer.get("where") or {}).get(where)
+        if rule is None:
+            _fail("ERROR 000358: Invalid expression %s" % where)
+        at = list(layer["header"]).index(rule[0])
+        layer = dict(layer, rows=[r for r in layer["rows"] if r[at] == rule[1]])
     _views[view] = layer
 
 

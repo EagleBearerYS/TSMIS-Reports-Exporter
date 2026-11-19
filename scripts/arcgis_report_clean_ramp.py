@@ -24,10 +24,15 @@ layers:
     — the route's TO direction for a ramp on the right (primary) alignment, its
     FROM direction on the left — and RAM_NETWORK_ID the site's constant 2.
 
-The 13 columns the site gives no source stay blank, except
-RAM_BEGIN_OFFSET_AMT: the business requirement asks for the odometer and the
-Ramp Pt row carries it (ODMeasure), so the build writes it — the comparison
-shows it as context, never counted, because the site's file leaves it blank.
+The 13 columns the site gives no source stay blank, except two the build can
+fill from a documented source — the comparison shows both as context, never
+counted, because the site's file leaves them blank:
+
+  * RAM_BEGIN_OFFSET_AMT: the business requirement asks for the odometer and
+    the Ramp Pt row carries it (ODMeasure);
+  * RAM_CREATE_DATE: the vendor's source list (`clean_road_sources`) names SHS
+    Ramp's InventoryItemStartDate for it.
+
 RAM_EXTRACT_DATE is the build's as-of date. Console-free; returns a
 ConsolidateResult.
 """
@@ -46,7 +51,7 @@ log = logging.getLogger(__name__)
 
 REPORT_NAME = "Clean Road Ramp (ArcGIS)"
 SPEC = crc.RAMP
-BUILD_VERSION = 1
+BUILD_VERSION = 2
 FILENAME = "clean_ramp_from_layers.xlsx"
 OUT_DIR = paths.OUTPUT_ROOT / "arcgis_reports"
 OUT_PATH = OUT_DIR / FILENAME
@@ -94,6 +99,9 @@ PROVENANCE = {
     "RAM_BEGIN_OFFSET_AMT": (f"{PT_LAYER}.ODMeasure",
                              "natural decimal (the site leaves it blank)"),
     "RAM_BEGIN_DATE": (f"{PT_LAYER}.InventoryItemStartDate", "MM/DD/YYYY"),
+    "RAM_CREATE_DATE": (f"{RAMP_LAYER}.InventoryItemStartDate",
+                        "MM/DD/YYYY, the source the vendor's list names (the "
+                        "site leaves it blank)"),
     "RAM_DISTRICT_CODE": (f"{PT_LAYER}.District", "2 digits"),
     "RAM_COUNTY_CODE": (f"{PT_LAYER}.County", "TASAS county code"),
     "RAM_ROUTE_NAME": (f"{PT_LAYER}.RouteNum", "3 digits"),
@@ -220,6 +228,7 @@ def _project(pt, attrs, overlays, net, directions, extract):
         "RAM_DESIGN_DESC": _design_name(a.get("Ramp_Design")) if a else "",
         "RAM_BEGIN_OFFSET_AMT": acb.num(pt["ODMeasure"]) if acb.s(pt["ODMeasure"]) else "",
         "RAM_BEGIN_DATE": acb.mdy(pt["InventoryItemStartDate"]),
+        "RAM_CREATE_DATE": acb.mdy(a.get("InventoryItemStartDate")) if a else "",
         "RAM_DISTRICT_CODE": crl.norm_district(pt["District"]),
         "RAM_COUNTY_CODE": county,
         "RAM_ROUTE_NAME": crl.norm_route(pt["RouteNum"]),
@@ -302,7 +311,8 @@ def marker_rows(stats):
                          "inventory window), one per Ramp_Name"),
         ("Columns with no source on the site",
          ", ".join(SPEC.unsourced) + " — all blank here too except "
-         "RAM_BEGIN_OFFSET_AMT, written from SHS Ramp Pt.ODMeasure"),
+         "RAM_BEGIN_OFFSET_AMT, written from SHS Ramp Pt.ODMeasure, and "
+         "RAM_CREATE_DATE, written from SHS Ramp.InventoryItemStartDate"),
     ]
 
 

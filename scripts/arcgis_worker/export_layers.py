@@ -40,7 +40,7 @@ PROTOCOL = 1
 EXCEL_MAX_DATA_ROWS = 1048575
 HEARTBEAT_SECONDS = 10
 # Stop early when the service keeps refusing: the same failure on every layer
-# (signed out, server down) would otherwise repeat forty times.
+# (signed out, server down) would otherwise repeat for every layer.
 MAX_FAILURES_IN_A_ROW = 3
 
 _TOKEN_RE = re.compile(r"(token=)[^&\s'\"]+", re.IGNORECASE)
@@ -174,14 +174,21 @@ def _service_catalog(arcpy, service, emit):
 
 def _resolve(layer, catalog):
     """(layer id, the service's own name for it, error). With the catalog the
-    layer is matched by NAME; without it the request's id stands."""
+    layer is matched by NAME; without it the request's id stands. A name the
+    service does not list fails, and the message adds what the service calls
+    the layer at the request's id when it has one: the one fact a renamed
+    layer needs to be corrected in the app."""
     if catalog is None:
         return int(layer["id"]), None, None
     hit = catalog.get(_norm(layer["name"]))
     if hit is None:
+        wanted = int(layer["id"])
+        at_id = [name for layer_id, name in catalog.values() if layer_id == wanted]
+        hint = (" The service's layer %d is called %r." % (wanted, at_id[0])
+                if at_id else "")
         return None, None, ("The service has no layer named %r -- its layer "
-                            "list changed, so the app needs an update."
-                            % layer["name"])
+                            "list changed, so the app needs an update.%s"
+                            % (layer["name"], hint))
     return hit[0], hit[1], None
 
 
@@ -219,7 +226,11 @@ def _export_one(arcpy, service, layer, index, total, emit):
             return False
         url = "%s/%d" % (service.rstrip("/"), layer_id)
         view = name
-        arcpy.management.MakeTableView(url, view)
+        where = str(layer.get("where") or "").strip()
+        if where:
+            arcpy.management.MakeTableView(url, view, where)
+        else:
+            arcpy.management.MakeTableView(url, view)
         if service_name is None:
             described = _described_name(arcpy, view)
             if described and _norm(name) not in _norm(described) \
@@ -242,7 +253,8 @@ def _export_one(arcpy, service, layer, index, total, emit):
                  message="Table To Excel finished but wrote no file.")
             return False
         emit("layer_done", name=name, id=layer_id, service_name=service_name,
-             url=url, rows=rows, size=os.path.getsize(out), file=out,
+             url=url, where=where or None, rows=rows,
+             size=os.path.getsize(out), file=out,
              started=round(started, 3), seconds=round(time.time() - started, 1))
         return True
     except Exception as e:

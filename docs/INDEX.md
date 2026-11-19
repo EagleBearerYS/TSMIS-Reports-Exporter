@@ -132,6 +132,8 @@ points), every claim anchored to `file:symbol`.
 - **Golden checks / how to verify / test-data locations** → verification-and-testing.md
 - **Adding a report / consolidator / comparison** → reports.md
 - **ArcGIS layers / Clean Road / rendering a report from the layers (ArcGIS reports) / the Reports-vs-ArcGIS matrix / the three-way comparison** → planning/cleanroad-highways.md + comparison-engine.md §9j–§9o and §12d–§12e + gui.md (the ArcGIS tab)
+- **Which layer and field a Clean Road column comes from / the vendor's source list / which feature service a comparison's layers came from** → planning/cleanroad-highways.md "The vendor's source list"; code: `clean_road_sources.py`; proof: `check_clean_road_sources`
+- **Why a Clean Road Highway row is one-sided / zero-length rows / landmarks, equations and county ends as rows / what the site's file leaves out** → planning/cleanroad-highways.md "Points, read the way the site lists them" + "What is left on the Highway file"; roadmap TW13–TW18; code: `consolidate_clean_highway.py` (`site_points`), `compare_clean_highway_arcgis.py`; proof: `check_clean_road_points`
 - **Refreshing the layer library / ArcGIS Pro's Python / the export worker (v0.46.0)** → gui.md "The ArcGIS tab" (Layers) + it-and-security.md §1 (the one other program the app starts); code: `arcgis_pro.py`, `arcgis_refresh.py`, `arcgis_worker/export_layers.py`; proof: `check_arcgis_refresh` + `arcgis_selftest.py`
 - **Making a comparison faster (and the rules that keep it output-locked)** → comparison-engine.md §2b–§2c + planning/vs-tsn-comparison-speed.md
 

@@ -79,10 +79,16 @@ def _refresh(spec, layers, **kw):
 
 # --------------------------------------------------------------------------- #
 def test_contract():
-    print("the library contract — 40 layers, the worker script, its Python floor:")
+    print("the library contract — 43 layers, the worker script, its Python floor:")
     names = [n for n, _id in ar.LIBRARY_LAYERS]
     check("LIBRARY_LAYERS is exactly clean_road_layers.EXPECTED_LAYERS",
-          sorted(names) == sorted(crl.EXPECTED_LAYERS) and len(names) == 40)
+          sorted(names) == sorted(crl.EXPECTED_LAYERS) and len(names) == 43)
+    check("the layers added 2026-11-18 come last, so the first 40 keep their file numbers",
+          names[40:] == ["Calibration Point", "HPMS F System", "Posted Speed Limit"]
+          and ar.LAYER_ORDER["Route Direction"] == 40
+          and [ar.LAYER_IDS[n] for n in names[40:]] == [1, 91, 107])
+    check("every partly exported layer is a library layer",
+          set(ar.LAYER_FILTERS) <= set(names) and all(ar.LAYER_FILTERS.values()))
     ids = [i for _n, i in ar.LIBRARY_LAYERS]
     check("every fallback layer id is unique", len(set(ids)) == len(ids))
     check("the probe layer is a library layer", ar.PROBE_LAYER in ar.LAYER_IDS)
@@ -175,7 +181,8 @@ def test_catalog_by_name():
             return False
 
     service_json = {"layers": [{"id": 999, "name": "SHS Tolls"},
-                               {"id": 74, "name": "City"}],
+                               {"id": 74, "name": "City"},
+                               {"id": 85, "name": "County Codes LRS"}],
                     "tables": []}
     seen = {}
 
@@ -187,17 +194,66 @@ def test_catalog_by_name():
     with _library() as lib, _patch(urllib.request, "urlopen", fake_urlopen):
         spec = ast_.sample_spec(signed_in=True)
         spec["layers"]["999"] = spec["layers"].pop("138")     # the service moved it
-        res, by, logs = _refresh(spec, ["SHS Tolls", "City", "Route Direction"])
+        res, by, logs = _refresh(spec, ["SHS Tolls", "City", "Route Direction",
+                                        "County Code"])
         check("a moved layer is found by name", by["SHS Tolls"]["status"] == "exported",
               str(by["SHS Tolls"]))
+        missed = by["Route Direction"].get("message") or ""
         check("a layer the service doesn't list fails by name",
               by["Route Direction"]["status"] == "failed"
-              and "no layer named" in (by["Route Direction"].get("message") or ""))
+              and "no layer named" in missed and "is called" not in missed, missed)
+        renamed = by["County Code"].get("message") or ""
+        check("a renamed layer fails and the message says what the service calls it",
+              by["County Code"]["status"] == "failed"
+              and "no layer named 'County Code'" in renamed
+              and "The service's layer 85 is called 'County Codes LRS'." in renamed,
+              renamed)
         check("the token goes in the POST body, never the URL",
               "token=" not in seen.get("url", "") and "token=" in seen.get("body", ""))
         check("no log line carries the token", not any("fake-token" in m for m in logs))
         check("the manifest records the URL the layer was read from",
               crl.read_index(lib)["SHS Tolls"]["source"].endswith("/FeatureServer/999"))
+
+
+def test_partial_layer():
+    print("a layer the library holds in part is exported with its where clause:")
+    header = ["OBJECTID", "NetworkId", "RouteId", "Measure"]
+    rows = [[i, 2 if i % 3 else 1, f"LA.001..{i:02d}", i / 10] for i in range(1, 31)]
+    kept = [r for r in rows if r[1] == 2]
+
+    def spec():
+        s = ast_.sample_spec()
+        s["layers"]["1"] = {"name": "Calibration Point", "header": header, "rows": rows,
+                            "where": {"NetworkId = 2": ["NetworkId", 2]}}
+        return s
+
+    with _library() as lib:
+        res, by, logs = _refresh(spec(), ["Calibration Point", "SHS Tolls"])
+        got = by["Calibration Point"]
+        check("the layer exports", got["status"] == "exported", str(got))
+        check("only the rows the clause keeps reach the library",
+              got.get("rows") == len(kept) == 20 and got.get("server_rows") == 20, str(got))
+        check("a new layer takes the next file number",
+              got.get("file") == "41_Calibration Point.xlsx"
+              and (lib / "41_Calibration Point.xlsx").is_file(), str(got.get("file")))
+        index = crl.read_index(lib)
+        check("the manifest's Data Source states the clause",
+              index["Calibration Point"]["source"].endswith(
+                  "/FeatureServer/1 (rows where NetworkId = 2)"),
+              index["Calibration Point"]["source"])
+        check("a whole layer's Data Source is its URL alone",
+              index["SHS Tolls"]["source"].endswith("/FeatureServer/138"))
+        check("the log says which rows were counted",
+              any("Calibration Point" in m and "where NetworkId = 2" in m for m in logs))
+        import clean_road_sources as crs
+        check("the library still reads as one service",
+              crs.library_service(index) == ar.SERVICE_DEFAULT, crs.library_service(index))
+    with _library(), _patch(ar, "LAYER_FILTERS", {"Calibration Point": "NetworkID IS 2"}):
+        _res, by, _logs = _refresh(spec(), ["Calibration Point"])
+        check("a clause the service refuses fails that layer with ArcGIS's own message",
+              by["Calibration Point"]["status"] == "failed"
+              and "Invalid expression" in (by["Calibration Point"].get("message") or ""),
+              str(by["Calibration Point"]))
 
 
 def test_index_write_failure_rolls_back():
@@ -483,6 +539,7 @@ def main():
     test_truncated_export_is_refused()
     test_cancel()
     test_catalog_by_name()
+    test_partial_layer()
     test_index_write_failure_rolls_back()
     test_not_signed_in_hint()
     test_real_subprocess()
