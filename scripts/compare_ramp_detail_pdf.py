@@ -237,7 +237,8 @@ _NOTES_PDF_VS_EXCEL = ctc.make_notes_writer(
         "convention as the print's, so a same-source pair reads identically on "
         "both sides.",
         "The same-source rule decodes the Excel export's OOXML escapes (a handful "
-        "of cells carry an encoded line break, \"_x000d_\" — 4 statewide: route "
+        f"of cells carry an encoded line break, \"{ctc.CR_ESCAPE_TEXT}\" — 4 "
+        "statewide: route "
         "010's rest-area ramps) and ignores edge tab padding — encoding artifacts "
         "one render structurally cannot carry are never counted as data "
         "differences.",

@@ -119,7 +119,8 @@ _NOTES_PDF_VS_EXCEL = (
     "The print is an HTML render, so whitespace runs inside a Description collapse "
     "to one space; the comparison collapses both sides, so padding never counts. "
     "The same-source rule also decodes the Excel export's OOXML escapes (a "
-    "handful of cells carry an encoded line break, \"_x000d_\") and ignores edge "
+    f"handful of cells carry an encoded line break, \"{ctc.CR_ESCAPE_TEXT}\") "
+    "and ignores edge "
     "tab padding — encoding artifacts one render structurally cannot carry are "
     "never counted as data differences.",
 )
