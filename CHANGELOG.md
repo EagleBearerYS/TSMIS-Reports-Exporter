@@ -3,6 +3,50 @@
 All notable changes to TSMIS Reports Exporter, newest first. Each GitHub
 release shows only its own section (see `build/gen_release_notes.py`).
 
+## v0.54.1 — 2026-11-19
+
+The Clean Road comparison workbooks now read like the TSMIS site's own Clean Road
+files. No count changes: the 2026-11-19 comparisons were rebuilt with this version and
+give v0.54.0's counts, column by column.
+
+**After updating**
+
+Rebuild the Clean Road rows on **Reports vs ArcGIS** and on the **vs TSN** matrix. They
+read out of date until then. Nothing else needs a refresh.
+
+**Clean Road comparisons, vs ArcGIS and vs TSN**
+
+- **Values are shown the way the TSMIS file writes them.** Dates are MM/DD/YYYY, and
+  the Intersection layer's dates are YY-MM-DD as the file has them. Highway postmiles,
+  offsets and lengths have three decimals ('0.780'), lanes and widths two digits
+  ('03'), and a two-letter county keeps its period ('LA.'). A toll / forest code of
+  none is a blank, and TSN's 'OTH' ramp class is the site's 'Z'. TSN's values and our
+  build's are written the same way, so a row reads like the file. Format still never
+  counts, and rows pair exactly as before.
+- **A context column shows the TSMIS file's own value.** These columns are shown but
+  never counted. They used to show the other file's value where the TSMIS file is blank,
+  such as TSN's ids and ADTs or the build's ADT and ramp odometer. Each side's own value
+  is still on its own sheet.
+- **The ArcGIS vs TSMIS Summary title names the two sides once.** It read "ArcGIS vs
+  TSMIS — Clean Road Ramp — ArcGIS vs TSMIS — Discrepancy Report". The Highway Detail
+  and Intersection Detail ArcGIS comparisons had the same title and are fixed too.
+- **The Notes line about Excel's escape codes reads correctly.** Excel showed it as
+  `('' is a carriage return)` because it decoded the code inside the note itself. The
+  same line is fixed in the Highway Sequence and Ramp Detail print comparisons.
+
+**Clean Road vs ArcGIS**
+
+- **Nothing in these workbooks speaks of TSN.** Every column carries the TSMIS file's
+  own name in its order, and the Notes no longer describe the build in TSN's terms.
+- **THY_TOLL_FOREST_CODE reads in the site's terms.** The site writes 1 on a forest
+  highway and nothing else. The build's forest code 2 now reads as 1 and its toll code
+  as none, so the column counts only real forest differences: 75 cells on the
+  2026-11-19 export instead of 1,713. The three-way still shows the site's code against
+  TSN's.
+- **An ARS export is described as what it is.** ARS holds the layers' own data up to a
+  day behind, so the Notes say a record edited in that day can differ for that reason,
+  instead of calling ARS a different service.
+
 ## v0.54.0 — 2026-11-18
 
 The Clean Road Highway report the app builds from the ArcGIS layers now lists points the

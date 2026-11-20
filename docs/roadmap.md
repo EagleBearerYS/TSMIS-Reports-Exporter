@@ -4,9 +4,16 @@ The single forward list — bugs to fix, features to add, and standing concerns.
 (what already shipped, per release) is `CHANGELOG.md`; the narrative is
 [history.md](history.md). This file is what's *left*.
 
-> ### ▶ WHERE THINGS STAND (v0.54.0, reconciled 2026-11-18)
+> ### ▶ WHERE THINGS STAND (v0.54.1, reconciled 2026-11-19)
 >
-> **Current release: v0.54.0 (2026-11-18). The Clean Road builds are held against the
+> **Current release: v0.54.1 (2026-11-19). The Clean Road comparison workbooks read like
+> the site's own Clean Road files**: values in the TSMIS file's spelling, context columns
+> showing the TSMIS file's own value, every count as in v0.54.0 (the six 2026-11-19
+> comparisons rebuilt and held line by line, and spot-checked against the raw files).
+> ArcGIS vs TSMIS speaks TSMIS, and an ARS export is described as SSOR's data a day
+> behind. The work PC rebuilds the Clean Road rows to see it.
+>
+> v0.54.0 (2026-11-18): **the Clean Road builds are held against the
 > vendor's source list, and the Highway build lists points the way the site's file
 > does.** The vendor documented which layer each Clean
 > Road attribute comes from; `clean_road_sources.py` holds it as data and a check

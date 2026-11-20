@@ -12,7 +12,17 @@ touching.
 
 ## Current status and work
 
-**Current release: v0.54.0 (2026-11-18)** — **the Clean Road Highway build lists
+**Current release: v0.54.1 (2026-11-19)** — **the Clean Road comparison workbooks
+read like the site's own Clean Road files.** Every value of both sides is written the
+way the TSMIS file writes that column (`compare_clean_road_tsn.rows_as_written`), a
+context column shows the TSMIS file's own value (`CompareSchema.context_display_side`),
+and the pairing reads the compared spelling back (`CompareSchema.likeness_text`), so the
+six 2026-11-19 comparisons rebuilt to v0.54.0's counts column by column. ArcGIS vs
+TSMIS speaks TSMIS (names, Notes, toll / forest codes), an ARS export is described as
+SSOR's data a day behind, and two presentation bugs are fixed (the vs-ArcGIS title, the
+Notes' escape line) ([comparison-engine.md](comparison-engine.md) §9n).
+
+v0.54.0 (2026-11-18): **the Clean Road Highway build lists
 points the way the site's file does, and the layer library holds 43 layers.** A
 landmark, an equation side or a county end with no segment of its own is a zero-length
 row read at its point (build version 3). The vs-TSMIS comparison joins build segments
