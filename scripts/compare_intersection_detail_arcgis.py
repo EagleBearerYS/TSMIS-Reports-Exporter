@@ -205,7 +205,7 @@ def _write_notes(wb, arcgis_path, tsmis_path):
 # --------------------------------------------------------------------------- #
 _SCHEMA = replace(
     _id._SCHEMA,
-    report_name=REPORT_NAME,
+    # report_name stays "Intersection Detail": the Summary title names the sides.
     side_a=SIDE_A, side_b=SIDE_B,
     sides_noun="builds",
     context_fields=CONTEXT_FIELDS,
