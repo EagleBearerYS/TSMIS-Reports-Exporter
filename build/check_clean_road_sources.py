@@ -186,11 +186,21 @@ def test_service():
     same = crs.source_note(default, name)
     c.check("SSOR prod export + the default service: one data source",
             "both sides come from one data source" in same and "⚠" not in same, same)
-    for other in ("clean_road_highway_consolidated 2026-11-13 ars-prod dev-site.xlsx",
+    ars = crs.source_note(
+        default, "clean_road_highway_consolidated 2026-11-13 ars-prod dev-site.xlsx")
+    c.check("ARS prod export + the default service: the same data, up to a day behind "
+            "the layers (the owner, 2026-11-19: ARS takes 24 hours to update)",
+            "ARS prod source" in ars and "up to 24 hours" in ars
+            and "up to a day behind the layers" in ars and "⚠" not in ars, ars)
+    for other in ("clean_road_highway_consolidated 2026-11-13 ars-test dev-site.xlsx",
                   "clean_road_highway_consolidated 2026-11-13 ssor-test dev-site.xlsx"):
         note = crs.source_note(default, other)
         c.check(f"{other.split()[2]}: flagged as a different service",
                 "⚠" in note and "DIFFERENT service" in note, note)
+    note = crs.source_note("https://other/FeatureServer",
+                           "clean_road_highway_consolidated 2026-11-13 ars-prod dev-site.xlsx")
+    c.check("an ARS prod export against layers from another service is flagged",
+            "⚠" in note and "DIFFERENT service" in note, note)
     note = crs.source_note("https://other/FeatureServer", name)
     c.check("an SSOR prod export against layers from another service is flagged too",
             "⚠" in note, note)

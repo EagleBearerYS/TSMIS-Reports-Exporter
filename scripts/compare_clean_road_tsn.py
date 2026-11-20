@@ -25,9 +25,9 @@ Intersection the intersection's postmile; for Ramp the ramp's.
 
 Format-only reconciliations, all measured on the 2026-10-02 statewide pull
 against the 2025-09 extracts and named on the Notes sheet:
-  * dates compare as ISO dates (the site prints MM/DD/YYYY, Intersection dates
+  * dates compare as dates (the site prints MM/DD/YYYY, Intersection dates
     pass the layer's own YY-MM-DD through; TSN stores dates);
-  * amounts compare as canonical numbers ('02' = '2', '9.60' = '9.6');
+  * amounts compare as numbers ('02' = '2', '9.60' = '9.6');
   * county codes drop the TASAS trailing period the site writes for the
     two-letter counties ('SD.' = 'SD');
   * Highway: the site writes the equation marker 'E' into the postmile-suffix
@@ -45,7 +45,13 @@ rule) — which is what lets the print, whose HTML collapses them, compare
 against the Excel file and the TSN extract, which keep them; the print flavors
 also fold tabs and line breaks the same way.
 
-CONTEXT columns (shown with both sides' values, never counted): the columns
+Then every value of both sides is written back the way the site's Excel file
+writes it (`rows_as_written`, v0.54.1): MM/DD/YYYY dates (YY-MM-DD for the
+Intersection layer's), Highway's three-decimal postmiles and two-digit lanes
+and widths, 'SD.', a blank toll / forest code, 'Z'. It is one to one with the
+compared form, so it moves no count; it makes the sheets read like the file.
+
+CONTEXT columns (the TSMIS file's own value shown, never counted): the columns
 the site has no source for (blank in its file by design), TSN's bookkeeping
 (ids, lifecycle, create/update), the TASAS change-tracking columns, the
 extract date, Highway's two offset columns (each system's own cumulative), the
@@ -58,6 +64,7 @@ TSMIS-vs-the-2025-snapshot drift, never by itself a defect. Console-free.
 import re
 from dataclasses import dataclass, replace
 from datetime import date, datetime
+from functools import partial
 from pathlib import Path
 
 try:
@@ -120,6 +127,12 @@ class _Profile:
     tsn_design_prefix: str      # TSN's domain letter on the design code, or ""
     design_col: str
     notes: tuple
+    # How the site's file WRITES these columns (`as_written`): amounts with
+    # three decimals ('0.780'), whole numbers with at least two digits ('03'),
+    # dates as YY-MM-DD ('73-10-19'; every other date is MM/DD/YYYY).
+    three_places: frozenset = frozenset()
+    two_digits: frozenset = frozenset()
+    short_dates: frozenset = frozenset()
 
 
 def _is_numeric_col(name):
@@ -129,25 +142,35 @@ def _is_numeric_col(name):
         "INX_MAINLINE_ADT", "INX_XSTREET_ADT")
 
 
-def _profile(spec, *, extra_context, design_col, tsn_design_prefix, text, notes):
+def _profile(spec, *, extra_context, design_col, tsn_design_prefix, text, notes,
+             three_places=(), two_digits=(), short_dates=()):
     header = spec.header
     dates = frozenset(c for c in header if c.endswith("_DATE"))
     amounts = frozenset(c for c in header if _is_numeric_col(c) and c not in dates)
     context = tuple(c for c in header
                     if c in set(spec.unsourced) | set(extra_context)
                     or c in spec.site_only or c.endswith("_EXTRACT_DATE"))
+    for name in (*three_places, *two_digits, *short_dates):
+        if name not in header:
+            raise ValueError(f"{spec.label} has no column {name!r}")
     return _Profile(spec=spec, context=context, dates=dates, amounts=amounts,
                     text=text, tsn_design_prefix=tsn_design_prefix,
-                    design_col=design_col, notes=notes)
+                    design_col=design_col, notes=notes,
+                    three_places=frozenset(three_places),
+                    two_digits=frozenset(two_digits),
+                    short_dates=frozenset(short_dates))
 
 
 _COMMON_NOTES = (
     "The TSN side is FROZEN at the September-2025 cutover (TSMIS replaced "
     "TSN), so every difference here is TSMIS-vs-that-snapshot drift — read the "
     "counts as change since then, never by themselves as defects.",
-    "Dates compare as ISO dates (format never counts); amounts as canonical "
-    "numbers ('02' = '2', '9.60' = '9.6'); county codes drop the trailing "
-    "period the site writes for two-letter counties ('SD.' = 'SD').",
+    "Every value is shown the way the TSMIS file writes it, and TSN's value "
+    "is written the same way (its dates, numbers and county codes), so a row "
+    "reads like the file. Format never counts: a date is the same date however "
+    "it is written, an amount the same number ('02' = '2', '9.60' = '9.6'), "
+    "and a two-letter county the same with or without its period ('SD.' = "
+    "'SD').",
 )
 
 _HIGHWAY = _profile(
@@ -169,16 +192,25 @@ _HIGHWAY = _profile(
         "roadbed, so the row key treats it as none. The column is still "
         "compared, so the marker shows against TSN's blank.",
         "THY_TOLL_FOREST_CODE: the site leaves the cell blank where no toll or "
-        "forest span exists; TSN writes its code 0 for that. A blank compares as "
-        "0 on both sides.",
-        "CONTEXT (shown, never counted): the 22 columns the site has no source "
+        "forest span exists; TSN writes its code 0 for that, which shows as a "
+        "blank here.",
+        "CONTEXT (the TSMIS file's own value is shown, never counted; TSN's is "
+        "on the TSN sheet): the 22 columns the site has no source "
         "for (blank in its file by design — ids, lifecycle dates, the four "
         "change-tracking flags, the ADT profile trio, maintenance service, the "
         "federal-aid trio, national lands, scenic freeway), TSN's bookkeeping, "
         "THY_LAST_SIG_CHG_DATE and THY_FUNCTIONAL_CLASS_CODE (TSN's own "
         "change-tracking date; TSN leaves the class blank), the two offset "
         "columns (each system's own cumulative) and the extract date.",
-    ))
+    ),
+    three_places=("THY_BEGIN_OFFSET_AMT", "THY_END_OFFSET_AMT", "THY_BEGIN_PM_AMT",
+                  "THY_END_PM_AMT", "THY_LENGTH_MILES_AMT"),
+    two_digits=("THY_LT_LANES_AMT", "THY_RT_LANES_AMT",
+                "THY_LT_O_SHD_TOT_WIDTH_AMT", "THY_LT_O_SHD_TRT_WIDTH_AMT",
+                "THY_LT_TRAV_WAY_WIDTH_AMT", "THY_LT_I_SHD_TOT_WIDTH_AMT",
+                "THY_LT_I_SHD_TRT_WIDTH_AMT", "THY_RT_I_SHD_TOT_WIDTH_AMT",
+                "THY_RT_I_SHD_TRT_WIDTH_AMT", "THY_RT_TRAV_WAY_WIDTH_AMT",
+                "THY_RT_O_SHD_TOT_WIDTH_AMT", "THY_RT_O_SHD_TRT_WIDTH_AMT"))
 
 _INTERSECTION = _profile(
     crc.INTERSECTION,
@@ -195,12 +227,18 @@ _INTERSECTION = _profile(
         "Detail comparison uses: TSN's signal sub-types J, K, L, M, N and P and "
         "TSMIS's S all fold to S (Signalized) on both sides.",
         "The site passes the intersection layer's own YY-MM-DD dates through "
-        "('73-10-19'); they read as 1973-10-19 (2-digit years below 30 are 20xx).",
-        "CONTEXT (shown, never counted): the 10 columns the site has no source "
+        "('73-10-19' is 1973-10-19; a 2-digit year below 30 is 20xx), so they "
+        "are shown that way and TSN's dates are written the same way (a date "
+        "outside 1930–2029 in full). INX_EXTRACT_DATE is MM/DD/YYYY, as the "
+        "file writes it.",
+        "CONTEXT (the TSMIS file's own value is shown, never counted; TSN's is "
+        "on the TSN sheet): the 10 columns the site has no source "
         "for (placement ids, create/update, end date, both ADTs, the LSC date), "
         "INX_CONNECTION_ID (the site numbers intersections in a different id "
         "space) and the extract date.",
-    ))
+    ),
+    short_dates=tuple(c for c in crc.INTERSECTION.header
+                      if c.endswith("_DATE") and c != "INX_EXTRACT_DATE"))
 
 _RAMP = _profile(
     crc.RAMP,
@@ -216,12 +254,13 @@ _RAMP = _profile(
         "of that code (the site's ArcGIS domain vs TSN's code table) and is "
         "shown as context.",
         "RAM_ON_OFF_CODE: the site writes 'Z' for the 'other' class, TSN 'OTH'; "
-        "they compare equal.",
+        "they compare equal, and TSN's 'OTH' shows as 'Z'.",
         "RAM_BEGIN_DATE: the site fills it from the ramp layer's inventory start "
         "date, which is the date TSN keeps in RAM_CHANGE_DATE (TSN's "
         "RAM_BEGIN_DATE is its own record-version date). The column is compared "
         "as named, so this mapping difference shows on most ramps.",
-        "CONTEXT (shown, never counted): the two site-only columns (RAM_HPMS_ID, "
+        "CONTEXT (the TSMIS file's own value is shown, never counted; TSN's is "
+        "on the TSN sheet): the two site-only columns (RAM_HPMS_ID, "
         "RAM_RAMP_ROUTE_NAME — TSN has neither), the 13 columns the site has no "
         "source for (ids, offset, create/update, ADT, change date, connection "
         "id), the design description and the extract date.",
@@ -271,6 +310,136 @@ def _self_value(profile, name, raw):
     if isinstance(raw, (datetime, date)):
         return _date(raw)
     return _WS.sub(" ", ctc.same_source_render_text(_s(raw)))
+
+
+# --------------------------------------------------------------------------- #
+# the site's own spelling (v0.54.1)
+# --------------------------------------------------------------------------- #
+_ISO_DAY = re.compile(r"(\d{4})-(\d{2})-(\d{2})")
+_PLAIN_NUMBER = re.compile(r"(-?\d+)(?:\.(\d+))?")
+
+
+def _written_date(text, short):
+    """An ISO date the way the site's file writes it: MM/DD/YYYY, or YY-MM-DD
+    for the Intersection layer's dates. `iso_date` reads a 2-digit year below
+    30 as 20xx, so only 1930–2029 goes back to two digits; any other date, and
+    anything that is not a real ISO date, stays as it is."""
+    m = _ISO_DAY.fullmatch(text)
+    if not m:
+        return text
+    yyyy, mm, dd = m.groups()
+    try:
+        date(int(yyyy), int(mm), int(dd))
+    except ValueError:  # silent-ok: an impossible date is kept verbatim on purpose (CMP-AUD-038), so it shows as written
+        return text
+    if short:
+        return f"{yyyy[2:]}-{mm}-{dd}" if 1930 <= int(yyyy) <= 2029 else text
+    return f"{mm}/{dd}/{yyyy}"
+
+
+def _written_three_places(text):
+    """A canonical number with three decimals ('0.78' -> '0.780'); one with
+    more decimals than three, or no number, stays as it is (never rounded)."""
+    m = _PLAIN_NUMBER.fullmatch(text)
+    if not m or len(m.group(2) or "") > 3:
+        return text
+    return f"{m.group(1)}.{(m.group(2) or '').ljust(3, '0')}"
+
+
+def as_written(profile, name, value):
+    """One compared value (after `_value`) the way the site's Clean Road file
+    writes that column, so a sheet reads like the file: MM/DD/YYYY dates (the
+    Intersection layer's YY-MM-DD), Highway's three-decimal postmiles and
+    two-digit lanes and widths, the period after a two-letter county, a blank
+    toll / forest code for none, 'Z' for the Ramp's 'other' class.
+
+    One to one with the compared form: two values are equal after this exactly
+    when they were equal before it, so no count can move. A typed key cell is
+    left to `rows_as_written`."""
+    if not isinstance(value, str) or isinstance(value, cc.PhysicalKey) or not value:
+        return value
+    if name in profile.dates:
+        return _written_date(value, name in profile.short_dates)
+    if name in profile.three_places:
+        return _written_three_places(value)
+    if name in profile.two_digits:
+        return "0" + value if len(value) == 1 and "0" <= value <= "9" else value
+    if name.endswith("_COUNTY_CODE"):
+        return value + "." if len(value) == 2 else value
+    if name == "THY_TOLL_FOREST_CODE":
+        return "" if value == "0" else value
+    if name == "RAM_ON_OFF_CODE":
+        return "Z" if value == "OTH" else value
+    return value
+
+
+_US_DAY = re.compile(r"(\d{2})/(\d{2})/(\d{4})")
+_SHORT_DAY = re.compile(r"(\d{2})-(\d{2})-(\d{2})")
+_THREE_PLACES = re.compile(r"(-?\d+)\.(\d{3})")
+
+
+def as_compared(profile, name, text):
+    """`as_written` undone: a shown value back in the compared spelling, exactly
+    (ISO dates, canonical numbers, no county period, toll 0, 'OTH'). The
+    pairing's character likeness reads this (`CompareSchema.likeness_text`),
+    so the file's spelling never decides which rows of one location pair."""
+    if not isinstance(text, str) or not text:
+        if name == "THY_TOLL_FOREST_CODE" and text == "":
+            return "0"
+        return text
+    if name in profile.dates:
+        m = (_SHORT_DAY if name in profile.short_dates else _US_DAY).fullmatch(text)
+        if not m:
+            return text
+        if name in profile.short_dates:
+            yy, mm, dd = m.groups()
+            yyyy = str((1900 if int(yy) >= 30 else 2000) + int(yy))
+        else:
+            mm, dd, yyyy = m.groups()
+        try:
+            date(int(yyyy), int(mm), int(dd))
+        except ValueError:  # silent-ok: not a date as_written made; it was kept verbatim
+            return text
+        return f"{yyyy}-{mm}-{dd}"
+    if name in profile.three_places:
+        m = _THREE_PLACES.fullmatch(text)
+        if not m:
+            return text
+        frac = m.group(2).rstrip("0")
+        return m.group(1) + ("." + frac if frac else "")
+    if name in profile.two_digits:
+        return text[1:] if len(text) == 2 and text[0] == "0" and "0" <= text[1] <= "9" else text
+    if name.endswith("_COUNTY_CODE"):
+        return text[:-1] if len(text) == 3 and text.endswith(".") else text
+    if name == "RAM_ON_OFF_CODE":
+        return "OTH" if text == "Z" else text
+    return text
+
+
+def _written_key(profile, key):
+    """The key cell with the postmile as the file writes it ('0.780', the
+    prefix and roadbed in their own columns). Only the visible text changes:
+    the typed identity, which pairs the rows, is the same object."""
+    if not isinstance(key, cc.PhysicalKey) or is_unplaced(key):
+        return key
+    raw = next((c.value for c in key.physical_identity.raw_claims
+                if c.name == "postmile"), None)
+    if raw in (None, ""):
+        return key
+    text = as_written(profile, profile.spec.pm_col, ctc.decimal_pm(raw))
+    return cc.physical_key(text, key.physical_identity) if text else key
+
+
+def rows_as_written(profile, rows):
+    """Loaded [route, *header] rows with every value as the site's file
+    writes it (`as_written`) — the last step before the engine, so every rule
+    that reads the compared form has already run."""
+    header = profile.spec.header
+    pm_col = profile.spec.pm_col
+    return [[row[0]] + [_written_key(profile, v) if name == pm_col
+                        else as_written(profile, name, v)
+                        for name, v in zip(header, row[1:])]
+            for row in rows]
 
 
 _ROUTE_RE = re.compile(r"(\d+)([A-Z]*)")
@@ -478,7 +647,12 @@ def tsn_rows_from_raw(path, profile, *, collapse=False):
 # --------------------------------------------------------------------------- #
 # schemas + adapters
 # --------------------------------------------------------------------------- #
-def _schema(profile, side_a, side_b, *, notes_title, notes, context, representation):
+def _schema(profile, side_a, side_b, *, notes_title, notes, context, representation,
+            context_side="", written=False):
+    """`context_side` names the TSMIS file's side: its own value is what a
+    context column shows (`CompareSchema.context_display_side`). `written`:
+    the loader writes values the file's way (`rows_as_written`), so the
+    pairing's likeness reads them back in the compared spelling."""
     spec = profile.spec
     header = list(spec.header)
     widths = {c: 26 for c in profile.text}
@@ -499,6 +673,8 @@ def _schema(profile, side_a, side_b, *, notes_title, notes, context, representat
         key_field=header.index(spec.pm_col),
         context_fields=context,
         context_header_fill="808080" if context else "",
+        context_display_side=context_side if context else "",
+        likeness_text=partial(as_compared, profile) if written else None,
         legend_writer=ctc.make_notes_writer(notes_title, notes),
         representation_fields=representation,
     )
@@ -546,8 +722,9 @@ _SELF_NOTES = (
     "Excel file keeps them).",
     "The print leaves out the columns the site has no source for; they are "
     "blank in the Excel file too, so they compare equal here.",
-    "The Excel file writes a few control characters as escapes ('_x000d_' is "
-    "a carriage return) and can pad a cell's edge with tabs; the print cannot "
+    f"The Excel file writes a few control characters as escapes "
+    f"('{ctc.CR_ESCAPE_TEXT}' is a carriage return) and can pad a cell's edge "
+    "with tabs; the print cannot "
     "carry either, so they are decoded away and never count (the owner's "
     "PDF-vs-Excel ruling, CMP-AUD-197).",
 )
@@ -592,7 +769,8 @@ class _CleanRoadCompare:
                 "in every flavor, and this flavor folds tabs and line breaks the "
                 "same way on both sides.",) if collapse else (
                 "The Excel export writes a few control characters as escapes "
-                "('_x000d_' is a carriage return); they are read decoded, the way "
+                f"('{ctc.CR_ESCAPE_TEXT}' is a carriage return); they are read "
+                "decoded, the way "
                 "installed Excel shows the cell, and the character itself still "
                 "compares.",))
             self._notes_title = f"{self.REPORT_NAME}: comparison notes"
@@ -600,7 +778,8 @@ class _CleanRoadCompare:
             self._schema = _schema(
                 profile, self.file_a_label, self.file_b_label,
                 notes_title=self._notes_title, notes=lines,
-                context=profile.context, representation=profile.text)
+                context=profile.context, representation=profile.text,
+                context_side=self.file_a_label, written=True)
 
     def suggest_name(self, path_a=None):
         return f"{self._tag}_Comparison {today_str()}.xlsx"
@@ -611,9 +790,9 @@ class _CleanRoadCompare:
             rows_a = load_site(path_a, p, pdf=True, same_source=True)
             rows_b = load_site(path_b, p, pdf=False, same_source=True)
         else:
-            rows_a = load_site(path_a, p, pdf=(self._flavor == "pdf_tsn"),
-                               collapse=self._collapse)
-            rows_b = load_tsn(path_b, p, collapse=self._collapse)
+            rows_a = rows_as_written(p, load_site(
+                path_a, p, pdf=(self._flavor == "pdf_tsn"), collapse=self._collapse))
+            rows_b = rows_as_written(p, load_tsn(path_b, p, collapse=self._collapse))
         return rows_a, rows_b, None
 
     def compare(self, path_a, path_b, out_path, events=None, confirm_overwrite=None,

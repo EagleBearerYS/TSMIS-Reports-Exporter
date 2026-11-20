@@ -41,6 +41,7 @@ import clean_highway_columns as chc  # noqa: E402
 import clean_road_columns as crc  # noqa: E402
 import compare_clean_road_tsn as crt  # noqa: E402
 import compare_env_editions as cee  # noqa: E402
+import compare_tsn_common as ctc  # noqa: E402
 import consolidate_clean_road_highway as con_hwy  # noqa: E402
 import consolidate_clean_road_intersection as con_inx  # noqa: E402
 import consolidate_clean_road_ramp as con_ram  # noqa: E402
@@ -421,6 +422,119 @@ def test_intersection(tmp):
                     "differing_cells": 0}, got)
 
 
+def _sheet_rows(path, sheet):
+    """{header: value} per data row of one sheet of a values workbook."""
+    wb = load_workbook(path, read_only=True, data_only=True)
+    try:
+        rows = list(wb[sheet].iter_rows(values_only=True))
+    finally:
+        wb.close()
+    head = [str(h) if h is not None else "" for h in rows[0]]
+    return [dict(zip(head, r)) for r in rows[1:] if any(v not in (None, "") for v in r)]
+
+
+def test_written_form(tmp):
+    print("Values shown the way the site's file writes them (v0.54.1):")
+    hwy, inx, ram = (crt.profile_for(k) for k in
+                     ("clean_highway", "clean_intersection", "clean_ramp"))
+    w = crt.as_written
+    for label, got, want in (
+            ("a Highway date is MM/DD/YYYY", w(hwy, "THY_RECORD_DATE", "1973-10-19"),
+             "10/19/1973"),
+            ("an Intersection layer date is YY-MM-DD",
+             w(inx, "INX_RECORD_DATE", "1973-10-19"), "73-10-19"),
+            ("... a year below 30 goes back to two digits too",
+             w(inx, "INX_BEGIN_DATE", "2022-01-01"), "22-01-01"),
+            ("... one outside 1930 to 2029 stays in full",
+             w(inx, "INX_END_DATE", "1925-06-30"), "1925-06-30"),
+            ("the Intersection extract date is MM/DD/YYYY",
+             w(inx, "INX_EXTRACT_DATE", "2026-11-19"), "11/19/2026"),
+            ("an impossible date stays as it is", w(hwy, "THY_RECORD_DATE", "2019-02-30"),
+             "2019-02-30"),
+            ("a Highway postmile has three decimals", w(hwy, "THY_END_PM_AMT", "0.78"),
+             "0.780"),
+            ("... a whole one too", w(hwy, "THY_LENGTH_MILES_AMT", "0"), "0.000"),
+            ("... one with more decimals is never rounded",
+             w(hwy, "THY_END_PM_AMT", "0.7805"), "0.7805"),
+            ("lanes are two digits", w(hwy, "THY_LT_LANES_AMT", "3"), "03"),
+            ("... a width of 108 stays 108", w(hwy, "THY_LT_TRAV_WAY_WIDTH_AMT", "108"),
+             "108"),
+            ("the median width is written plain", w(hwy, "THY_MEDIAN_WIDTH_AMT", "0"), "0"),
+            ("a two-letter county takes its period", w(ram, "RAM_COUNTY_CODE", "LA"), "LA."),
+            ("... a three-letter one stays", w(ram, "RAM_COUNTY_CODE", "ORA"), "ORA"),
+            ("toll / forest code 0 is a blank", w(hwy, "THY_TOLL_FOREST_CODE", "0"), ""),
+            ("... and 1 stays 1", w(hwy, "THY_TOLL_FOREST_CODE", "1"), "1"),
+            ("TSN's 'OTH' on/off class is the site's 'Z'", w(ram, "RAM_ON_OFF_CODE", "OTH"),
+             "Z"),
+            ("an Intersection postmile stays as the file writes it",
+             w(inx, "INX_END_PM_AMT", "5.32"), "5.32"),
+            ("the unplaceable-span token passes through",
+             w(hwy, "THY_END_PM_AMT", "(unavailable: source span skipped)"),
+             "(unavailable: source span skipped)")):
+        c.check(label, got == want, (got, want))
+    samples = ("", "0", "1", "3", "03", "12", "108", "0.78", "0.780", "0.7805", "-0.5",
+               "1973-10-19", "2019-02-30", "10/19/1973", "LA", "LA.", "ORA", "OTH", "Z",
+               "x", "(unavailable: source span skipped)")
+    clashes, unread = [], []
+    for prof in (hwy, inx, ram):
+        for name in prof.spec.header:
+            if name == prof.spec.pm_col:
+                continue
+            seen = {}
+            for v in samples:
+                key = crt._value(prof, name, v, "tsn", False)
+                shown = w(prof, name, key)
+                if seen.setdefault(shown, key) != key:
+                    clashes.append((prof.spec.key, name, v))
+                if crt.as_compared(prof, name, shown) != key:
+                    unread.append((prof.spec.key, name, v, shown))
+    c.check("one to one on every column: two different compared values never show "
+            "the same", not clashes, clashes[:5])
+    c.check("... and as_compared gives every shown value back in the compared "
+            "spelling exactly (what the pairing's likeness reads)", not unread, unread[:5])
+    sc = crt.RAMP_VS_TSN._schema
+    c.check("the two-sided schemas pair on the compared spelling; the PDF-vs-Excel "
+            "self-check (values verbatim, never rewritten) does not need to",
+            sc.likeness_text is not None
+            and crt.RAMP_PDF_VS_EXCEL._schema.likeness_text is None
+            and sc.likeness_text("RAM_BEGIN_DATE", "02/25/1976") == "1976-02-25")
+
+    spec = crc.RAMP
+    run = tmp / "written" / spec.key
+    run.mkdir(parents=True)
+    _site_file(run / "2026-10-02 ssor-prod clean_ramp_route_005.xlsx", spec,
+               [_ramp("0.606"), _ramp("0.682", RAM_ON_OFF_CODE="OFF")])
+    xl = _consolidate(con_ram, run, tmp / "written_xl.xlsx")
+    raw = tmp / "written_tsn.xlsx"
+    _tsn_file(raw, spec, [_tsn_ramp("0.606"), _tsn_ramp("0.682", RAM_ON_OFF_CODE="OFF")])
+    out = tmp / "written_vs_tsn.xlsx"
+    res = crt.RAMP_VS_TSN.compare(str(xl), str(raw), str(out), events=_Quiet(),
+                                  confirm_overwrite=lambda p: True, mode="values")
+    c.check("the values workbook builds", res.status == "ok", res.message)
+    cmp_rows = _sheet_rows(out, "Comparison")
+    first = cmp_rows[0]
+    c.check("the Comparison sheet shows the file's own spelling: '02/25/1976', 'LA.', 'Z'",
+            (first["RAM_BEGIN_DATE"], first["RAM_COUNTY_CODE"], first["RAM_ON_OFF_CODE"])
+            == ("02/25/1976", "LA.", "Z"), first)
+    c.check("a context column shows the TSMIS file's own blank, never TSN's value "
+            "(RAM_ADT, RAM_ROUTE_ID)",
+            first["RAM_ADT"] in (None, "") and first["RAM_ROUTE_ID"] in (None, ""), first)
+    tsn_rows = _sheet_rows(out, "TSN")
+    c.check("the TSN sheet keeps TSN's own value of it, written the file's way",
+            str(tsn_rows[0]["RAM_ADT"]) == "1001"
+            and tsn_rows[0]["RAM_BEGIN_DATE"] == "02/25/1976"
+            and tsn_rows[0]["RAM_PM_LOC_AMT"] == "0.606", tsn_rows[0])
+    c.check("... and the counts are what the compared form gives (a clean pair)",
+            _counts(res) == {"paired_rows": 2, "side_a_only_rows": 0,
+                             "side_b_only_rows": 0, "differing_cells": 0}, _counts(res))
+    shown = [ctc.decode_ooxml_escapes(str(r.get(next(iter(r))) or ""))
+             for r in _sheet_rows(out, "Notes")]
+    named = [s for s in shown if "carriage return" in s]
+    c.check("the Notes line naming Excel's escape shows it as text in Excel "
+            "('_x000d_', not a decoded carriage return)",
+            named and all("'_x000d_' is a carriage return" in s for s in named), named)
+
+
 def main():
     with temp_dir("tsmis_crcmp_") as tmp:
         tmp = Path(tmp)
@@ -429,6 +543,7 @@ def main():
         test_highway(tmp)
         test_highway_blank_postmile(tmp)
         test_intersection(tmp)
+        test_written_form(tmp)
     c.check("the comparison profiles hold each report's unsourced columns as context",
             set(crc.HIGHWAY.unsourced) <= set(crt.profile_for("clean_highway").context)
             and set(crc.RAMP.unsourced) <= set(crt.profile_for("clean_ramp_pdf").context)

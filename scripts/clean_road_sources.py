@@ -123,8 +123,9 @@ HIGHWAY = (
     Source("Population_Code", "SHS Population", ("THY_POPULATION_CODE",), ""),
     Source("Terrain_Type", "Terrain Type", ("THY_TERRAIN_CODE",), ""),
     Source("Toll_Type", "SHS Tolls", ("THY_TOLL_FOREST_CODE",),
-           "the list says the site's code does not read it; the build writes "
-           "a toll span as TASAS code 1"),
+           "the list says the site's code does not read it, and it does not: "
+           "the site writes only SHS Forest HWY's own code, 1 on a forest "
+           "highway; the build's toll spans read as none here"),
     Source("Facility_Name", "SHS Tolls", (),
            "the file has no toll-facility column"),
     Source("Travel_Way_Width_L", "SHS Travel Way L",
@@ -328,6 +329,14 @@ def source_note(service, export_path):
         return head + (" The export was taken from the site's SSOR prod "
                        "source, which reads this same service: both sides "
                        "come from one data source.")
+    if src == "ars" and env == "prod" and is_default:
+        # The owner, 2026-11-19: ARS is SSOR's data and differs from it only
+        # in taking 24 hours to update; the layers are refreshed from SSOR.
+        return head + (" The export was taken from the site's ARS prod "
+                       "source, a copy of this same data that takes up to 24 "
+                       "hours to catch up with it, so the export can be up to "
+                       "a day behind the layers: a record edited in that day "
+                       "can differ here only because ARS had not caught up yet.")
     return head + (f" ⚠ The export was taken from the site's {label} source, "
                    "which reads a DIFFERENT service from the one these layers "
                    "came from. The two are meant to carry the same data, but "

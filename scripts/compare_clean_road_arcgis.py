@@ -13,8 +13,9 @@ TSMIS vs TSMIS: both sides come from the same layers, so a difference is a gap
 in our reconstruction or a finding about how the site builds its file — never
 migration drift. Both sides go through the one Clean Road projection and key
 (`compare_clean_road_tsn`): rows pair on route + county + PM prefix + postmile
-+ roadbed, dates compare as ISO dates, amounts as canonical numbers, county
-codes without the trailing period. The build writes the site's own codes, so
++ roadbed, dates compare as dates, amounts as numbers, county codes with or
+without the trailing period, and every value is shown the way the site's file
+writes it (`rows_as_written`). The build writes the site's own codes, so
 none of the vs-TSN crosswalks has anything to bridge here. CONTEXT is the
 vs-TSN set: what the site has no source for (blank in its file by design — the
 Ramp build still writes the odometer the requirements ask for), TSN-shaped
@@ -65,9 +66,12 @@ class CleanRoadArcgisCompare:
         base = crt._schema(
             self._profile, SIDE_A, SIDE_B,
             notes_title=f"{self.REPORT_NAME}: comparison notes", notes=(),
-            context=self.context, representation=self._profile.text)
+            context=self.context, representation=self._profile.text,
+            context_side=SIDE_B, written=True)
+        # The Summary title already names the sides ("ArcGIS vs TSMIS — …"),
+        # so the schema carries the report's own name.
         self._schema = replace(
-            base, report_name=self.REPORT_NAME, sides_noun="builds",
+            base, report_name=self._spec.label, sides_noun="builds",
             one_sided_note_extra=(f" ({self._spec.noun_plural} one side records "
                                   "at a postmile the other doesn't — a row-"
                                   "universe difference, or network change "
@@ -93,8 +97,9 @@ class CleanRoadArcgisCompare:
         pdf = _is_print(export_path)
         rows_a = self._load_build(build_path, collapse=pdf)
         rows_b = crt.load_site(export_path, self._profile, pdf=pdf, collapse=pdf)
-        return (ctc.same_source_render_rows(rows_a),
-                ctc.same_source_render_rows(rows_b), None)
+        return (crt.rows_as_written(self._profile, ctc.same_source_render_rows(rows_a)),
+                crt.rows_as_written(self._profile, ctc.same_source_render_rows(rows_b)),
+                None)
 
     # ---------------------------------------------------------------- notes
     def _notes_lines(self, build_path, export_path, unplaced):
@@ -127,21 +132,22 @@ class CleanRoadArcgisCompare:
             "in our reconstruction or a finding about how the site builds its "
             "file — never migration drift.",
             f"Rows pair on route + county + PM prefix + the {spec.noun}'s "
-            "postmile + roadbed (the R/L postmile suffix) — the key the "
-            "site-vs-TSN comparison uses.",
-            "Format-only reconciliations: dates compare as ISO dates; amounts as "
-            "canonical numbers ('02' = '2'); county codes drop the trailing "
-            "period the site writes for two-letter counties ('SD.' = 'SD'). A "
+            "postmile + roadbed (the R/L postmile suffix).",
+            "Every value is shown the way the TSMIS file writes it, ours too. "
+            "Format never counts: a date is the same date however it is "
+            "written, an amount the same number ('02' = '2'), and a two-letter "
+            "county the same with or without its period ('SD.' = 'SD'). A "
             "print-edition export folds runs of spaces on both sides, as its "
             "HTML does.",
-            "CONTEXT (shown, never counted): the columns the site has no source "
+            "CONTEXT (the TSMIS file's own value is shown, never counted; ours "
+            f"is on the {SIDE_A} sheet): the columns the site has no source "
             f"for ({', '.join(spec.unsourced)}) and the extract date."
             + (" The build writes two of them the site leaves blank: "
                "RAM_BEGIN_OFFSET_AMT from the ramp point's odometer and "
                "RAM_CREATE_DATE from SHS Ramp's inventory start date."
                if spec.key == "clean_ramp" else
                " INX_CONNECTION_ID is the layer's INTERSECTION_ID on both "
-               "sides, so unlike the vs-TSN comparison it counts."),
+               "sides, so it counts."),
         ) + tuple(unplaced) + (
             "Where each column comes from in the build (# = the number the "
             "vendor's list gives the layer):",

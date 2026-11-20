@@ -559,8 +559,13 @@ production service the library is refreshed from (`00_INDEX.xlsx` records each o
   `Thru_Num_Lanes_L` / `_R` (#139 / #140); for Ramp `Side_of_Hwy`, `Ramp_Length`,
   `Ramp_Num_Lanes` and the `Ramp_Name` key itself.
 - `Toll_Type` (SHS Tolls #138): the list says the site's code does not read it, and the
-  code agrees: `THY_TOLL_FOREST_CODE` is SHS Forest HWY's flag alone. The build writes a
-  toll span as TASAS code 1, so the comparison shows the toll roads (finding TW8).
+  code agrees: `THY_TOLL_FOREST_CODE` is SHS Forest HWY's flag alone, `1` on a forest
+  highway. The build writes the TSN extract's codes (toll 1, forest 2). Since
+  2026-11-19 the two-sided ArcGIS vs TSMIS comparison reads them as the site writes the
+  column (forest 2 as 1, toll as none: the owner's rule that the TSMIS version is the
+  default), which took 1,638 cells of codes out of the 2026-11-19 count. The vs-TSN
+  comparison and the three-way keep showing the site's code against TASAS's (finding
+  TW8).
 - `RAM_CREATE_DATE`: the list names SHS Ramp's `InventoryItemStartDate`. The site
   leaves the column blank (`src: null`; blank on all 15,215 rows of the 2026-11-06
   export). The Ramp build writes it since this change, shown as context and never
@@ -587,8 +592,12 @@ state; the manifest's Data Source states the clause. The work PC owes the first 
 **3. Which data each side came from is stated, not assumed.** A build records the
 feature service its layers were pulled from (the marker sheet's `Layer service`), and a
 vs-TSMIS comparison prints it beside the data source the export's file name records. An
-SSOR prod export against the default library reads the same service; an export from
-the site's ARS source, or from another environment, is flagged as a different service.
+SSOR prod export against the default library reads the same service. An ARS prod export
+is the same data up to a day behind (the owner, 2026-11-19: "the only difference
+between it and ssor is ars takes 24 hrs to update"; the layers exist only on SSOR, and
+exports are moving to ARS), and the Notes say so: a record edited in that day can
+differ only because ARS had not caught up. An export from another environment is
+flagged as a different service.
 
 ### Segments, read the way the file is defined
 
