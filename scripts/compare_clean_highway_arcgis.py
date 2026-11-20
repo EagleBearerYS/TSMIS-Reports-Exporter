@@ -13,10 +13,12 @@ difference is a gap in OUR reconstruction or a finding about how the site builds
 its file — never migration drift. Values are compared on the vs-TSN comparison's
 FORMAT-only reconciliations, because the two sides really do spell values
 differently (the site prints MM/DD/YYYY, '02' lanes and 'LA.' for the two-letter
-counties; the build writes the TSN extract's shapes): dates as ISO dates,
-amounts as canonical numbers, county codes without the trailing period, a blank
+counties; the build writes the TSN extract's shapes): dates as dates, amounts
+as numbers, county codes with or without the trailing period, a blank
 toll/forest code as 0, and the equation marker 'E' the site writes into the
-postmile-suffix column is no roadbed for the key. One vocabulary is read across:
+postmile-suffix column is no roadbed for the key. Both sides are then SHOWN the
+way the site's file writes them (`compare_clean_road_tsn.rows_as_written`,
+v0.54.1), which moves no count. One vocabulary is read across:
 THY_BREAK_DESC, where the site writes only SHS Route Break's points ('Route
 Resume' as BEG, 'Route Break' as END) and the build the TSN extract's markers —
 its U-BR / R-BR are those same two points, and its structural markers (a
@@ -29,7 +31,8 @@ projection, so the two comparisons of one export can never key it differently.
 A site row with no postmile keys on its odometer instead and is disclosed on the
 Notes sheet (`compare_clean_road_tsn.UNPLACED`).
 
-CONTEXT (shown, never counted) is the vs-TSN set: the columns the site has no
+CONTEXT (the site file's own value shown, never counted) is the vs-TSN set:
+the columns the site has no
 source for (blank in its file by design — the build may still carry a value, the
 ADT trio for one), TSN's bookkeeping columns, the two offset columns (the site
 writes the LRS odometer, the build its PM-continued cumulative),
@@ -114,6 +117,29 @@ _BREAK_AT = 1 + SHARED_HEADER.index("THY_BREAK_DESC")
 # The layer's own name has none, and the build writes the layer's name.
 _REALIGNMENT_AS_SITE = {"begin realignment": "BEGIN", "end realignment": "END"}
 _LANDMARK_AT = 1 + SHARED_HEADER.index("THY_LANDMARK_SHORT_DESC")
+# The build's THY_TOLL_FOREST_CODE in the site's terms, for this two-sided
+# comparison only. The build writes the TSN extract's codes (1 = a toll span,
+# 2 = a forest highway, toll first); the site writes SHS Forest HWY's own
+# Forest_Hwy code, 1 on a forest highway, and reads no toll layer
+# (highway_log.js: queryRangeLayer(lp, 115, 'Forest_Hwy')). So here a forest
+# highway reads 1 and a toll span as none. The three-way keeps the TSN codes:
+# there the site's 1 against TSN's and the layers' 2 is a finding. Measured on
+# the 2026-11-19 export: no segment the build marks toll is a forest highway in
+# the site's file, so toll-first loses nothing.
+_TOLL_FOREST_AS_SITE = {"2": "1", "1": "0"}
+_TOLL_FOREST_AT = 1 + SHARED_HEADER.index("THY_TOLL_FOREST_CODE")
+
+
+def _tolls_as_site(rows):
+    """THY_TOLL_FOREST_CODE of every build row in the site's codes (above),
+    in place; returns how many cells changed."""
+    changed = 0
+    for row in rows:
+        now = _TOLL_FOREST_AS_SITE.get(row[_TOLL_FOREST_AT])
+        if now is not None:
+            row[_TOLL_FOREST_AT] = now
+            changed += 1
+    return changed
 
 
 def _at(column):
@@ -359,6 +385,7 @@ def _load_pair(build_path, export_path, found=None):
     `found["points"]` receive the counts for the Notes."""
     pdf = _is_print(export_path)
     rows_a, spans = _read_build(build_path, collapse=pdf)
+    _tolls_as_site(rows_a)
     rows_b = crt.load_site(export_path, _PROFILE, pdf=pdf, collapse=pdf)
     rows_a, spans, joined = _join_unchanged(
         rows_a, spans, {(r[0], r[_KEY_AT]) for r in rows_b})
@@ -366,7 +393,8 @@ def _load_pair(build_path, export_path, found=None):
     if found is not None:
         found["joined"] = joined
         found["points"] = points
-    return ctc.same_source_render_rows(rows_a), ctc.same_source_render_rows(rows_b), None
+    return (crt.rows_as_written(_PROFILE, ctc.same_source_render_rows(rows_a)),
+            crt.rows_as_written(_PROFILE, ctc.same_source_render_rows(rows_b)), None)
 
 
 # --------------------------------------------------------------------------- #
@@ -430,8 +458,8 @@ def _notes_lines(build_path, export_path, unplaced, joined=None, points=None):
     edition = "print (read back from its PDF)" if _is_print(export_path) else "Excel export"
     counted = set(SHARED_HEADER) - set(CONTEXT_FIELDS)
     return (
-        f"Side A ({SIDE_A}) is OUR CA HIGHWAYS table, rebuilt from the ArcGIS "
-        f"layer library as of {asof} (layers exported {drop}). Side B "
+        f"Side A ({SIDE_A}) is OUR Clean Road Highway file, rebuilt from the "
+        f"ArcGIS layer library as of {asof} (layers exported {drop}). Side B "
         f"({SIDE_B}) is the site's own Clean Road Highway file — its {edition} "
         f"of {day}, consolidated.",
         "VINTAGE: these two dates must match for the counts to measure "
@@ -444,15 +472,17 @@ def _notes_lines(build_path, export_path, unplaced, joined=None, points=None):
         "a gap in our reconstruction or a finding about how the site builds its "
         "file — never migration drift.",
         "Rows pair on route + county + PM prefix + BEGIN postmile + roadbed (the "
-        "R/L/X postmile suffix) — the key the site-vs-TSN comparison uses. The "
-        "END postmile and length are compared fields.",
+        "R/L/X postmile suffix). The END postmile and length are compared "
+        "fields.",
         _joined_line(joined or {}),
         _points_line(points or {}),
-        "Format-only reconciliations (the two sides spell values differently): "
-        "dates compare as ISO dates; amounts as canonical numbers ('02' = '2'); "
-        "county codes drop the trailing period the site writes for two-letter "
-        "counties ('SD.' = 'SD'); a blank THY_TOLL_FOREST_CODE is code 0; the "
-        "equation marker 'E' the site writes into THY_PM_SUFFIX_CODE is no "
+        "Every value is shown the way the TSMIS file writes it, ours too. Format "
+        "never counts: a date is the same date however it is written, an amount "
+        "the same number ('02' = '2'), and a two-letter county the same with or "
+        "without its period ('SD.' = 'SD'). THY_TOLL_FOREST_CODE: the site "
+        "writes 1 on a forest highway and leaves the cell blank otherwise; the "
+        "build's forest code 2 reads as 1 here and its toll code as a blank. "
+        "The equation marker 'E' the site writes into THY_PM_SUFFIX_CODE is no "
         "roadbed for the key (the column itself still compares). A print-edition "
         "export folds runs of spaces on both sides, as its HTML does.",
         "THY_LANDMARK_SHORT_DESC: the site writes a BEGIN / END REALIGNMENT "
@@ -463,13 +493,14 @@ def _notes_lines(build_path, export_path, unplaced, joined=None, points=None):
         "equation's row carries all the landmarks at its postmile, joined "
         "with ' / ', on both sides.",
         "THY_BREAK_DESC: the site writes only route breaks, off SHS Route Break "
-        "('Route Resume' as BEG, 'Route Break' as END). The build writes the TSN "
-        "extract's markers, so its U-BR / R-BR (the same two points) read as BEG "
-        "/ END, and its markers the site has no source for (a route's BEG / END, "
-        "CNTY, D-C, DIST, BEGL, ENDR) read as blank.",
-        "CONTEXT (shown, never counted): the 22 columns the site has no source "
+        "('Route Resume' as BEG, 'Route Break' as END). The build marks the same "
+        "two points U-BR / R-BR, which read as BEG / END here, and marks other "
+        "points the site's file never carries (a route's BEG / END, CNTY, D-C, "
+        "DIST, BEGL, ENDR), which read as blank.",
+        "CONTEXT (the TSMIS file's own value is shown, never counted; ours is "
+        f"on the {SIDE_A} sheet): the 22 columns the site has no source "
         "for (blank in its file by design — the build may still carry a value, "
-        "e.g. the ADT trio), TSN's bookkeeping columns, the two offset columns "
+        "e.g. the ADT trio from Traffic Volume Segments), the two offset columns "
         "(the site writes the LRS odometer, the build its PM-continued "
         "cumulative), THY_LAST_SIG_CHG_DATE, THY_FUNCTIONAL_CLASS_CODE and the "
         "extract date.",
@@ -484,9 +515,10 @@ def _notes_lines(build_path, export_path, unplaced, joined=None, points=None):
 _BASE_SCHEMA = crt._schema(
     _PROFILE, SIDE_A, SIDE_B,
     notes_title=f"{REPORT_NAME}: comparison notes", notes=(),
-    context=_PROFILE.context, representation=_PROFILE.text)
+    context=_PROFILE.context, representation=_PROFILE.text,
+    context_side=SIDE_B, written=True)
 _BASE_SCHEMA = replace(
-    _BASE_SCHEMA, report_name=REPORT_NAME, sides_noun="builds",
+    _BASE_SCHEMA, report_name=_SPEC.label, sides_noun="builds",
     one_sided_note_extra=(" (segments one side cuts at a postmile the other "
                           "doesn't — mostly the two segmentations, or network "
                           "change across the two dates)"))

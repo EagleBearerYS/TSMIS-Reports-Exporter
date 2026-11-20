@@ -452,6 +452,8 @@ types override the data-shape fields and side names.
 | `key_normalizer` | `None` | `callable(row, off, key_field)->str` canonical identity token IN PLACE OF the raw key (HL roadbed key) — [§6](#6-roadbed-aware-key-normalizer-tsmis-vs-tsn-only) |
 | `context_fields` | `()` | field NAMES shown but NON-ASSERTING — never count as a diff, never get the ≠ mark; the cell coalesces to whichever side has a value (v0.17.0; Ramp Detail's TSN-only DB columns) |
 | `context_header_fill` | `""` | presentation-only (v0.32.0, the clean-road 74-column ask): a solid-fill hex tinting every `context_fields` column HEADER on the Comparison/data/Only-in sheets, with a hover note ("shown for reference, never counted"); values/states/counts and the veryHidden snapshots untouched. Default `""` → headers byte-identical everywhere |
+| `context_display_side` | `""` | display-only (v0.54.1, "the comparison sheet should look like the raw Clean Road file"): a side label (`side_a` or `side_b`) whose OWN value a matched context cell shows, blank where that side's is blank, in the Python truth, the values workbook and the formula twin alike; a name that is neither side is refused. Default `""` → the coalescing display, byte-identical. The Clean Road comparisons name the TSMIS file's side |
+| `likeness_text` | `None` | pairing-only (v0.54.1): `callable(field_name, text)` giving the text the character likeness of `_pair_cost_components` reads for a cell, in place of the shown text, so a loader that writes values in a display spelling cannot change which rows of one repeated key pair (without it, the Clean Road spelling moved 1 Highway cell between two columns on 2026-11-19, totals equal). Equality, states and counts never read it. The Clean Road two-sided schemas pass `as_compared`, the exact inverse of `rows_as_written`. Default `None` → byte-identical |
 | `extra_sheet_writer` | `None` | `callable(wb, ctx)` run after the sheets, before save — appends a custom sheet: the familiar-layout rollup (v0.17.0; the Summary reports) and the Intersection Detail **"Report View"** replica (v0.17.8 / §9f). `ctx = {rows_a, rows_b, has_route, sc, side_a, side_b}` |
 | `report_view_diff_check` | `()` | optional `(sheet, Diffs-column, physical-row-repeat)` aggregate Summary invariant for typed two-line Report Views; requires `extra_sheet_writer`. It detects total-count drift, not same-count value changes. |
 
@@ -1536,8 +1538,12 @@ comparisons can never key a record differently; only format reconciliations appl
   Intersection reads the IM tables the site's code reads, not the `Master Intersection`
   layer the list names, which the library does not hold), show each layer with the
   list's number, and print the feature service the layers were pulled from beside the
-  data source the export's file name records. An ARS export, or one from another
-  environment, is flagged as a different service
+  data source the export's file name records. An ARS prod export is described as the
+  same data up to a day behind the layers (ARS takes up to 24 hours to catch up with
+  SSOR, the owner, 2026-11-19); one from another environment is flagged as a
+  different service. Since 2026-11-19 nothing in these workbooks speaks of TSN: every
+  column carries the TSMIS file's own name, in its order, and
+  `check_arcgis_clean_road` holds all three to that
   ([planning/cleanroad-highways.md](planning/cleanroad-highways.md)).
 - **Bound result** (the 2026-10-22 dev-site export vs the 2026-10-05 layers, after the
   2026-11-03 build audit; v0.51.0's numbers in brackets): Intersection 16,382 paired,
@@ -1564,6 +1570,62 @@ comparisons can never key a record differently; only format reconciliations appl
   the remaining one-sided rows are, class by class with its cause, is in
   [planning/cleanroad-highways.md](planning/cleanroad-highways.md) "What is left on the
   Highway file" and roadmap TW15–TW17.
+- **Same-day layers, an ARS export** (measured 2026-11-19: the 2026-11-19 ars-prod
+  dev-site export against the layers the work PC refreshed that morning, 43 of 43, builds
+  as of 2026-11-19, through the matrix path): Ramp 15,219 paired, 0 / 0, **0 cells**;
+  Intersection 16,381 paired, 94 / 3, 3,071 cells (2,548 the two begin dates: the site
+  writes the geometry date, checked on raw layer rows; 76 of the 94 build-only rows are
+  roadmap TW5's route 072 LA and route 083, still left out of the site's file); Highway 51,550 paired, 2,964 /
+  1,750, 43,337 cells (44,983 before the toll / forest reading below). An independent
+  recount from the raw per-route files and the build agreed with every Ramp and
+  Intersection count; the Highway rows add up exactly (53,300 TSMIS rows; 58,927 build
+  rows less 4,413 joined). The raw-layer check: the build differs from its own layers on
+  2 of 1,440,538 judged cells; of the workbook's 21,750 judgeable differences 96.2% are
+  the layer agreeing with the build, and the 663 where it agrees with TSMIS are 423
+  segments the two sides end at different postmiles (at the build's own midpoint the
+  layer agrees with the build), 139 zero-length rows, 85 slivers and 16 cells on equal
+  extents (0.04%). The ARS lag reached one stretch (036 TEH R75.146–R78.072, re-entered
+  2026-11-18): 7 cells on 2 rows.
+- **THY_TOLL_FOREST_CODE in the site's terms** (2026-11-19). The site writes SHS Forest
+  HWY's own code, `1` on a forest highway, and reads no toll layer; the build writes the
+  TSN extract's codes (toll 1, forest 2). The two-sided comparison now reads the build's
+  forest 2 as 1 and its toll as none before the segment join (`_tolls_as_site`), so the
+  column counts only where one side has a forest highway and the other does not (1,713 →
+  75 cells on 2026-11-19). The three-way keeps the build's own codes: there the site's 1
+  against TSN's and the layers' 2 is finding TW8.
+- **The sheets read like the TSMIS file** (v0.54.1; the owner, 2026-11-19: the Comparison
+  sheet should look close to the raw Clean Road files). Every value of both sides is
+  written the way the site's Excel file writes that column (`compare_clean_road_tsn.
+  rows_as_written`, the last step of every two-sided Clean Road loader): MM/DD/YYYY dates
+  (the Intersection layer's YY-MM-DD for 1930–2029), Highway's three-decimal postmiles,
+  offsets and lengths and two-digit lanes and widths, the period after a two-letter
+  county, a blank toll / forest code for none, the Ramp's 'Z'; the key cell's visible
+  text is the postmile as the file writes it. It is one to one with the compared form,
+  and the pairing of a repeated location reads the compared spelling back
+  (`as_compared`, `CompareSchema.likeness_text`): with the shown spelling instead, one
+  Highway vs layers cell moved between two columns (THY_PM_SUFFIX_CODE to
+  THY_SEG_ORDER_ID, totals equal), because the tie between two equally good pairings is
+  broken on how alike the text looks. On every real cell of the 2026-11-19 TSMIS files,
+  the TSN extracts and our builds (16.8 million) the round trip is exact. Held against
+  the 2026-11-19 files, every Highway cell reads back as
+  written; Intersection differs on 5 county cells the site wrote without its period, Ramp
+  on 4 cells holding Excel's escaped line break. A context column shows the TSMIS file's
+  own value (`CompareSchema.context_display_side`), never the other side's: TSN's ids
+  and ADTs, the build's ADT trio and ramp odometer stay on their own data sheets. The
+  lead key column keeps the route / county / postmile identity, which the Spot Check's
+  find-a-row lookup needs unique. All six 2026-11-19 comparisons rebuilt through the
+  matrix path to Summaries identical to v0.54.0's line for line, the vs-layers title
+  aside: it named the sides twice ("ArcGIS vs TSMIS — Clean Road Ramp — ArcGIS vs TSMIS
+  — Discrepancy Report"), now the report's own name as the vs-TSN titles do (Highway
+  Detail and Intersection Detail ArcGIS too). A spot check of the delivered sheets
+  (`_checks/spot_delivered.py` in the 11.19 corpus folder) drew differences of every
+  differing column (25 per workbook, 40 for Highway), one-sided rows and agreeing cells,
+  and traced each to the raw files on both sides: every one as shown. The Notes line
+  naming Excel's escape code showed `('' is a carriage return)` in installed Excel,
+  which decoded the code inside the note; it is written as `_x005F_x000d_` now
+  (`ctc.CR_ESCAPE_TEXT`), also in the Highway Sequence and Ramp Detail print
+  comparisons. Locked by `build/check_context_display_side.py`,
+  `build/check_clean_road_compare.py` and `build/check_arcgis_clean_road.py`.
 - **A site row with no postmile** (385 Highway rows on 001 / 003 in the 2026-10-22
   export) keys on its odometer as `no postmile @ odometer …` in every Clean Road
   comparison (`compare_clean_road_tsn.UNPLACED`) and the Notes sheet counts them by

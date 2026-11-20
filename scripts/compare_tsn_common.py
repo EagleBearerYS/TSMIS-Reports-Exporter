@@ -980,6 +980,12 @@ def _merge_input_outcomes(inputs, loader_warnings):
 _OOXML_ESCAPE_RE = re.compile(r"_x([0-9A-Fa-f]{4})_")
 _EDGE_WHITESPACE = " \t\r\n\f\v"
 
+# The escape's own name as a cell must carry it: Excel reads a bare `_x000d_`
+# in a cell as a carriage return (a Notes line naming it showed ('' is a
+# carriage return)), so prose names it with the leading underscore written as
+# OOXML's `_x005F_`, and Excel shows `_x000d_`.
+CR_ESCAPE_TEXT = "_x005F_x000d_"
+
 
 def decode_ooxml_escapes(text):
     """Decode OOXML `_xHHHH_` escapes in a str (hex digits in either case;

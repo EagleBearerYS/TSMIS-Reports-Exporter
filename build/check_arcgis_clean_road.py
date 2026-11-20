@@ -22,6 +22,7 @@ Run with the build venv:
     build\\.venv\\Scripts\\python.exe build\\check_arcgis_clean_road.py
 """
 import datetime
+import re
 import sys
 from pathlib import Path
 
@@ -300,6 +301,7 @@ def test_intersection(tmp):
                      ["Notes"].iter_rows(values_only=True) for v in row if v)
     c.check("a real workbook names the build's as-of date and the export's day",
             written.status == "ok" and ASOF in notes and "2026-10-22" in notes, notes[:200])
+    _check_tsmis_names(tmp / "ix4.xlsx", crc.INTERSECTION)
 
 
 
@@ -472,6 +474,33 @@ def test_ramp(tmp):
             "only the site lists is one-sided",
             got == {"paired_rows": 2, "side_a_only_rows": 0, "side_b_only_rows": 1,
                     "differing_cells": 1}, got)
+    cmp_ram.compare(str(out), str(site2), str(tmp / "r3.xlsx"), events=_Quiet(),
+                    confirm_overwrite=lambda p: True, mode="values")
+    _check_tsmis_names(tmp / "r3.xlsx", crc.RAMP)
+    shown = _sheet_dicts(tmp / "r3.xlsx", "Comparison")
+    ours = _sheet_dicts(tmp / "r3.xlsx", "ArcGIS")
+    both = [r for r in shown if r.get("Status") == "Both"]
+    c.check("a context column shows the TSMIS file's own value: the build's odometer "
+            "and create date stay on the ArcGIS sheet, the site's extract date shows",
+            both and all(r["RAM_BEGIN_OFFSET_AMT"] in (None, "")
+                         and r["RAM_CREATE_DATE"] in (None, "")
+                         and r["RAM_EXTRACT_DATE"] == "10/22/2026" for r in both)
+            and ours[0]["RAM_BEGIN_OFFSET_AMT"] == "1.6"
+            and ours[0]["RAM_CREATE_DATE"] == "05/06/1980", (both[:1], ours[:1]))
+    c.check("the values read as the site's file writes them ('02/25/1976', 'ORA')",
+            both and both[0]["RAM_BEGIN_DATE"] == "02/25/1976"
+            and both[0]["RAM_COUNTY_CODE"] == "ORA", both[:1])
+
+
+def _sheet_dicts(path, sheet):
+    """{header: value} per data row of one sheet of a values workbook."""
+    wb = load_workbook(path, read_only=True, data_only=True)
+    try:
+        rows = list(wb[sheet].iter_rows(values_only=True))
+    finally:
+        wb.close()
+    head = [str(h) if h is not None else "" for h in rows[0]]
+    return [dict(zip(head, r)) for r in rows[1:] if any(v not in (None, "") for v in r)]
 
 
 # --------------------------------------------------------------------------- #
@@ -500,6 +529,59 @@ def _notes_text(path):
                         for v in row if v)
     finally:
         wb.close()
+
+
+# The comparison's own columns, beside the site file's: what each sheet adds.
+_APP_COLUMNS = {"Route", "#", "ArcGIS Row", "TSMIS Row", "Status", "Diffs",
+                "Missing from TSMIS", "Missing from ArcGIS", "Comparison row",
+                "Key (helper)"}
+_TSN_WORDS = re.compile(r"\bTSN\b|CA HIGHWAYS|CA INTERSECTIONS|CA RAMPS")
+
+
+def _check_tsmis_names(path, spec):
+    """An ArcGIS vs TSMIS workbook names every column as the site's file does
+    and says nothing about TSN (owner, 2026-11-19: no TSN columns in an
+    ArcGIS vs TSMIS comparison; the column names are the TSMIS file's)."""
+    wb = load_workbook(path, read_only=True)
+    titles = []
+    try:
+        foreign, mentions = {}, []
+        for ws in wb.worksheets:
+            if ws.title.startswith("__"):
+                continue
+            if _TSN_WORDS.search(ws.title):
+                mentions.append(f"sheet {ws.title}")
+            if ws.title in ("Comparison", "Only in ArcGIS", "Only in TSMIS",
+                            "ArcGIS", "TSMIS"):
+                head = next(ws.iter_rows(values_only=True), ())
+                names = [str(h) for h in head if h not in (None, "")
+                         and not str(h).startswith("__")]
+                extra = [n for n in names if n not in _APP_COLUMNS
+                         and n not in spec.header]
+                if extra:
+                    foreign[ws.title] = extra
+                # The keyed sheets lead with the postmile the rows pair on,
+                # beside Route; every other column keeps the file's order.
+                moved = () if ws.title in ("ArcGIS", "TSMIS") else (spec.pm_col,)
+                ours = [n for n in names if n in spec.header and n not in moved]
+                if ours != [n for n in spec.header if n in ours]:
+                    foreign[ws.title + " (order)"] = names
+            if ws.title in ("Summary", "Notes", "Provenance", "Spot Check", "Routes"):
+                for row in ws.iter_rows(values_only=True):
+                    mentions += [str(v)[:90] for v in row
+                                 if isinstance(v, str) and _TSN_WORDS.search(v)]
+                    if ws.title == "Summary":
+                        titles += [v for v in row if isinstance(v, str)
+                                   and "Discrepancy Report" in v]
+    finally:
+        wb.close()
+    c.check(f"{spec.label}: every column is named, and ordered, as the TSMIS file "
+            "has it, and nothing in the workbook speaks of TSN",
+            not foreign and not mentions, (foreign, mentions[:4]))
+    c.check(f"{spec.label}: the Summary title names the two sides once "
+            f"('ArcGIS vs TSMIS — {spec.label} — Discrepancy Report')",
+            len(titles) == 1 and titles[0].count("ArcGIS vs TSMIS") == 1
+            and f"— {spec.label} — Discrepancy Report" in titles[0], titles)
 
 
 def _thy(begin, end, **kw):
@@ -563,6 +645,28 @@ def test_highway(tmp):
             got == {"paired_rows": 4, "side_a_only_rows": 0, "side_b_only_rows": 0,
                     "differing_cells": 1}, got)
 
+    build = tmp / "clean_highway_tolls.xlsx"
+    _arc_build(build, [_thy("0", "0.305", THY_TOLL_FOREST_CODE=2),
+                       _thy("0.305", "0.9", THY_TOLL_FOREST_CODE=1),
+                       _thy("0.9", "1.2", THY_TOLL_FOREST_CODE=0),
+                       _thy("1.2", "1.5", THY_TOLL_FOREST_CODE=2)])
+    site = _site_export(tmp / "hwy_tolls", crc.HIGHWAY, "005",
+                        [_thy("0", "0.305", THY_TOLL_FOREST_CODE="1", **site_fmt),
+                         _thy("0.305", "0.9", THY_TOLL_FOREST_CODE="", **site_fmt),
+                         _thy("0.9", "1.2", THY_TOLL_FOREST_CODE="", **site_fmt),
+                         _thy("1.2", "1.5", THY_TOLL_FOREST_CODE="", **site_fmt)])
+    got = _counts(cmp_hwy.compare(str(build), str(site), str(tmp / "h7.xlsx"), **_q()))
+    c.check("THY_TOLL_FOREST_CODE reads the build's forest highway 2 as the site's 1 "
+            "and its toll span as none (the site writes only SHS Forest HWY's own "
+            "code); a forest highway the site lacks still counts",
+            got == {"paired_rows": 4, "side_a_only_rows": 0, "side_b_only_rows": 0,
+                    "differing_cells": 1}, got)
+    rows, _spans = cmp_hwy._read_build(str(build), collapse=False)
+    c.check("the three-way reads the build's own codes still (there the site's 1 "
+            "against TSN's and the layers' 2 is a finding)",
+            [r[cmp_hwy._TOLL_FOREST_AT] for r in rows] == ["2", "1", "0", "2"],
+            [r[cmp_hwy._TOLL_FOREST_AT] for r in rows])
+
 
 def test_highway_segments(tmp):
     print("Clean Road Highway: the build's segments read the way the site's file is cut:")
@@ -617,6 +721,7 @@ def test_highway_segments(tmp):
             "DATA SOURCE" in notes and "both sides come from one data source" in notes
             and "all 29 agree" in notes and "SHS Median #124 (Median_Type)" in notes
             and "Posted_Speed_Limit" in notes, notes[:900])
+    _check_tsmis_names(out, crc.HIGHWAY)
 
     # the same build against an export the site took from its other data source
     ars = tmp / "hwy_ars" / "clean_road_highway_consolidated 2026-11-13 ars-prod dev-site.xlsx"
@@ -626,9 +731,21 @@ def test_highway_segments(tmp):
     cmp_hwy.compare(str(build), str(ars), str(out), events=_Quiet(),
                     confirm_overwrite=lambda p: True, mode="values")
     notes = _notes_text(out)
-    c.check("an export taken from the site's ARS source is flagged: it reads a "
-            "different service from the one the layers came from",
-            "ARS prod source" in notes and "DIFFERENT service" in notes, notes[:900])
+    c.check("an export taken from the site's ARS prod source says it is the same data "
+            "up to a day behind the layers (ARS takes 24 hours to update), not a "
+            "different service",
+            "ARS prod source" in notes and "up to 24 hours" in notes
+            and "DIFFERENT service" not in notes, notes[:900])
+    ars_test = tmp / "hwy_ars_test" / ("clean_road_highway_consolidated 2026-11-13 "
+                                       "ars-test dev-site.xlsx")
+    ars_test.parent.mkdir(parents=True, exist_ok=True)
+    ars_test.write_bytes(site.read_bytes())
+    out = tmp / "h5b.xlsx"
+    cmp_hwy.compare(str(build), str(ars_test), str(out), events=_Quiet(),
+                    confirm_overwrite=lambda p: True, mode="values")
+    notes = _notes_text(out)
+    c.check("an export from another environment still reads as a different service",
+            "ARS test source" in notes and "DIFFERENT service" in notes, notes[:900])
 
     # a sliver the site also cuts is never joined, and a join never crosses a roadbed
     rows = [_thy("0", "0.5", THY_PM_SUFFIX_CODE="R"),
