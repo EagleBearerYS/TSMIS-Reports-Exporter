@@ -260,6 +260,23 @@ class CompareSchema:
     # veryHidden snapshot sheets are untouched. Default "" -> every existing
     # comparison's headers are byte-identical.
     context_header_fill: str = ""
+    # Optional CONTEXT display side (opt-in, v0.54.1 — the owner's "the
+    # comparison sheet should look like the raw Clean Road file"): the side
+    # label (side_a or side_b) whose OWN value a context cell shows on a matched
+    # row, blank where that side's cell is blank, so the sheet never shows the
+    # other file's value under this file's column. Display only — context cells
+    # never assert, and each side's own value stays on its data sheet. Default
+    # "" keeps the coalescing display (side A's value, else side B's), so every
+    # existing comparison is byte-identical.
+    context_display_side: str = ""
+    # Optional LIKENESS text (opt-in, v0.54.1): callable(field_name, text) ->
+    # the text the pairing's character likeness reads for one cell, in place of
+    # the cell's shown text. For a schema whose loader writes values in a
+    # display spelling (Clean Road's `rows_as_written`, '0.780' for the
+    # compared '0.78'), it gives back the compared spelling, so how a value is
+    # shown can never decide which rows of one location pair. Equality, states
+    # and counts never read it. Default None -> byte-identical.
+    likeness_text: object = None
     # Optional UNAVAILABLE-anchor rule (opt-in, HF-01 / PCOA-FINAL-010): a
     # ("<token>", "<Summary note>") pair. When set, a cell whose ASCII-TRIMmed
     # value EXACTLY equals the reserved token is NON-ASSERTING — state "N",
@@ -340,6 +357,20 @@ class CompareSchema:
     def is_context(self, field_idx):
         """True for a non-asserting CONTEXT field (shown, never counted as a diff)."""
         return self.header[field_idx] in self.context_fields
+
+    def context_shows(self):
+        """Which side a matched context cell shows: "a", "b", or "" for the
+        coalescing default (side A's value, else side B's)."""
+        side = self.context_display_side
+        if not side:
+            return ""
+        if side == self.side_a:
+            return "a"
+        if side == self.side_b:
+            return "b"
+        raise ValueError(
+            f"context_display_side {side!r} names neither side "
+            f"({self.side_a!r} / {self.side_b!r})")
 
     def is_representation_field(self, field_idx):
         """True for a field whose differing cells are ALSO classified for the
@@ -812,6 +843,27 @@ def _raise_if_cancelled(is_cancelled):
         raise RunCancelled()
 
 
+def _context_display(sc, trim_t, trim_n):
+    """A matched context cell's display: the schema's chosen side's own value
+    (`context_display_side`), else side A's value, else side B's."""
+    shows = sc.context_shows()
+    if shows == "a":
+        return trim_t
+    if shows == "b":
+        return trim_n
+    return trim_t if trim_t else trim_n
+
+
+def _context_display_xl(sc, trim_t, trim_n):
+    """The formula twin of `_context_display`."""
+    shows = sc.context_shows()
+    if shows == "a":
+        return trim_t
+    if shows == "b":
+        return trim_n
+    return f'IF({trim_t}="",{trim_n},{trim_t})'
+
+
 def compared_cell(sc, f, rt, rn, off):
     """Return the one typed equality/display decision for field ``f``.
 
@@ -838,7 +890,7 @@ def compared_cell(sc, f, rt, rn, off):
     is_unavailable = bool(tok) and tok in (display_a, display_b)
     asserting = not (is_context or is_ditto or is_unavailable)
     if is_context:
-        display = display_a if display_a else display_b
+        display = _context_display(sc, display_a, display_b)
     elif is_ditto or is_unavailable or equal:
         display = display_a
     else:
@@ -910,13 +962,17 @@ def _pair_cost_components(sc, rt, rn, off, char_cache):
     which physical occurrences correspond without ever asserting a
     difference, exactly the Stage-8 oracle's all-field reading."""
     asserting = compared = chars = 0
+    liken = sc.likeness_text
     for f in sc.field_indices:
         cell = compared_cell(sc, f, rt, rn, off)
         if cell.equal:
             continue
         compared += 1
-        chars += _char_distance(
-            cell.normalized_a, cell.normalized_b, char_cache)
+        text_a, text_b = cell.normalized_a, cell.normalized_b
+        if liken is not None:
+            name = sc.header[f]
+            text_a, text_b = liken(name, text_a), liken(name, text_b)
+        chars += _char_distance(text_a, text_b, char_cache)
         if cell.asserting:
             asserting += 1
     return asserting, compared, chars
@@ -1878,7 +1934,7 @@ def _eq_with_ditto(sc, eq, trim_t, trim_n):
 def _field_display_expr(lay, field_idx, status_ref, trim_t, trim_n, state_ref):
     """Formula expression projecting familiar display text from state truth."""
     if lay.sc.is_context(field_idx):
-        matched = f'IF({trim_t}="",{trim_n},{trim_t})'
+        matched = _context_display_xl(lay.sc, trim_t, trim_n)
     else:
         show_t = f'IF({trim_t}="","{_BLANK_MARK}",{trim_t})'
         show_n = f'IF({trim_n}="","{_BLANK_MARK}",{trim_n})'
@@ -1936,7 +1992,7 @@ def _field_value(sc, rt, rn, off, f, state_code=None):
         raise ValueError(f"matched field {f} has invalid state {state_code!r}")
     trim_t, trim_n = _xl_trim(rt[f + off]), _xl_trim(rn[f + off])
     if sc.is_context(f):
-        return trim_t if trim_t else trim_n
+        return _context_display(sc, trim_t, trim_n)
     if state_code == "D":
         return (f"{trim_t or _BLANK_MARK}{_DIFF_MARK}"
                 f"{trim_n or _BLANK_MARK}")
