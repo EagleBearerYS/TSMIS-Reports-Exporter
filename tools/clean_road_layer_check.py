@@ -14,8 +14,8 @@ Usage (from the repo root):
 
   python tools/clean_road_layer_check.py index  <layer library> <as-of> <cache.pkl>
   python tools/clean_road_layer_check.py file   <clean_road_highway.xlsx> <cache.pkl>
-  python tools/clean_road_layer_check.py workbook <clean_highway_vs_layers.xlsx> <cache.pkl>
-  python tools/clean_road_layer_check.py spot   <clean_highway_vs_layers.xlsx> <layer library>
+  python tools/clean_road_layer_check.py workbook <clean_highway_vs_ArcGIS.xlsx> <cache.pkl>
+  python tools/clean_road_layer_check.py spot   <clean_highway_vs_ArcGIS.xlsx> <layer library>
                                                 <as-of> <raw per-route export folder>
                                                 [--n-diff 25] [--n-agree 15] [--seed 1] [--out spot.txt]
 

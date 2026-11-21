@@ -90,8 +90,12 @@ def _src(mod):
 #     hide the last row, so "show only these three" cost one click and one
 #     re-render per report taken off. ONE endpoint with a matrix name rather
 #     than seven more: the operation is identical everywhere.
+#   * set_matrix_lite (v0.55.0) — the lite-copy option of the five comparison
+#     matrices, named by its first argument like set_matrix_reports_all. Each
+#     matrix keeps its own setting; ONE endpoint because the operation is the
+#     same toggle on every one of them.
 FROZEN_API = {
-    "set_matrix_reports_all",
+    "set_matrix_reports_all", "set_matrix_lite",
     "three_day_matrix_info", "set_three_day_matrix_source",
     "add_three_day_matrix_set", "remove_three_day_matrix_set",
     "set_three_day_matrix_report", "set_three_day_matrix_row_order",

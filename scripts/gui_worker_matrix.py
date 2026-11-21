@@ -317,7 +317,7 @@ class MatrixCompareWorker(threading.Thread):
 
     def __init__(self, dest, baseline, cells, queue, cancel_event, tsn_files=None,
                  force_consolidate=False, also_formulas=False, evidence=None,
-                 preview=False):
+                 preview=False, also_lite=False):
         super().__init__(daemon=True, name="matrix-compare")
         self.dest = dest
         self.baseline = baseline
@@ -328,6 +328,7 @@ class MatrixCompareWorker(threading.Thread):
         self.tsn_files = tsn_files or {}
         self.force_consolidate = force_consolidate
         self.also_formulas = also_formulas
+        self.also_lite = also_lite
         self.evidence = evidence
         self.preview = bool(preview)
 
@@ -409,7 +410,7 @@ class MatrixCompareWorker(threading.Thread):
                         events=events, tsn_files=self.tsn_files,
                         force_consolidate=self.force_consolidate,
                         also_formulas=self.also_formulas, evidence=self.evidence,
-                        preview=self.preview,
+                        preview=self.preview, also_lite=self.also_lite,
                         commit_guard=(_target_guard
                                       if comparisons_lease is not None else None))
                     attempt, why = _attempt_state(res)
@@ -463,7 +464,7 @@ class DayMatrixCompareWorker(threading.Thread):
 
     def __init__(self, source, cells, dest, queue, cancel_event, tsn_files=None,
                  force_consolidate=False, also_formulas=False, evidence=None,
-                 preview=False):
+                 preview=False, also_lite=False):
         super().__init__(daemon=True, name="day-matrix-compare")
         self.source = source
         self.cells = [(c[0], c[1]) for c in cells]   # (date, row_key)
@@ -473,6 +474,7 @@ class DayMatrixCompareWorker(threading.Thread):
         self.tsn_files = tsn_files or {}
         self.force_consolidate = force_consolidate
         self.also_formulas = also_formulas
+        self.also_lite = also_lite
         self.evidence = evidence
         self.preview = bool(preview)
 
@@ -503,7 +505,7 @@ class DayMatrixCompareWorker(threading.Thread):
                         tsn_files=self.tsn_files,
                         force_consolidate=self.force_consolidate,
                         also_formulas=self.also_formulas, evidence=self.evidence,
-                        preview=self.preview)
+                        preview=self.preview, also_lite=self.also_lite)
                     attempt, why = _attempt_state(res)
                     status = res.status
                     if status != "ok":
@@ -547,7 +549,7 @@ class BaselineMatrixCompareWorker(threading.Thread):
     compare workers so the bridge lifecycle is identical."""
 
     def __init__(self, source, cells, baseline_id, dest, queue, cancel_event,
-                 also_formulas=False, evidence=None):
+                 also_formulas=False, evidence=None, also_lite=False):
         super().__init__(daemon=True, name="baseline-matrix-compare")
         self.source = source
         self.cells = [(c[0], c[1]) for c in cells]   # (date, row_key)
@@ -556,6 +558,7 @@ class BaselineMatrixCompareWorker(threading.Thread):
         self.q = queue
         self.cancel = cancel_event
         self.also_formulas = also_formulas
+        self.also_lite = also_lite
         self.evidence = evidence
 
     def run(self):
@@ -583,7 +586,7 @@ class BaselineMatrixCompareWorker(threading.Thread):
                     res = baseline_matrix.build_baseline_cell(
                         self.source, date, row_key, self.baseline_id, self.dest,
                         events, also_formulas=self.also_formulas,
-                        evidence=self.evidence)
+                        evidence=self.evidence, also_lite=self.also_lite)
                     attempt, why = _attempt_state(res)
                     status = res.status
                     if status != "ok":
@@ -626,7 +629,7 @@ class PdfExcelMatrixCompareWorker(threading.Thread):
     …) events as the other compare workers so the bridge lifecycle is identical."""
 
     def __init__(self, source, cells, dest, queue, cancel_event,
-                 force_consolidate=False, also_formulas=False):
+                 force_consolidate=False, also_formulas=False, also_lite=False):
         super().__init__(daemon=True, name="pdf-excel-matrix-compare")
         self.source = source
         self.cells = [(c[0], c[1]) for c in cells]   # (date, row_key)
@@ -635,6 +638,7 @@ class PdfExcelMatrixCompareWorker(threading.Thread):
         self.cancel = cancel_event
         self.force_consolidate = force_consolidate
         self.also_formulas = also_formulas
+        self.also_lite = also_lite
 
     def run(self):
         events = Events(is_cancelled=self.cancel.is_set,
@@ -658,7 +662,7 @@ class PdfExcelMatrixCompareWorker(threading.Thread):
                     res = pdf_excel_matrix.build_pve_cell(
                         self.source, date, row_key, self.dest, events,
                         force_consolidate=self.force_consolidate,
-                        also_formulas=self.also_formulas)
+                        also_formulas=self.also_formulas, also_lite=self.also_lite)
                     attempt, why = _attempt_state(res)
                     status = res.status
                     if status != "ok":
@@ -702,7 +706,7 @@ class ArcgisMatrixCompareWorker(threading.Thread):
     lifecycle is identical."""
 
     def __init__(self, source, cells, queue, cancel_event,
-                 force_consolidate=False, also_formulas=False):
+                 force_consolidate=False, also_formulas=False, also_lite=False):
         super().__init__(daemon=True, name="arcgis-matrix-compare")
         self.source = source
         self.cells = [(c[0], c[1]) for c in cells]   # (date, row_key)
@@ -710,6 +714,7 @@ class ArcgisMatrixCompareWorker(threading.Thread):
         self.cancel = cancel_event
         self.force_consolidate = force_consolidate
         self.also_formulas = also_formulas
+        self.also_lite = also_lite
 
     def run(self):
         import arcgis_matrix                          # lazy: pulls the layer builds
@@ -735,7 +740,7 @@ class ArcgisMatrixCompareWorker(threading.Thread):
                     res = arcgis_matrix.build_cell(
                         self.source, date, row_key, events,
                         force_consolidate=self.force_consolidate,
-                        also_formulas=self.also_formulas)
+                        also_formulas=self.also_formulas, also_lite=self.also_lite)
                     attempt, why = _attempt_state(res)
                     status = res.status
                     if status != "ok":

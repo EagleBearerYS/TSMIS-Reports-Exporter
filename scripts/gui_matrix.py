@@ -31,6 +31,16 @@ from reports import EXPORT_REPORTS, matrix_rows
 # via report_catalog) — kept verbatim from gui_api; never import it at module load.
 log = logging.getLogger("tsmis.gui")
 
+# The comparison matrices with a lite-copy option (v0.55.0), by the names
+# set_matrix_reports_all uses: their settings setter and the name the log says.
+_LITE_OPTIONS = {
+    "everything": ("set_matrix_lite", "Matrix"),
+    "day": ("set_day_matrix_lite", "vs TSN Matrix"),
+    "baseline": ("set_baseline_matrix_lite", "vs Baseline Matrix"),
+    "pve": ("set_pve_matrix_lite", "PDF vs Excel Matrix"),
+    "arcgis": ("set_arcgis_matrix_lite", "Reports vs ArcGIS"),
+}
+
 
 class GuiMatrixMixin:
     """The comparison-matrix / by-day / TSN-library half of the GUI bridge (mixed
@@ -408,7 +418,8 @@ class GuiMatrixMixin:
             source, cells, baseline_id, settings.get_batch_dest(),
             self._gated_queue(), self.cancel_event,
             also_formulas=settings.get_baseline_matrix_formulas(),
-            evidence=self._evidence_request()).start()
+            evidence=self._evidence_request(),
+            also_lite=settings.get_baseline_matrix_lite()).start()
         return True
 
     def _dispatch_compare_job(self, job):
@@ -442,7 +453,8 @@ class GuiMatrixMixin:
                             force_consolidate=job.get("force", False),
                             also_formulas=settings.get_matrix_formulas(),
                             evidence=self._evidence_request(),
-                            preview=settings.get_matrix_preview_only()).start()
+                            preview=settings.get_matrix_preview_only(),
+                            also_lite=settings.get_matrix_lite()).start()
         return True
 
     def _dispatch_day_compare_job(self, job):
@@ -463,7 +475,8 @@ class GuiMatrixMixin:
                                force_consolidate=job.get("force", False),
                                also_formulas=settings.get_day_matrix_formulas(),
                                evidence=self._evidence_request(),
-                               preview=settings.get_matrix_preview_only()).start()
+                               preview=settings.get_matrix_preview_only(),
+                               also_lite=settings.get_day_matrix_lite()).start()
         return True
 
     def _resolve_pve_cells(self, job):
@@ -499,7 +512,8 @@ class GuiMatrixMixin:
         job_host.hosted(PdfExcelMatrixCompareWorker,
             source, cells, dest, self._gated_queue(), self.cancel_event,
             force_consolidate=job.get("force", False),
-            also_formulas=settings.get_pve_matrix_formulas()).start()
+            also_formulas=settings.get_pve_matrix_formulas(),
+            also_lite=settings.get_pve_matrix_lite()).start()
         return True
 
     @staticmethod
@@ -1299,6 +1313,26 @@ class GuiMatrixMixin:
         val = settings.set_day_matrix_formulas(bool(on))
         self._emit_log("By-day live-formulas workbook " + ("on" if val else "off")
                        + (" — each comparison also writes a '… (formulas).xlsx'."
+                          if val else "."))
+        self._push_state()
+        return {"ok": True, "on": val}
+
+    @_api_method
+    def set_matrix_lite(self, which, on):
+        """Turn one comparison matrix's lite-copy option on or off (v0.55.0).
+        `which` names the matrix (everything / day / baseline / pve / arcgis);
+        each keeps its own persisted setting, like its live-formulas option.
+        With it on, every comparison the matrix builds also writes
+        '<name> (lite).xlsx': the version without the Spot Check, Notes and
+        Provenance sheets, with a short Summary."""
+        entry = _LITE_OPTIONS.get(which)
+        if entry is None:
+            return {"error": "Unknown matrix."}
+        setting, label = entry
+        val = getattr(settings, setting)(bool(on))
+        self._emit_log(f"{label} lite copy " + ("on" if val else "off")
+                       + (" — each comparison also writes a '… (lite).xlsx' without "
+                          "the Spot Check, Notes and Provenance sheets."
                           if val else "."))
         self._push_state()
         return {"ok": True, "on": val}

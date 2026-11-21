@@ -483,6 +483,11 @@ class GuiApi(GuiExportMixin, GuiAuthMixin, GuiCompareMixin,
         pve_matrix_formulas = settings.get_pve_matrix_formulas()
         three_day_matrix_formulas = settings.get_three_day_matrix_formulas()
         arcgis_matrix_formulas = settings.get_arcgis_matrix_formulas()
+        lite = {"matrix_lite": settings.get_matrix_lite(),
+                "day_matrix_lite": settings.get_day_matrix_lite(),
+                "baseline_matrix_lite": settings.get_baseline_matrix_lite(),
+                "pve_matrix_lite": settings.get_pve_matrix_lite(),
+                "arcgis_matrix_lite": settings.get_arcgis_matrix_lite()}
         evidence = self._evidence_view()
         # '<src>-<env>' -> which TSMIS site its next export comes from ('main' /
         # 'dev' / 'other'): the tag today's run folder will carry, so the Export
@@ -522,6 +527,7 @@ class GuiApi(GuiExportMixin, GuiAuthMixin, GuiCompareMixin,
                 "pve_matrix_formulas": pve_matrix_formulas,
                 "three_day_matrix_formulas": three_day_matrix_formulas,
                 "arcgis_matrix_formulas": arcgis_matrix_formulas,
+                **lite,
                 "evidence": evidence,
                 "update": dict(self._update),
                 "env_access": {k: dict(v) for k, v in self._env_access.items()},

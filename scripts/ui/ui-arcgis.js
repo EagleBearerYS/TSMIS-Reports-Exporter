@@ -447,6 +447,7 @@ async function agBuildReport(rk) {
 // ---- "Reports vs ArcGIS": the matrix -------------------------------------- //
 function syncArcgisMatrixFormulas() {
   syncFormulasToggle("agMatrixFormulas", "arcgis_matrix_formulas");
+  syncFormulasToggle("agMatrixLite", "arcgis_matrix_lite");
 }
 
 async function renderArcgisMatrix() {

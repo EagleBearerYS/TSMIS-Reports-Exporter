@@ -416,7 +416,7 @@ def cells_to_rebuild(snapshot, scope="stale", row=None, date=None):
 
 def build_baseline_cell(source, date, row_key, baseline_id, dest, events,
                         confirm_overwrite=None, also_formulas=False,
-                        evidence=None):
+                        evidence=None, also_lite=False):
     """Build ONE (day, report) vs-baseline comparison: side A = the day's run
     folder, side B = the baseline (an earlier run folder or the store), compared
     by the row's own compare_env adapter — per-route files read straight from
@@ -470,6 +470,10 @@ def build_baseline_cell(source, date, row_key, baseline_id, dest, events,
         dir_a, bdir, dest_path, events=events,
         confirm_overwrite=confirm_overwrite or (lambda _p: True),
         mode="values", labels=labels)
+    if result.status == "ok":
+        # v0.55.0: the lite copy, or clear a stale prior one.
+        matrix._settle_lite_copy(dest_path, result, also_lite, events,
+                                 source_paths=source_paths)
     if (also_formulas and result.status == "ok"
             and matrix._twin_inputs_unchanged(fp_before, fp_folders,
                                               dest_path.name, events)):

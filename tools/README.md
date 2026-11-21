@@ -11,8 +11,8 @@ before a comparison workbook is delivered:
 
 ```bash
 python tools/clean_road_layer_check.py index arcgis_layers 2026-10-30 layers.pkl
-python tools/clean_road_layer_check.py workbook "output/comparisons/arcgis-by-day/<day>/clean_highway_vs_layers <day>.xlsx" layers.pkl
-python tools/clean_road_layer_check.py spot "output/comparisons/arcgis-by-day/<day>/clean_highway_vs_layers <day>.xlsx" arcgis_layers 2026-10-30 "output/<day>/clean_highway" --out spot.txt
+python tools/clean_road_layer_check.py workbook "output/comparisons/arcgis-by-day/<day>/clean_highway_vs_ArcGIS <day>.xlsx" layers.pkl
+python tools/clean_road_layer_check.py spot "output/comparisons/arcgis-by-day/<day>/clean_highway_vs_ArcGIS <day>.xlsx" arcgis_layers 2026-10-30 "output/<day>/clean_highway" --out spot.txt
 ```
 
 `workbook` says what share of the workbook's differences are false (the layer

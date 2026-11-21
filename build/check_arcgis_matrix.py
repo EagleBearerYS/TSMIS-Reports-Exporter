@@ -424,18 +424,39 @@ def test_build_cell_records_cache():
             return p, oc.COMPLETE
 
         compare, seen = _stub_compare()
+        # v0.55.0: a workbook built before the rename still carries the old
+        # '_vs_layers' name. The cell shows and opens it until it is rebuilt;
+        # the rebuild writes the new name and removes the old file and its
+        # formulas / lite copies.
+        legacy = agm.legacy_day_out_path(DAY, SRC, "highway_detail")
+        legacy_twins = (legacy, matrix._formulas_sibling(legacy),
+                        matrix._lite_sibling(legacy))
+        legacy.parent.mkdir(parents=True, exist_ok=True)
+        for p in legacy_twins:
+            p.write_bytes(b"PK old name")
+        check("the old name is '<row>_vs_layers <day>.xlsx'",
+              legacy.name == f"highway_detail_vs_layers {DAY} {SRC}.xlsx")
+        check("before a rebuild the cell reads the workbook under its old name",
+              agm.built_out_path(DAY, SRC, "highway_detail") == legacy)
         with _patch(arcgis_layers, "drop_info", lambda lib_root=None: dict(DROP)), \
              _patch(crl, "inventory", _full_inventory), \
              _patch(ah, "OUT_PATH", hd_build), \
              _patch(matrix, "_ensure_consolidated", _fake_ensure), \
              _patch(cmp_hd, "compare", compare):
-            result = agm.build_cell(SRC, DAY, "highway_detail", Events())
+            logs = []
+            result = agm.build_cell(SRC, DAY, "highway_detail", Events(on_log=logs.append))
             check("build returns an ok result", result.status == "ok")
             out = agm.day_out_path(DAY, SRC, "highway_detail")
             check("the VALUES workbook was written to the by-day store under a "
                   "self-identifying name",
-                  out.exists() and out.name == f"highway_detail_vs_layers {DAY} {SRC}.xlsx"
+                  out.exists() and out.name == f"highway_detail_vs_ArcGIS {DAY} {SRC}.xlsx"
                   and out.parent.parent.name == "arcgis-by-day")
+            check("the rebuild removed the old-name workbook and its copies",
+                  not any(p.exists() for p in legacy_twins))
+            check("...and said so in the run log",
+                  any(legacy.name in m and out.name in m for m in logs))
+            check("after the rebuild the cell reads the new name",
+                  agm.built_out_path(DAY, SRC, "highway_detail") == out)
             check("the export side was consolidated (the Excel edition, preferred)",
                   set(consolidated) == {"highway_detail"})
             check("the comparator was handed the layer build as side A and the "
@@ -476,7 +497,7 @@ def test_build_cell_records_cache():
             pdf_out = agm.day_out_path(DAY, SRC, "highway_detail_pdf")
             check("the PDF edition's comparison builds under its own name",
                   result.status == "ok" and pdf_out.exists()
-                  and pdf_out.name == f"highway_detail_pdf_vs_layers {DAY} {SRC}.xlsx")
+                  and pdf_out.name == f"highway_detail_pdf_vs_ArcGIS {DAY} {SRC}.xlsx")
             check("...from its own consolidated export",
                   "highway_detail_pdf" in consolidated
                   and seen[-1][1] == str(consolidated["highway_detail_pdf"]))

@@ -714,6 +714,18 @@ def set_matrix_formulas(on):
     return _set_flag("matrix_formulas", on)
 
 
+def get_matrix_lite():
+    """Whether matrix comparisons ALSO write a lite copy beside the values
+    workbook — the deliverable version without the Spot Check, Notes and
+    Provenance sheets (v0.55.0; default off). Each matrix has its own toggle."""
+    return _get_flag("matrix_lite")
+
+
+def set_matrix_lite(on):
+    """Persist the matrix lite-copy toggle (cleared when off)."""
+    return _set_flag("matrix_lite", on)
+
+
 def get_evidence_images():
     """Whether vs-TSN comparisons of evidence-capable reports ALSO render the
     visual-evidence set (highlighted PDF snippets per differing column; default
@@ -781,6 +793,16 @@ def get_day_matrix_formulas():
 def set_day_matrix_formulas(on):
     """Persist the by-day matrix formulas-workbook toggle (cleared when off)."""
     return _set_flag("day_matrix_formulas", on)
+
+
+def get_day_matrix_lite():
+    """Whether the vs-TSN (by-day) matrix ALSO writes a lite copy (its own
+    toggle; default off)."""
+    return _get_flag("day_matrix_lite")
+
+
+def set_day_matrix_lite(on):
+    return _set_flag("day_matrix_lite", on)
 
 
 # ---- Compare-tab "TSN by day" matrix ---------------------------------------
@@ -926,6 +948,16 @@ def set_pve_matrix_formulas(on):
     return _set_flag("pve_matrix_formulas", on)
 
 
+def get_pve_matrix_lite():
+    """Whether the PDF-vs-Excel matrix ALSO writes a lite copy (its own toggle;
+    default off)."""
+    return _get_flag("pve_matrix_lite")
+
+
+def set_pve_matrix_lite(on):
+    return _set_flag("pve_matrix_lite", on)
+
+
 # ---- ArcGIS-tab "Reports vs ArcGIS" matrix ---------------------------------
 # Same shape as the PDF-vs-Excel matrix (a source, ordered day-columns, hidden
 # rows, a drag row order, a formulas toggle): the other side of every cell is
@@ -1005,6 +1037,16 @@ def get_arcgis_matrix_formulas():
 
 def set_arcgis_matrix_formulas(on):
     return _set_flag("arcgis_matrix_formulas", on)
+
+
+def get_arcgis_matrix_lite():
+    """Whether the Reports-vs-ArcGIS matrix ALSO writes a lite copy (its own
+    toggle; default off)."""
+    return _get_flag("arcgis_matrix_lite")
+
+
+def set_arcgis_matrix_lite(on):
+    return _set_flag("arcgis_matrix_lite", on)
 
 
 # ---- ArcGIS-tab "Three-way" matrix (v0.51.0) -------------------------------
@@ -1260,6 +1302,16 @@ def get_baseline_matrix_formulas():
 def set_baseline_matrix_formulas(on):
     """Persist the vs-Baseline matrix formulas-workbook toggle (cleared when off)."""
     return _set_flag("baseline_matrix_formulas", on)
+
+
+def get_baseline_matrix_lite():
+    """Whether the vs-Baseline matrix ALSO writes a lite copy (its own toggle;
+    default off)."""
+    return _get_flag("baseline_matrix_lite")
+
+
+def set_baseline_matrix_lite(on):
+    return _set_flag("baseline_matrix_lite", on)
 
 
 def reset():

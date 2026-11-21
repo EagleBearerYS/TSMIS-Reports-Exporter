@@ -588,6 +588,42 @@ remain Phase-5 work (CMP-AUD-075/082/084/089). Exact-generation evidence publica
 separate Phase-7 transaction; the typed public terminal boundary does not claim either later-phase
 closure.
 
+### The lite copy (`lite_copy.py`, v0.55.0)
+
+The version of a values workbook the owner delivers. His 10.30 Clean Road deliverables
+were the app's values workbooks lightened by hand; `lite_copy.write_lite_copy` makes
+the same thing from a finished values workbook, as `<name> (lite).xlsx` beside it:
+
+- **Sheets:** the full list minus `Spot Check`, `Notes` and `Provenance`, in order,
+  each sheet's state kept (the snapshot sheets stay very hidden). Every other part is
+  the values workbook's own compressed bytes, copied as they are, so the copy can never
+  disagree with the workbook it came from and takes under a second even for the
+  175 MB Highway comparisons. Only the Summary sheet, the workbook part (its sheet list,
+  the filter names' sheet positions, the active tab), its relationships and the
+  content-types list are rewritten.
+- **Summary:** the title without its `— Discrepancy Report (…)` tail
+  ("TSMIS vs TSN — Clean Road Highway"), then every row from **ROW COUNTS** up to the
+  **FIELD-LEVEL DISCREPANCIES** banner (the row counts, match status and route
+  coverage), one blank row, and the **DIFFERENCES BY FIELD** table to its last field.
+  The verdict line, the keyed-on and sources lines, the field-level block, SELF-CHECK
+  and the notes are left out, and with them the verdict's conditional format. Kept rows
+  hold the full Summary's own cells; only their row numbers change.
+- **Refusals:** it reads `_write_summary`'s layout and refuses anything else with a
+  `ValueError` (no Summary, a missing block, blocks out of order, parts a renumbering
+  would have to move), so a Summary that changes shape can never produce a wrong lite
+  copy quietly; `check_lite_copy` fails first. A workbook past the plain zip limits
+  (4 GiB) takes the slower zip64 path, which re-compresses every part.
+- **In the matrices:** each comparison matrix (Matrix, vs TSN, vs Baseline, PDF vs
+  Excel, Reports vs ArcGIS) has its own *Also write a lite copy* option
+  (`settings.get_<matrix>_lite`, one bridge endpoint `set_matrix_lite(which, on)`).
+  After every successful values commit `matrix._settle_lite_copy` writes the copy when
+  the option is on and removes a prior one when it is off, like the formulas twin, so a
+  `(lite)` file never outlives the generation it was made from. Only a COMPLETE
+  comparison gets one (`require_published_comparison`, completion `complete`): the lite
+  Summary leaves out the notes that would say an input was missing, so a partial
+  comparison writes none and the run log says why. The copy is guard- and
+  alias-checked like every matrix output and has no manifest of its own.
+
 ### Streaming write (`write_only`)
 
 The workbook is written in openpyxl's **STREAMING (`write_only`) mode**: the consolidated
@@ -2546,9 +2582,11 @@ report's PDF-vs-Excel self-check proves it — so one comparator per report serv
   ArcGIS"), and a row the lane cannot compare yet renders `supported: False` with its
   `why`. (The source keeps its pre-rename name so the caches recorded before v0.47.0
   still match.)
-- **Store:** `output/comparisons/arcgis-by-day/<run>/<row>_vs_layers <run>.xlsx` (`<run>` the
+- **Store:** `output/comparisons/arcgis-by-day/<run>/<row>_vs_ArcGIS <run>.xlsx` (`<run>` the
   day column's run-folder name, TSMIS site tag included since v0.49.0; the row is the edition
-  key; the file name kept its pre-rename form so earlier comparisons stay valid), counts cached in that tree's `_state/_results.json`
+  key). Until v0.55.0 the file was `<row>_vs_layers <run>.xlsx`: a cell built under that
+  name still shows and opens it (`built_out_path`) until it is rebuilt, and the rebuild
+  removes the old-name file and its formulas / lite copies (`_retire_legacy_name`). Counts cached in that tree's `_state/_results.json`
   (identity `arcgis-by-day`, per-cell input fingerprint, generation id, producer
   versions, and `source_identities.layers`), the attempts overlay beside it.
 - **One queue, five matrices:** compare Jobs carry `which:"arcgis"` →

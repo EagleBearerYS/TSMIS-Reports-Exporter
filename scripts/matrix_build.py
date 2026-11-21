@@ -683,6 +683,105 @@ def _settle_formulas_twin(compare_call, out_path, do_write, events=None,
 
 
 # --------------------------------------------------------------------------- #
+# optional lite copy (opt-in, v0.55.0): the version of a values workbook the
+# owner delivers — no Spot Check, Notes or Provenance sheet and a short Summary
+# — written beside it as '<name> (lite).xlsx' straight from the committed file
+# (lite_copy), so it can never disagree with it. Only a COMPLETE comparison gets
+# one: the lite Summary leaves out the notes that would say an input was
+# missing. Like the formulas twin it has no manifest of its own, so a values
+# refresh that does not rewrite it removes the prior one.
+# --------------------------------------------------------------------------- #
+def _lite_sibling(out_path):
+    import lite_copy                              # lazy: only when a lite copy is touched
+    return lite_copy.lite_sibling(out_path)
+
+
+def _try_lite(out_path, result, events=None, source_paths=(), commit_guard=None):
+    """Write the lite copy of the just-committed values workbook `out_path`.
+    Returns True iff a fresh copy was written. Best-effort: a failure or a
+    partial comparison is announced and never fails the values cell."""
+    import lite_copy
+
+    name = Path(out_path).name
+    lite_path = lite_copy.lite_sibling(out_path)
+    try:
+        _require_commit_guard(commit_guard, "lite copy write", lite_path)
+        artifact_store.ensure_outputs_do_not_alias_sources((lite_path,), source_paths)
+        published = consolidation_meta.require_published_comparison(out_path, result)
+        if published.comparison_outcome.completion != outcome.COMPLETE:
+            msg = (f"No lite copy of {name}: the comparison is partial, and a lite "
+                   "copy leaves out the notes that say what is missing.")
+            log.info("matrix: %s", msg)
+            if events is not None:
+                events.on_log(f"⚠ {msg}")
+            return False
+        lite_copy.write_lite_copy(out_path, lite_path,
+                                  allow=lambda p: _guard_allows(commit_guard, p))
+    except Exception as e:                       # noqa: BLE001 - best-effort beside a committed workbook
+        msg = f"The lite copy of {name} was not written ({type(e).__name__}: {e})."
+        log.warning("matrix: %s", msg)
+        if events is not None:
+            events.on_log(f"⚠ {msg}")
+        return False
+    if events is not None:
+        events.on_log(f"  Lite copy written: {lite_path.name}")
+    return True
+
+
+def _clear_stale_lite_copy(out_path, events=None, commit_guard=None, source_paths=()):
+    """Remove a `(lite)` copy that is NOT being refreshed beside a just-committed
+    values workbook: it was made from an older generation. Best-effort and
+    ownership/alias-guarded like `_clear_stale_formulas_twin`."""
+    lite_path = _lite_sibling(out_path)
+    try:
+        if not lite_path.exists():
+            return
+    except OSError:  # silent-ok: an unstattable path is treated as absent
+        return
+    if not _guard_allows(commit_guard, lite_path):
+        log.warning("matrix: a stale lite copy %s was left (destination ownership "
+                    "changed); it does not match the current values workbook",
+                    lite_path.name)
+        return
+    try:
+        artifact_store.ensure_outputs_do_not_alias_sources((lite_path,), source_paths)
+    except ValueError:
+        log.warning("matrix: retained a lite copy %s that aliases a source",
+                    lite_path.name)
+        return
+    try:
+        lite_path.unlink()
+    except FileNotFoundError:  # silent-ok: concurrent absence is the goal
+        return
+    except OSError as e:  # locked (open in Excel) or unremovable — announce, keep going
+        msg = (f"Could not remove the prior lite copy {lite_path.name} "
+               f"({type(e).__name__}; open in Excel?). It does not match the current "
+               "values comparison.")
+        log.warning("matrix: %s", msg)
+        if events is not None:
+            events.on_log(f"⚠ {msg}")
+        return
+    msg = (f"Removed the prior lite copy of {Path(out_path).name} — it was not "
+           "refreshed and no longer matches the values comparison.")
+    if events is not None:
+        events.on_log(msg)
+    log.info("matrix: %s", msg)
+
+
+def _settle_lite_copy(out_path, result, do_write, events=None, source_paths=(),
+                      commit_guard=None):
+    """Refresh the lite copy when `do_write`, else clear a stale prior one.
+    Called after EVERY successful values commit, so a `(lite)` copy can never
+    outlive the generation it was made from."""
+    wrote = False
+    if do_write:
+        wrote = _try_lite(out_path, result, events, source_paths=source_paths,
+                          commit_guard=commit_guard)
+    if not wrote:
+        _clear_stale_lite_copy(out_path, events, commit_guard, source_paths)
+
+
+# --------------------------------------------------------------------------- #
 # CMP-AUD-098: pre-comparison input capture. The cache record must bind the
 # output to the bytes the comparator actually READ — fingerprinting after
 # production would bind a mid-comparison mutation's NEW identity to a workbook
@@ -722,12 +821,14 @@ def _twin_inputs_unchanged(fp_before, folders, out_name, events=None):
 # --------------------------------------------------------------------------- #
 def build_cell_comparison(dest, baseline_key, row_key, cell_key, events,
                           confirm_overwrite=None, row_defs=None, also_formulas=False,
-                          evidence=None, commit_guard=None, preview=False):
+                          evidence=None, commit_guard=None, preview=False,
+                          also_lite=False):
     """Compare (row's report, cell env) against the baseline env, writing the
     VALUES workbook to comparison_path(...), and record its verdict + discrepancy
     counts in the cache. Pure delegation to the adapter's compare_folders — the
     comparison engine is untouched. Returns the ConsolidateResult. With
-    `also_formulas`, also writes a live-formulas twin beside the values copy.
+    `also_formulas`, also writes a live-formulas twin beside the values copy;
+    with `also_lite`, its lite copy (v0.55.0).
     `evidence` ({'enabled','examples','layout'}) requests the visual-evidence
     decoration on the four `_pdf`-family PDF-vs-PDF env cells (HF-10, amended
     2026-08-05) — additive, never a gate: the comparison result is identical
@@ -775,6 +876,8 @@ def build_cell_comparison(dest, baseline_key, row_key, cell_key, events,
                 commit_guard=commit_guard)
         return result
     if result.status == "ok":
+        _settle_lite_copy(out_path, result, also_lite, events,
+                          source_paths=source_paths, commit_guard=commit_guard)
         # CMP-AUD-082: refresh the live-formulas twin, or clear a stale prior one.
         do_write = also_formulas and _twin_inputs_unchanged(
             fp_before, fp_folders, out_path.name, events)
@@ -1483,7 +1586,7 @@ def consolidate_and_compare_tsn(tsmis_store_dir, tsn_path, out_path, row_key, su
                                 explicit_selection=None, commit_guard=None,
                                 source_identity_check=None,
                                 source_workbook_identity=None,
-                                _captured_tsn=False):
+                                _captured_tsn=False, also_lite=False):
     """The SHARED TSN compare path used by BOTH matrices (the Everything matrix's
     latest-store cells AND the Compare tab's by-day cells).
 
@@ -1514,7 +1617,7 @@ def consolidate_and_compare_tsn(tsmis_store_dir, tsn_path, out_path, row_key, su
                 explicit_selection=explicit_selection, commit_guard=commit_guard,
                 source_identity_check=source_identity_check,
                 source_workbook_identity=source_workbook_identity,
-                _captured_tsn=True)
+                _captured_tsn=True, also_lite=also_lite)
     out_path = Path(out_path)
     _require_commit_guard(commit_guard, "TSN comparison build", out_path)
     cmp_mod = _m.tsn_comparator_for(row_key)
@@ -1576,6 +1679,8 @@ def consolidate_and_compare_tsn(tsmis_store_dir, tsn_path, out_path, row_key, su
     result = _compare_checked(
         out_path, "values", confirm_overwrite or (lambda _p: True))
     if result.status == "ok":
+        _settle_lite_copy(out_path, result, also_lite, events,
+                          source_paths=source_paths, commit_guard=comparison_guard)
         # CMP-AUD-082: refresh the live-formulas twin, or clear a stale prior one.
         _settle_formulas_twin(lambda fp: _compare_checked(fp, "formulas"), out_path,
             also_formulas, events, source_paths=source_paths,
@@ -1709,14 +1814,15 @@ def _ensure_consolidated(store_dir, subdir, events, force,
 def build_comparison(dest, row_key, cell_key, mode_id, baseline_key, events,
                      tsn_files=None, confirm_overwrite=None, row_defs=None,
                      force_consolidate=False, also_formulas=False, evidence=None,
-                     commit_guard=None, preview=False):
+                     commit_guard=None, preview=False, also_lite=False):
     """(Re)build one cell's comparison for the row's SELECTED mode, write the VALUES
     workbook, and cache its counts. Dispatches to the existing comparison adapters
     (never edits them). Returns the ConsolidateResult. Raises ValueError for an
     unknown row or an unsupported/greyed mode; an absent input side yields the
     adapter's clean error result. `force_consolidate` rebuilds the persistent
     consolidated even when it looks fresh; `also_formulas` writes a live-formulas
-    twin beside the values copy. `evidence` ({'enabled','examples'}) requests the
+    twin beside the values copy and `also_lite` its lite copy (v0.55.0).
+    `evidence` ({'enabled','examples'}) requests the
     visual-evidence decoration on a TSN-mode cell of a supported row.
 
     `preview=True` computes the comparison and records ONLY its counts, writing
@@ -1738,7 +1844,7 @@ def build_comparison(dest, row_key, cell_key, mode_id, baseline_key, events,
                                      confirm_overwrite=confirm_overwrite, row_defs=rows,
                                      also_formulas=also_formulas,
                                      evidence=evidence, commit_guard=commit_guard,
-                                     preview=preview)
+                                     preview=preview, also_lite=also_lite)
 
     dest = Path(dest)
     out_path = mode_out_path(dest, baseline_key, row_key, cell_key, mode)
@@ -1790,7 +1896,8 @@ def build_comparison(dest, row_key, cell_key, mode_id, baseline_key, events,
             explicit_selection=src.get("selection"),
             commit_guard=commit_guard,
             source_identity_check=source_identity_check,
-            source_workbook_identity=source_workbook_identity)
+            source_workbook_identity=source_workbook_identity,
+            also_lite=also_lite)
         # P1-B05: the TSN side can ALSO be partial (a TSN builder left categories /
         # district PDFs out). consolidate_and_compare_tsn reduced the TSMIS side; reduce
         # the TSN side here (its completion rides on the resolved source) so the cell
@@ -1816,6 +1923,8 @@ def build_comparison(dest, row_key, cell_key, mode_id, baseline_key, events,
             confirm_overwrite=confirm_overwrite or (lambda _p: True),
             mode="values", commit_guard=commit_guard)
         if result.status == "ok":
+            _settle_lite_copy(out_path, result, also_lite, events,
+                              source_paths=source_paths, commit_guard=commit_guard)
             # CMP-AUD-082: refresh the live-formulas twin, or clear a stale prior one.
             _settle_formulas_twin(lambda fp: _self_cmp.compare(
                 pdf_c, excel_c, fp, events=events,

@@ -142,6 +142,12 @@ function makeMockApi() {
     matrix_fast: { on: false, workers: 3 },
     matrix_formulas: false,
     matrix_preview_only: false,
+    // v0.55.0 the lite-copy option, one per comparison matrix
+    matrix_lite: false,
+    day_matrix_lite: false,
+    baseline_matrix_lite: false,
+    pve_matrix_lite: false,
+    arcgis_matrix_lite: false,
     matrix_baseline: "ssor-prod",
     matrix_hidden: [],
     matrix_hidden_envs: [],
@@ -2080,6 +2086,16 @@ function makeMockApi() {
     set_day_matrix_formulas: async (on) => {
       st.day_matrix_formulas = !!on;
       push({ t: "log", text: `By-day live-formulas workbook ${on ? "on" : "off"}.` });
+      pushState();
+      return { ok: true, on: !!on };
+    },
+    set_matrix_lite: async (which, on) => {
+      const key = { everything: "matrix_lite", day: "day_matrix_lite",
+                    baseline: "baseline_matrix_lite", pve: "pve_matrix_lite",
+                    arcgis: "arcgis_matrix_lite" }[which];
+      if (!key) return { error: "Unknown matrix." };
+      st[key] = !!on;
+      push({ t: "log", text: `(mock) ${which} lite copy ${on ? "on" : "off"}.` });
       pushState();
       return { ok: true, on: !!on };
     },
