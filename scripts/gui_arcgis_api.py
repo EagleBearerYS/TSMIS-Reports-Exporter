@@ -317,7 +317,7 @@ class GuiArcgisMixin:
         snap = self._arcgis_matrix_snapshot()
         if date not in snap["days"] or row_key not in snap["rows"]:
             return {"error": "Unknown cell."}
-        path = arcgis_matrix.day_out_path(date, snap["source"], row_key)
+        path = arcgis_matrix.built_out_path(date, snap["source"], row_key)
         if not path.exists():
             return {"error": "There is no comparison workbook for this cell yet. "
                              "Build it first (point at the cell and click its "

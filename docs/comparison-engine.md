@@ -2582,9 +2582,11 @@ report's PDF-vs-Excel self-check proves it — so one comparator per report serv
   ArcGIS"), and a row the lane cannot compare yet renders `supported: False` with its
   `why`. (The source keeps its pre-rename name so the caches recorded before v0.47.0
   still match.)
-- **Store:** `output/comparisons/arcgis-by-day/<run>/<row>_vs_layers <run>.xlsx` (`<run>` the
+- **Store:** `output/comparisons/arcgis-by-day/<run>/<row>_vs_ArcGIS <run>.xlsx` (`<run>` the
   day column's run-folder name, TSMIS site tag included since v0.49.0; the row is the edition
-  key; the file name kept its pre-rename form so earlier comparisons stay valid), counts cached in that tree's `_state/_results.json`
+  key). Until v0.55.0 the file was `<row>_vs_layers <run>.xlsx`: a cell built under that
+  name still shows and opens it (`built_out_path`) until it is rebuilt, and the rebuild
+  removes the old-name file and its formulas / lite copies (`_retire_legacy_name`). Counts cached in that tree's `_state/_results.json`
   (identity `arcgis-by-day`, per-cell input fingerprint, generation id, producer
   versions, and `source_identities.layers`), the attempts overlay beside it.
 - **One queue, five matrices:** compare Jobs carry `which:"arcgis"` →

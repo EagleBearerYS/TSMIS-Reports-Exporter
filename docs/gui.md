@@ -790,8 +790,9 @@ Layers first (and the default):
     refresh — after it lands, the row compares with no other step.
   - Rows are the Excel/PDF export keys, and a report's own key is still its
     established row, so the saved hidden rows / row order and the comparisons made
-    before v0.47.0 keep applying; the comparison files keep their `_vs_layers`
-    names.
+    before v0.47.0 keep applying. The comparison files are named `_vs_ArcGIS` since
+    v0.55.0 (the name the owner delivers them under); a cell built before then
+    shows and opens its `_vs_layers` file until it is rebuilt.
 - **Three-way** (v0.51.0) — a by-day **matrix** of the reports that have all three
   sources (the six Clean Road editions): each cell compares that day's export with
   the report's TSN dataset AND its ArcGIS build at once

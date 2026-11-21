@@ -114,9 +114,62 @@ def day_out_path(date, source, row_key):
     """The VALUES workbook for one (day, report). The basename embeds the report,
     the day and the source (M1-C) so two days' comparisons of one report can be
     open in Excel at once and a lifted file still says what it is — the day part
-    is the run folder's own name, TSMIS site tag included (v0.49.0)."""
+    is the run folder's own name, TSMIS site tag included (v0.49.0). Named
+    '_vs_ArcGIS' since v0.55.0, the name the owner delivers it under."""
+    name = day_folder_name(date, source)
+    return ag_root() / name / f"{row_key}_vs_ArcGIS {name}.xlsx"
+
+
+def legacy_day_out_path(date, source, row_key):
+    """The name the cell's workbook had before v0.55.0: '<row>_vs_layers <day>'."""
     name = day_folder_name(date, source)
     return ag_root() / name / f"{row_key}_vs_layers {name}.xlsx"
+
+
+def built_out_path(date, source, row_key):
+    """The workbook a cell shows and opens: its current name, or the name a
+    workbook built before v0.55.0 still has until the cell is rebuilt."""
+    current = day_out_path(date, source, row_key)
+    legacy = legacy_day_out_path(date, source, row_key)
+    try:
+        if not current.exists() and legacy.exists():
+            return legacy
+    except OSError:  # silent-ok: an unstattable legacy name reads as absent
+        pass
+    return current
+
+
+def _retire_legacy_name(date, source, row_key, events, commit_guard=None):
+    """After a rebuild under the current name, remove the cell's pre-v0.55.0
+    workbook and its formulas / lite copies, so an older comparison never sits
+    beside the new one looking current. Best-effort: a file open in Excel is
+    left and announced."""
+    import lite_copy
+
+    legacy = legacy_day_out_path(date, source, row_key)
+    for path in (legacy, matrix._formulas_sibling(legacy), lite_copy.lite_sibling(legacy)):
+        try:
+            if not path.exists():
+                continue
+        except OSError:  # silent-ok: an unstattable path is treated as absent
+            continue
+        if not consolidation_meta.guard_allows(commit_guard, path):
+            log.warning("arcgis_matrix: kept the old-name file %s (destination "
+                        "ownership changed)", path.name)
+            continue
+        try:
+            path.unlink()
+        except FileNotFoundError:  # silent-ok: concurrent absence is the goal
+            continue
+        except OSError as e:
+            msg = (f"Could not remove the old-name file {path.name} ({type(e).__name__}"
+                   f"; open in Excel?). It is an older comparison; the current one is "
+                   f"{day_out_path(date, source, row_key).name}.")
+            log.warning("arcgis_matrix: %s", msg)
+            events.on_log(f"⚠ {msg}")
+            continue
+        events.on_log(f"Removed {path.name}; this comparison is now named "
+                      f"{day_out_path(date, source, row_key).name}.")
 
 
 def _results_path():
@@ -434,7 +487,7 @@ def ag_matrix_snapshot(source, days, hidden=None, now=None, row_order=None,
                          "mtime": bs.get("mtime"), "identity": bs.get("identity")},
                         {"name": "export", "present": export_m is not None,
                          "mtime": export_m}]
-                cmp = matrix._cmp_state(day_out_path(date, source, r.key), srcs,
+                cmp = matrix._cmp_state(built_out_path(date, source, r.key), srcs,
                                         rec, fp_folders=(export_dir,))
                 attempt = matrix._last_attempt_for(
                     attempts, f"{r.key}|{source}", date, cmp)
@@ -508,7 +561,8 @@ def build_cell(source, date, row_key, events, confirm_overwrite=None,
     edition (reusing the day folder's persistent consolidated unless stale or
     `force_consolidate`), diff the report's ArcGIS build against it via the
     report's registered comparator, write the VALUES workbook to the by-day
-    store, and cache its counts. `also_lite` writes its lite copy (v0.55.0).
+    store, and cache its counts. `also_lite` writes its lite copy (v0.55.0);
+    a workbook still under its pre-v0.55.0 '_vs_layers' name is removed.
 
     Returns the ConsolidateResult. Raises ValueError on an unknown or
     uncomparable row, an invalid date/source, a missing/untrusted build, or a
@@ -560,6 +614,7 @@ def build_cell(source, date, row_key, events, confirm_overwrite=None,
                 commit_guard=commit_guard),
             out_path, also_formulas, events,
             source_paths=(build_path, Path(side_export)), commit_guard=commit_guard)
+        _retire_legacy_name(date, source, row_key, events, commit_guard)
         published = matrix._published_comparison_result(out_path, result)
         typed = published.comparison_outcome
         diff_cells = typed.counts.differing_cells
