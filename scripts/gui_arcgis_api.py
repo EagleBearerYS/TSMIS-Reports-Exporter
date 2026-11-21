@@ -377,7 +377,8 @@ class GuiArcgisMixin:
         job_host.hosted(ArcgisMatrixCompareWorker,
             source, cells, self._gated_queue(), self.cancel_event,
             force_consolidate=job.get("force", False),
-            also_formulas=settings.get_arcgis_matrix_formulas()).start()
+            also_formulas=settings.get_arcgis_matrix_formulas(),
+            also_lite=settings.get_arcgis_matrix_lite()).start()
         return True
 
     def _dispatch_arcgis_build_job(self, job):

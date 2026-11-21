@@ -270,6 +270,8 @@ def main():
               bool(a.refresh_cell_comparison("ramp_detail", "ssor-prod").get("error")))
         ok = a.refresh_cell_comparison("ramp_detail", "ars-prod")
         check("valid cell compare launched (becomes current)", ok.get("ok") is True)
+        check("...without a lite copy while the option is off",
+              _FakeWorker.last[1].get("also_lite") is False)
         check("task claimed as 'matrix'", a._task == "matrix")
         cur = a._state_snapshot().get("matrix_current")
         check("current job mirrored in the snapshot",
@@ -521,6 +523,33 @@ def main():
               and settings.get_pve_matrix_formulas() is True
               and a._state_snapshot().get("pve_matrix_formulas") is True)
         a.set_pve_matrix_formulas(False)
+        # v0.55.0: each comparison matrix has its own lite-copy option, set
+        # through ONE endpoint named by the matrix, and the state carries each
+        # (the page ticks its box from the state).
+        lite_keys = {"everything": "matrix_lite", "day": "day_matrix_lite",
+                     "baseline": "baseline_matrix_lite", "pve": "pve_matrix_lite",
+                     "arcgis": "arcgis_matrix_lite"}
+        snap = a._state_snapshot()
+        check("every lite-copy option is off by default and in the snapshot",
+              all(snap.get(k) is False for k in lite_keys.values()))
+        for which, key in lite_keys.items():
+            on = a.set_matrix_lite(which, True)
+            snap = a._state_snapshot()
+            check(f"the {which} lite copy persists + the snapshot reflects it, "
+                  "nothing else moves",
+                  on.get("on") is True and snap.get(key) is True
+                  and all(snap.get(k) is False for k in lite_keys.values() if k != key)
+                  and snap.get("matrix_formulas") is False)
+            a.set_matrix_lite(which, False)
+        check("a matrix without the option is refused",
+              bool(a.set_matrix_lite("three_day", True).get("error")))
+        a.set_matrix_lite("everything", True)
+        launched = a.refresh_cell_comparison("ramp_detail", "ars-prod")
+        check("a cell build hands the matrix's lite option to its worker",
+              launched.get("ok") is True
+              and _FakeWorker.last[1].get("also_lite") is True)
+        a._end_task()
+        a.set_matrix_lite("everything", False)
         # Two real exportable sides so row/column export resolves >=1 step.
         _touch(dest / "ssor-prod" / "ramp_detail" / "r1.xlsx")
         rr = a.refresh_row_export("ramp_detail")

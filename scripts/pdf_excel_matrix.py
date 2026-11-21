@@ -347,7 +347,8 @@ def cells_to_rebuild(snapshot, scope="stale", row=None, date=None):
 
 
 def build_pve_cell(source, date, row_key, dest, events, confirm_overwrite=None,
-                   force_consolidate=False, also_formulas=False, commit_guard=None):
+                   force_consolidate=False, also_formulas=False, commit_guard=None,
+                   also_lite=False):
     """Build ONE (day, family) PDF-vs-Excel self comparison: consolidate that day's
     PDF export + Excel export (reusing each day folder's persistent consolidated
     unless stale or `force_consolidate`), self-compare via the family's PDF-vs-Excel
@@ -386,6 +387,9 @@ def build_pve_cell(source, date, row_key, dest, events, confirm_overwrite=None,
         confirm_overwrite=confirm_overwrite or (lambda _p: True),
         mode="values", commit_guard=commit_guard)
     if result.status == "ok" and out_path.exists():
+        matrix._settle_lite_copy(
+            out_path, result, also_lite, events,
+            source_paths=(side_pdf, side_excel), commit_guard=commit_guard)
         # CMP-AUD-082: refresh the live-formulas twin, or clear a stale prior one.
         matrix._settle_formulas_twin(
             lambda fp: self_cmp.compare(

@@ -189,6 +189,7 @@ APP_MODULES = [
     # and the frozen `--self-test` gate now enforce that every flat scripts/ module
     # is declared here.
     "matrix", "day_matrix", "baseline_matrix", "pdf_excel_matrix", "report_library",
+    "lite_copy",                         # a comparison's deliverable lite copy (v0.55.0)
     # v0.30.0 (M1-B): best-effort per-comparison durations for the live ETA.
     "compare_timings",
     # W1 (v0.19.0): the one-click Settings validation — processes the on-disk

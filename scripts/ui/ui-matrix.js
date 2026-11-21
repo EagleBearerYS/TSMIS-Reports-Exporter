@@ -226,13 +226,17 @@ function syncPreviewOnly() {
   });
 }
 
+// The lite-copy toggles (v0.55.0) ride the same helper and resync with each
+// matrix's formulas option.
 function syncMatrixFormulas() {
   syncPreviewOnly();
   syncFormulasToggle("matrixFormulas", "matrix_formulas");
+  syncFormulasToggle("matrixLite", "matrix_lite");
 }
 function syncDayMatrixFormulas() {
   syncPreviewOnly();
   syncFormulasToggle("dayMatrixFormulas", "day_matrix_formulas");
+  syncFormulasToggle("dayMatrixLite", "day_matrix_lite");
 }
 
 // Reflect the SHARED evidence-images option (one persisted setting surfaced on
@@ -1614,6 +1618,7 @@ let _blRenderSeq = 0;
 
 function syncBaselineMatrixFormulas() {
   syncFormulasToggle("baselineMatrixFormulas", "baseline_matrix_formulas");
+  syncFormulasToggle("baselineMatrixLite", "baseline_matrix_lite");
 }
 
 async function renderBaselineMatrix() {
@@ -1909,6 +1914,7 @@ let _pveRenderSeq = 0;
 
 function syncPveMatrixFormulas() {
   syncFormulasToggle("pveMatrixFormulas", "pve_matrix_formulas");
+  syncFormulasToggle("pveMatrixLite", "pve_matrix_lite");
 }
 
 async function renderPveMatrix() {

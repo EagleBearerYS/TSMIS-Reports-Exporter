@@ -502,12 +502,13 @@ def _require_report(key):
 
 
 def build_cell(source, date, row_key, events, confirm_overwrite=None,
-               force_consolidate=False, also_formulas=False, commit_guard=None):
+               force_consolidate=False, also_formulas=False, commit_guard=None,
+               also_lite=False):
     """Build ONE (day, edition) comparison: consolidate that day's export of the
     edition (reusing the day folder's persistent consolidated unless stale or
     `force_consolidate`), diff the report's ArcGIS build against it via the
     report's registered comparator, write the VALUES workbook to the by-day
-    store, and cache its counts.
+    store, and cache its counts. `also_lite` writes its lite copy (v0.55.0).
 
     Returns the ConsolidateResult. Raises ValueError on an unknown or
     uncomparable row, an invalid date/source, a missing/untrusted build, or a
@@ -548,6 +549,9 @@ def build_cell(source, date, row_key, events, confirm_overwrite=None,
         confirm_overwrite=confirm_overwrite or (lambda _p: True),
         mode="values", commit_guard=commit_guard)
     if result.status == "ok" and out_path.exists():
+        matrix._settle_lite_copy(
+            out_path, result, also_lite, events,
+            source_paths=(build_path, Path(side_export)), commit_guard=commit_guard)
         # CMP-AUD-082: refresh the live-formulas twin, or clear a stale prior one.
         matrix._settle_formulas_twin(
             lambda fp: s.compare.compare(

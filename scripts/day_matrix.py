@@ -512,7 +512,7 @@ def evidence_for_day_cell(source, date, row_key, dest, events, tsn_files=None,
 def build_day_cell(source, date, row_key, dest, events, tsn_files=None,
                    confirm_overwrite=None, force_consolidate=False,
                    also_formulas=False, evidence=None, commit_guard=None,
-                   preview=False):
+                   preview=False, also_lite=False):
     """Build ONE (day, report) vs-TSN comparison: resolve the shared TSN dataset,
     consolidate that day's per-route export (reusing the day folder's persistent
     consolidated unless stale or `force_consolidate`), compare vs TSN, write the
@@ -574,7 +574,8 @@ def build_day_cell(source, date, row_key, dest, events, tsn_files=None,
         explicit_selection=src_tsn.get("selection"),
         commit_guard=commit_guard,
         source_identity_check=source_identity_check,
-        source_workbook_identity=source_workbook_identity)
+        source_workbook_identity=source_workbook_identity,
+        also_lite=also_lite)
     if preview:
         # Counts only: nothing written, so nothing to publish or cache. The
         # numbers land in the by-day preview store, bound to the same input

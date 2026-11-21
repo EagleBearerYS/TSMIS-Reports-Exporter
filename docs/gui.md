@@ -502,7 +502,13 @@ comparison, offered ONLY on the tsn/env modes of the PDF-edition rows since the
 joined), four on env; a missing TSN print set reports per cell at run time).
 The **config zone** (`#matrixConfig`, a card under the slim activity log, shown via
 `body.matrix-wide:not(.mw-day)`) holds the report + **environment-column** show/hide toggles,
-the global "set all comparisons to…" (env|tsn), the live-formulas toggle, the **evidence-images
+the global "set all comparisons to…" (env|tsn), the live-formulas toggle, the **lite-copy
+toggle** (v0.55.0, `#matrixLite`: each comparison also writes `… (lite).xlsx`, the version to
+send — [comparison-engine.md](comparison-engine.md) §4; the vs TSN, vs Baseline, PDF vs Excel
+and Reports vs ArcGIS corners carry their own, `#dayMatrixLite` / `#baselineMatrixLite` /
+`#pveMatrixLite` / `#agMatrixLite`, each its own setting `<matrix>_lite` in the state, all set
+through one endpoint `set_matrix_lite(which, on)` and synced with that matrix's formulas
+toggle), the **evidence-images
 toggle + per-column count** (`#matrixEvidence` / `#matrixEvidenceCount` — ONE shared persisted
 pair `evidence_images`/`evidence_examples` mirrored on the by-day corner, synced by
 `syncMatrixEvidence` off the state's `evidence` block; greyed only when NO report is ready.

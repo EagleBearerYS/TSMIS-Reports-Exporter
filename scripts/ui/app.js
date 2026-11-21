@@ -1353,6 +1353,21 @@ function bindEvents() {
     if (r && r.error) showMessage("error", "Can't set formulas option", r.error);
     syncThreeDayMatrixFormulas();
   });
+  // The lite-copy option (v0.55.0) — each comparison matrix has its own,
+  // set through one endpoint named by the matrix.
+  for (const [cbId, which, resync] of [
+    ["matrixLite", "everything", () => syncMatrixFormulas()],
+    ["dayMatrixLite", "day", () => syncDayMatrixFormulas()],
+    ["baselineMatrixLite", "baseline", () => syncBaselineMatrixFormulas()],
+    ["pveMatrixLite", "pve", () => syncPveMatrixFormulas()],
+    ["agMatrixLite", "arcgis", () => syncArcgisMatrixFormulas()],
+  ]) {
+    $(cbId)?.addEventListener("change", async (e) => {
+      const r = await api.set_matrix_lite(which, e.target.checked);
+      if (r && r.error) showMessage("error", "Can't set the lite copy option", r.error);
+      resync();
+    });
+  }
   // Evidence images — ONE shared persisted setting, surfaced on both matrix
   // pages (the checkboxes/counts are mirrors, resynced from each state push).
   // The per-cell camera (generate evidence) is gated on this toggle, so flipping

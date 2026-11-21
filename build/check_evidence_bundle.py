@@ -511,11 +511,15 @@ def test_every_trigger_uses_the_one_collector():
     check("the Settings module no longer touches zipfile at all",
           "zipfile" not in settings_api)
     # Reading a zip is fine (credential_safety SCANS the finished bundle); WRITING one
-    # is the thing that must live in exactly one place.
+    # is the thing that must live in exactly one place. lite_copy.py (v0.55.0) is the
+    # one other zip writer, and it writes no bundle: it writes a comparison's lite
+    # .xlsx (an Office file is a zip) from that comparison's own parts.
     writers = sorted(f.name for f in scripts.glob("*.py")
                      if 'ZipFile(' in (src := f.read_text(encoding="utf-8"))
                      and '"w"' in src.split("ZipFile(", 1)[1][:40])
-    check("evidence.py is the ONLY module that writes a zip", writers == ["evidence.py"])
+    check("evidence.py is the ONLY module that writes a bundle zip "
+          "(lite_copy.py writes a workbook)",
+          writers == ["evidence.py", "lite_copy.py"])
 
 
 def test_session_facts_reach_the_manifest():

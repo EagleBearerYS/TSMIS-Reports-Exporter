@@ -50,6 +50,7 @@ from matrix_build import (                                       # noqa: F401
     _fingerprint_for_record, _twin_inputs_unchanged,
     _formulas_sibling, _pdf_store_consolidator, _try_formulas,
     _clear_stale_formulas_twin, _settle_formulas_twin,
+    _lite_sibling, _try_lite, _clear_stale_lite_copy, _settle_lite_copy,
     _compose_source_guard, _require_source_identity,
     _partial_comparison_reason, _run_env_evidence,
     build_cell_comparison, build_comparison, cells_to_rebuild,
