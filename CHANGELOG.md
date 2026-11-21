@@ -3,6 +3,41 @@
 All notable changes to TSMIS Reports Exporter, newest first. Each GitHub
 release shows only its own section (see `build/gen_release_notes.py`).
 
+## v0.55.0 — 2026-11-20
+
+The comparison matrices can write a lite copy of every comparison they build: the
+version to send, cut down the way the 10.30 deliverables were. The Reports vs ArcGIS
+comparison files are now named `_vs_ArcGIS`.
+
+**After updating**
+
+Turn on **Also write a lite copy** under Comparison output on each matrix you deliver
+from. It starts off. A cell gets its lite copy the next time it is built.
+
+**Lite copies**
+
+- **What one is.** `<name> (lite).xlsx`, beside the comparison workbook. It has no Spot
+  Check, Notes or Provenance sheet. Its Summary keeps the title ("TSMIS vs TSN — Clean
+  Road Highway"), the row counts, the match status, the route coverage and the
+  differences by field. Every other sheet is the comparison's own, unchanged, so the
+  lite copy always agrees with the full workbook.
+- **Where.** The Matrix, vs TSN, vs Baseline, PDF vs Excel and Reports vs ArcGIS
+  matrices, each with its own option. Three-way and Three Days write a different kind
+  of workbook and have none.
+- **Quick.** Writing one takes under a second, even for a Highway comparison.
+- **Only for a complete comparison.** A comparison that left an input out gets no lite
+  copy, because the lite Summary drops the notes that say what is missing. The run log
+  says so.
+- **Never out of date.** Rebuilding a cell with the option off removes its old lite
+  copy.
+
+**Reports vs ArcGIS**
+
+- **The comparison files are named `_vs_ArcGIS`**, as they are delivered:
+  `clean_highway_vs_ArcGIS 2026-11-19 ars-prod dev-site.xlsx`. A cell built before this
+  version keeps its `_vs_layers` file and still opens it. Rebuilding the cell writes the
+  new name and removes the old file.
+
 ## v0.54.1 — 2026-11-19
 
 The Clean Road comparison workbooks now read like the TSMIS site's own Clean Road

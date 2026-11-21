@@ -12,7 +12,17 @@ touching.
 
 ## Current status and work
 
-**Current release: v0.54.1 (2026-11-19)** — **the Clean Road comparison workbooks
+**Current release: v0.55.0 (2026-11-20)** — **the comparison matrices write a lite
+copy of each comparison, the version the owner delivers.** `lite_copy.py` makes
+`<name> (lite).xlsx` from the finished values workbook: no Spot Check, Notes or
+Provenance sheet, and a Summary cut to its title, counts and differences-by-field
+table, every other part copied byte for byte. Each of the five comparison matrices has
+its own *Also write a lite copy* option; a partial comparison gets none. The Reports
+vs ArcGIS files are named `_vs_ArcGIS`, and a cell built under the old `_vs_layers`
+name still opens until it is rebuilt ([comparison-engine.md](comparison-engine.md) §4,
+§12d).
+
+v0.54.1 (2026-11-19): **the Clean Road comparison workbooks
 read like the site's own Clean Road files.** Every value of both sides is written the
 way the TSMIS file writes that column (`compare_clean_road_tsn.rows_as_written`), a
 context column shows the TSMIS file's own value (`CompareSchema.context_display_side`),

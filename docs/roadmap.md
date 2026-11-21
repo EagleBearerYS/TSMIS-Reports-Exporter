@@ -4,9 +4,15 @@ The single forward list — bugs to fix, features to add, and standing concerns.
 (what already shipped, per release) is `CHANGELOG.md`; the narrative is
 [history.md](history.md). This file is what's *left*.
 
-> ### ▶ WHERE THINGS STAND (v0.54.1, reconciled 2026-11-19)
+> ### ▶ WHERE THINGS STAND (v0.55.0, reconciled 2026-11-20)
 >
-> **Current release: v0.54.1 (2026-11-19). The Clean Road comparison workbooks read like
+> **Current release: v0.55.0 (2026-11-20). The comparison matrices write a lite copy of
+> each comparison**, the version the owner delivers (no Spot Check, Notes or Provenance
+> sheet; a short Summary), each matrix with its own option. The six 2026-11-19 Clean
+> Road deliverables went out as lite copies. The Reports vs ArcGIS files are named
+> `_vs_ArcGIS`. The work PC turns the option on where it delivers from.
+>
+> v0.54.1 (2026-11-19): **the Clean Road comparison workbooks read like
 > the site's own Clean Road files**: values in the TSMIS file's spelling, context columns
 > showing the TSMIS file's own value, every count as in v0.54.0 (the six 2026-11-19
 > comparisons rebuilt and held line by line, and spot-checked against the raw files).
