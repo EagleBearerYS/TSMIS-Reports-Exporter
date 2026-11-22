@@ -1571,9 +1571,9 @@ comparisons can never key a record differently; only format reconciliations appl
 - **Sources and data source (2026-11-17).** `clean_road_sources` holds the vendor's
   source list of 2026-11-16 as data. Each comparison's Notes say how the build's columns
   sit against it (Highway 29 of 29 columns from the listed layer and field, Ramp 9 of 9;
-  Intersection reads the IM tables the site's code reads, not the `Master Intersection`
-  layer the list names; since 2026-11-22 the library refreshes that layer from its own
-  service, but this comparison does not read it), show each layer with the
+  the IM-tables Intersection build reads the tables the site's code reads, not the
+  `Master Intersection` layer the list names; the build from that layer is the next
+  bullet), show each layer with the
   list's number, and print the feature service the layers were pulled from beside the
   data source the export's file name records. An ARS prod export is described as the
   same data up to a day behind the layers (ARS takes up to 24 hours to catch up with
@@ -1582,6 +1582,35 @@ comparisons can never key a record differently; only format reconciliations appl
   column carries the TSMIS file's own name, in its order, and
   `check_arcgis_clean_road` holds all three to that
   ([planning/cleanroad-highways.md](planning/cleanroad-highways.md)).
+- **Intersection from Master Intersection (2026-11-22,
+  `arcgis_report_clean_intersection_mi` / `compare_clean_intersection_mi_arcgis`).** A
+  second build of the Intersection file from the one layer the vendor's list names
+  (library layer 44: layer 204 of the production `csms_supporting_prod` service). It is a
+  report row of its own, first on both ArcGIS sub-tabs, compared with the same exports
+  as the IM-tables build (`arcgis_reports._EXPORTS_OF`; rows `clean_intersection_mi` /
+  `_mi_pdf`, files `clean_intersection_mi_vs_ArcGIS …`), and both builds' rows are
+  labeled by their source. The owner's call: it is the default for problems raised with
+  the vendor, and the IM-tables comparison stays beside it as the check of what the
+  site's code reads. Rows: the layer's rows current at the as-of date (inventory start
+  and end; the layer keeps the rows a rebuild replaced) with a major route and the
+  geometry in effect, listed under the major leg's route and again under a minor state
+  route with the legs swapped; lanes are each leg's total, highway group and population
+  the file route's leg's own, district and county the major leg's. Context beside the
+  unsourced set: INX_BEGIN_DATE and both segment orders (no field in the layer) and
+  INX_CITY_CODE (not attributed to the layer by the list). Its Notes hold it to the list
+  (23 columns from 29 found fields, all agree) and say which source each side is. The
+  build's marker records its own report key, so it never stands as an IM-tables build,
+  and the layer's own service, so the data-source line names it. **Measured on the
+  2026-11-19 ars-prod dev-site export** (both builds as of 2026-11-19, the 11-19 IM
+  layers and the 11-22 Master Intersection export): 16,253 paired, 87 / 131 one-sided,
+  5,585 differing cells; the IM-tables row on the same export 16,381 paired, 94 / 3,
+  3,071 cells. Of the 5,585: the two begin dates 1,991 + 700 (the site's TW4, as on the
+  IM row), highway group 854 and population 588 (571 and 492 of them blank in the
+  layer, 276 and 90 different codes), about a hundred per leg column (mostly a blank on
+  one side), 33 crossing routes the layer leaves blank, 6 dates of record. The layer
+  lacks 98 of the file's intersections (95 not in it at all) and holds 85 current ones
+  the file does not list (`check_master_intersection` holds the rules on synthetic
+  rows).
 - **Bound result** (the 2026-10-22 dev-site export vs the 2026-10-05 layers, after the
   2026-11-03 build audit; v0.51.0's numbers in brackets): Intersection 16,382 paired,
   93 / 3 one-sided, 3,075 differing cells [4,079], 2,548 of them the two begin dates;

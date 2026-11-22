@@ -20,7 +20,10 @@ import-cheap — the layer builds pull openpyxl and the whole clean-road
 substrate behind them.
 
 Each report has ONE ArcGIS build (an Excel workbook), refreshed in place on the
-ArcGIS reports tab. Its EDITIONS are every export the site offers for that
+ArcGIS reports tab; a second build of the same file from another source is a
+report row of its own (`_EXPORTS_OF`: Clean Road Intersection from the Master
+Intersection layer, 2026-11-22), compared with the same exports under its own
+row keys. Its EDITIONS are every export the site offers for that
 report — the Excel export and the print (PDF) edition — and each one is its own
 row on the Reports vs ArcGIS matrix, compared against that same build. Editions
 are DERIVED from `report_catalog.EXPORT` (a print edition's key is its family's
@@ -61,12 +64,26 @@ _REPORTS = OrderedDict((
     ("highway_summary", (None, None)),
     ("clean_highway", ("consolidate_clean_highway",
                        "compare_clean_highway_arcgis")),
+    # Clean Road Intersection has TWO builds (the owner, 2026-11-22): from the
+    # Master Intersection layer the vendor's list names, first because it is
+    # the default for problems raised with the vendor, and from the IM tables
+    # the site's code reads. Both are compared with the same export.
+    ("clean_intersection_mi", ("arcgis_report_clean_intersection_mi",
+                               "compare_clean_intersection_mi_arcgis")),
     ("clean_intersection", ("arcgis_report_clean_intersection",
                             "compare_clean_intersection_arcgis")),
     ("clean_ramp", ("arcgis_report_clean_ramp", "compare_clean_ramp_arcgis")),
 ))
 
 KEYS = tuple(_REPORTS)
+
+# A second build of another report: {family: (the report whose exports it is
+# compared with, what labels it)}. Its rows are that report's editions under
+# its own keys ('clean_intersection_mi', 'clean_intersection_mi_pdf').
+_EXPORTS_OF = {"clean_intersection_mi": ("clean_intersection", "Master Intersection",
+                                          "MI")}
+# What labels a report that has a second build: its own source.
+_SOURCE_LABEL = {"clean_intersection": "IM tables"}
 
 # An export key names its family directly or by one of these suffixes.
 _EDITION_SUFFIXES = ("_pdf", "_excel")
@@ -110,9 +127,39 @@ def _catalog():
     return labels, codes, consolidators, subdirs, tuple(labels)
 
 
+def _sourced(label, source):
+    """'Clean Road: Intersection (Master Intersection)'; a label that already
+    ends in a parenthesis takes the source inside it ('(PDF, IM tables)')."""
+    if not source:
+        return label
+    if label.endswith(")"):
+        return f"{label[:-1]}, {source})"
+    return f"{label} ({source})"
+
+
+def _second_build_key(key):
+    """(the other report's export key, the second build's family) for a second
+    build's family or edition key ('clean_intersection_mi_pdf' ->
+    ('clean_intersection_pdf', 'clean_intersection_mi')), or None."""
+    for family, (other, _source, _tag) in _EXPORTS_OF.items():
+        if key == family:
+            return other, family
+        if key.startswith(family + "_"):
+            return other + key[len(family):], family
+    return None
+
+
 def _catalog_row(key):
     labels, codes, _cons, _subs, _order = _catalog()
-    return labels.get(key, key), codes.get(key, key)
+    second = _second_build_key(key)
+    if second is not None:
+        export_key, family = second
+        _other, source, tag = _EXPORTS_OF[family]
+        return (_sourced(labels.get(export_key, export_key), source),
+                f"{codes.get(export_key, export_key)}-{tag}")
+    base = family_of(key) or key
+    return (_sourced(labels.get(key, key), _SOURCE_LABEL.get(base, "")),
+            codes.get(key, key))
 
 
 @lru_cache(maxsize=1)
@@ -120,12 +167,14 @@ def editions():
     """Every export edition, family by family in registry order — the family's
     own key first (its established row), then its siblings in catalog order.
     These are the Reports vs ArcGIS matrix rows."""
-    labels, codes, consolidators, subdirs, order = _catalog()
+    _labels, _codes, consolidators, subdirs, order = _catalog()
     out = []
     for family in KEYS:
         build, compare = _REPORTS[family]
-        keys = [k for k in order if family_of(k) == family]
-        keys.sort(key=lambda k: k != family)       # stable: the family first
+        # A second build's rows are the other report's editions, under its keys.
+        source = _EXPORTS_OF[family][0] if family in _EXPORTS_OF else family
+        keys = [k for k in order if family_of(k) == source]
+        keys.sort(key=lambda k: k != source)       # stable: the family first
         for key in keys:
             sub = subdirs[key]
             cons = consolidators.get(sub)
@@ -138,8 +187,9 @@ def editions():
                 why = _NO_EDITION
             else:
                 why = ""
-            out.append(Edition(key, family, labels[key], codes[key], sub,
-                               cons, comparable, why))
+            row = family + key[len(source):]
+            label, code = _catalog_row(row)
+            out.append(Edition(row, family, label, code, sub, cons, comparable, why))
     return tuple(out)
 
 

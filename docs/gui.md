@@ -753,7 +753,13 @@ Layers first (and the default):
   missing* / *last refresh failed …* (the failed or cancelled attempt is kept, in the
   shared attempts overlay under `output/arcgis_reports/_state/`, until a refresh
   lands) / *building…* / *waiting…*. A report whose build hasn't been written is
-  listed too, greyed *build coming later*, so the whole set is visible.
+  listed too, greyed *build coming later*, so the whole set is visible. Clean Road
+  Intersection has two builds (2026-11-22), each its own row labeled by its source:
+  *Clean Road: Intersection (Master Intersection)* first, built from the one layer the
+  vendor's list names and the default for problems raised with the vendor, then
+  *(IM tables)*, built from what the site's code reads. Both compare with the same
+  Intersection exports on Reports vs ArcGIS, where their rows (both editions) are
+  labeled the same way ([comparison-engine.md](comparison-engine.md) §9n).
   - **Refresh all reports** (confirms first, naming the reports) or a row's
     **Refresh** / **Build** queues ONE `kind:"arcgis_build"` job whose `rows` are the
     reports, built one after another (`ArcgisReportBuildWorker`, in

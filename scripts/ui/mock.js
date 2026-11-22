@@ -807,8 +807,10 @@ function makeMockApi() {
      [["highway_summary", "Highway Summary", "HS", true], ["highway_summary_pdf", "Highway Summary (PDF)", "HS-PDF", true]]],
     ["clean_highway", "Clean Road: Highway", "CR-HWY", true, true,
      [["clean_highway", "Clean Road: Highway", "CR-HWY", true], ["clean_highway_pdf", "Clean Road: Highway (PDF)", "CR-HWY-PDF", true]]],
-    ["clean_intersection", "Clean Road: Intersection", "CR-INT", true, true,
-     [["clean_intersection", "Clean Road: Intersection", "CR-INT", true], ["clean_intersection_pdf", "Clean Road: Intersection (PDF)", "CR-INT-PDF", true]]],
+    ["clean_intersection_mi", "Clean Road: Intersection (Master Intersection)", "CR-INT-MI", true, true,
+     [["clean_intersection_mi", "Clean Road: Intersection (Master Intersection)", "CR-INT-MI", true], ["clean_intersection_mi_pdf", "Clean Road: Intersection (PDF, Master Intersection)", "CR-INT-PDF-MI", true]]],
+    ["clean_intersection", "Clean Road: Intersection (IM tables)", "CR-INT", true, true,
+     [["clean_intersection", "Clean Road: Intersection (IM tables)", "CR-INT", true], ["clean_intersection_pdf", "Clean Road: Intersection (PDF, IM tables)", "CR-INT-PDF", true]]],
     ["clean_ramp", "Clean Road: Ramp", "CR-RMP", true, true,
      [["clean_ramp", "Clean Road: Ramp", "CR-RMP", true], ["clean_ramp_pdf", "Clean Road: Ramp (PDF)", "CR-RMP-PDF", true]]],
   ];
@@ -834,6 +836,8 @@ function makeMockApi() {
       layers: buildable ? _HD_LAYERS : undefined, missing_layers: [],
       path: _agOut + key + "_from_layers.xlsx" };
   });
+  // Clean Road Intersection from Master Intersection reads that one layer.
+  mockAgBuilds.clean_intersection_mi.layers = ["Master Intersection"];
   // Highway Detail: built from OLDER layers, so its rows read "from older layers".
   Object.assign(mockAgBuilds.highway_detail, {
     built: true, asof: "2026-08-19", rows: 51227, routes: 252, completion: "complete", trusted: true,
