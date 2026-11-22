@@ -12,13 +12,19 @@ touching.
 
 ## Current status and work
 
-**Current release: v0.56.0 (2026-11-22)** — **the layer library refreshes the Master
-Intersection layer**, the one source the vendor's list names for the Clean Road
-Intersection file, as library layer 44 from its own service (layer 204 of
-`csms_supporting_prod`; `arcgis_refresh.LAYER_SERVICES`). No build reads it yet: the
-Intersection comparison built from it comes next, beside the IM-tables one, as the
-default for problems raised with the vendor
-([planning/cleanroad-highways.md](planning/cleanroad-highways.md), "Master
+**Current release: v0.57.0 (2026-11-22)** — **a second Clean Road Intersection
+comparison, built from the Master Intersection layer** the vendor's list names
+(`arcgis_report_clean_intersection_mi`), beside the IM-tables one and the default for
+problems raised with the vendor. It is a report row of its own, compared with the same
+exports (`arcgis_reports._EXPORTS_OF`), and both rows are labeled by their source. On
+the 2026-11-19 export it reads 5,585 differing cells against the IM-tables row's 3,071,
+most of the difference blanks in the layer ([comparison-engine.md](comparison-engine.md)
+§9n, "Intersection from Master Intersection").
+
+v0.56.0 (2026-11-22): **the layer library refreshes the Master
+Intersection layer** as library layer 44 from its own service (layer 204 of
+`csms_supporting_prod`; `arcgis_refresh.LAYER_SERVICES`;
+[planning/cleanroad-highways.md](planning/cleanroad-highways.md), "Master
 Intersection, the list's Intersection source").
 
 v0.55.0 (2026-11-20): **the comparison matrices write a lite

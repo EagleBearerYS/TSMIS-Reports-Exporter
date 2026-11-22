@@ -3,6 +3,39 @@
 All notable changes to TSMIS Reports Exporter, newest first. Each GitHub
 release shows only its own section (see `build/gen_release_notes.py`).
 
+## v0.57.0 — 2026-11-22
+
+A second Clean Road Intersection comparison, built from the Master Intersection layer:
+the source the vendor's list names for the file. It sits beside the one built from the
+IM tables, which the site's code reads, and it is the one to use when raising problems
+with the vendor.
+
+**After updating**
+
+On ArcGIS ▸ ArcGIS reports, build **Clean Road: Intersection (Master Intersection)** as
+of the export day. It reads the Master Intersection layer that v0.56.0 refreshes. Then
+compare its rows on Reports vs ArcGIS.
+
+**Clean Road Intersection from Master Intersection**
+
+- **Two rows, each labeled by its source.** ArcGIS reports and Reports vs ArcGIS list
+  *Clean Road: Intersection (Master Intersection)* first and *(IM tables)* after it.
+  Both are compared with the same site export. The new files are named
+  `clean_intersection_mi_vs_ArcGIS …`.
+- **What the build reads.** The Master Intersection layer alone: the rows in effect on
+  the as-of day, each listed under its major route and again under a minor state route
+  with the legs swapped, the way the site's file lists them. The layer keeps the rows a
+  rebuild replaced, with an end date, and those are left out.
+- **Shown, never counted.** The begin date and both segment orders, which the layer has
+  no field for, and the city, which the list does not give to this layer.
+- **The Notes name each side's source.** They hold the build to the vendor's list (23
+  columns from the 29 fields it names, all agree) and name the Master Intersection
+  service as the build's data source.
+- **On the 2026-11-19 export:** 16,253 rows paired, 87 only in the build, 131 only in
+  the site's file, 5,585 differing cells. The IM-tables row reads 3,071 cells on the
+  same export, as before. Most of the extra cells are values the layer leaves blank,
+  above all highway group and population codes.
+
 ## v0.56.0 — 2026-11-22
 
 The ArcGIS layer library can refresh the Master Intersection layer: the one source the

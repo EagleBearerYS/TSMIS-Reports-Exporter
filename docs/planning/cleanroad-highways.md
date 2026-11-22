@@ -575,7 +575,7 @@ production service the library is refreshed from (`00_INDEX.xlsx` records each o
   tables of the main service instead (#151, #0, #146, #150 and the three span layers),
   and so does the build, which reproduces the site's file to 3,073 differing cells on
   16,381 paired rows, 2,548 of them the two begin dates. Since 2026-11-22 the library
-  refreshes the Master Intersection layer too (below), but no build reads it yet. The list maps the
+  refreshes the Master Intersection layer too, and a second build reads it (below). The list maps the
   two begin dates to the leg's own effective date, which is what the build writes and
   the site does not (TW4).
 
@@ -613,7 +613,8 @@ state; the manifest's Data Source states the clause. The work PC owes the first 
   up problems to them"*. So a second Intersection comparison, built from Master
   Intersection, sits beside the IM one, each labeled by its source. The Master
   Intersection one is the default for anything raised with the vendor: first on the
-  matrix, the plain `clean_intersection_vs_ArcGIS` name, the lite copy that is sent. The
+  matrix and the lite copy that is sent. Its files are `clean_intersection_mi_vs_ArcGIS
+  …`, so the IM-tables row keeps its key and its file names. The
   IM one stays as the cross-check of what the site's code reads. A difference that only
   the Master Intersection comparison shows lies in that copy, not in the report.
 - **Done (v0.56.0):** the layer refresh reads it as library layer 44 from its own
