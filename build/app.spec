@@ -103,9 +103,11 @@ APP_MODULES = [
     "compare_intersection_detail_arcgis",  # the ArcGIS-vs-TSMIS Intersection Detail comparison
     "arcgis_clean_road_build",           # shared substrate of the Clean Road builds (v0.50.0)
     "arcgis_report_clean_intersection",  # the Clean Road Intersection build
+    "arcgis_report_clean_intersection_mi",  # ...and its Master Intersection build
     "arcgis_report_clean_ramp",          # the Clean Road Ramp build
     "compare_clean_road_arcgis",         # the Clean Road build-vs-export comparison
     "compare_clean_highway_arcgis", "compare_clean_intersection_arcgis",
+    "compare_clean_intersection_mi_arcgis",
     "compare_clean_ramp_arcgis",
     "three_way",                         # the TSMIS vs TSN vs ArcGIS engine (v0.51.0)
     "compare_clean_road_three_way",      # its Clean Road adapters

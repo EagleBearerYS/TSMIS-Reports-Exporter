@@ -116,19 +116,23 @@ def test_rows_from_registry():
     check("...grouped report by report in registry order", seen == list(arcgis_reports.KEYS))
     check("each report's own key leads its editions",
           all(arcgis_reports.editions_of(k)[0].key == k for k in arcgis_reports.KEYS))
-    check("both editions of a report are rows (22 in all, Route History excluded)",
-          len(rows) == 22 and "highway_detail_pdf" in agm.row_keys()
+    check("both editions of a report are rows (24 in all with Clean Road Intersection's "
+          "second build, Route History excluded)",
+          len(rows) == 24 and "highway_detail_pdf" in agm.row_keys()
+          and "clean_intersection_mi_pdf" in agm.row_keys()
           and "route_history" not in agm.row_keys())
     check("Ramp Summary's row is its PDF edition, its Excel sibling follows",
           [e.key for e in arcgis_reports.editions_of("ramp_summary")]
           == ["ramp_summary", "ramp_summary_excel"])
     comparable = {r.key for r in rows if r.comparable}
     buildable = {r.key for r in rows if r.buildable}
-    check("both editions of the five rendered reports compare (the three Clean Road "
-          "files since v0.50.0)",
+    check("both editions of the six rendered reports compare (the three Clean Road "
+          "files since v0.50.0, Intersection from Master Intersection too since "
+          "2026-11-22)",
           comparable == {"intersection_detail", "intersection_detail_pdf",
                          "highway_detail", "highway_detail_pdf"} | {"clean_highway", "clean_highway_pdf", "clean_intersection",
-                         "clean_intersection_pdf", "clean_ramp", "clean_ramp_pdf"})
+                         "clean_intersection_pdf", "clean_ramp", "clean_ramp_pdf",
+                         "clean_intersection_mi", "clean_intersection_mi_pdf"})
     check("every buildable report's editions compare",
           buildable == comparable)
     check("every row carries a label and a code", all(r.label and r.code for r in rows))
@@ -282,7 +286,7 @@ def test_library_and_snapshot_states():
             rep = agm.reports_snapshot()
             check("the ArcGIS reports snapshot: every report in registry order, counts",
                   [r["key"] for r in rep["reports"]] == list(arcgis_reports.KEYS)
-                  and rep["buildable"] == 5 and rep["built"] == 0
+                  and rep["buildable"] == 6 and rep["built"] == 0
                   and rep["reports_root"] == str(tmp / "arcgis_reports"))
             check("a buildable report lists the layers it reads",
                   "SHS Landmark" in rep["builds"]["highway_detail"]["layers"])
@@ -647,7 +651,8 @@ def test_reports_endpoints_and_worker():
     check("Refresh all queues ONE build job over every buildable report, in order",
           r.get("ok") and job.get("kind") == "arcgis_build"
           and job.get("rows") == ["intersection_detail", "highway_detail", "clean_highway",
-                                  "clean_intersection", "clean_ramp"]
+                                  "clean_intersection_mi", "clean_intersection",
+                                  "clean_ramp"]
           and job.get("label") == "Refresh every ArcGIS report")
     host.build_arcgis_report("highway_detail_pdf", "2026-08-17")
     job = host.jobs[-1]
@@ -676,11 +681,11 @@ def test_reports_endpoints_and_worker():
         ok = host._dispatch_arcgis_build_job(host.jobs[0])
     check("dispatch starts the worker with every report of the job",
           ok and started and started[-1][0] == ["intersection_detail", "highway_detail",
-                                                "clean_highway", "clean_intersection",
-                                                "clean_ramp"])
+                                                "clean_highway", "clean_intersection_mi",
+                                                "clean_intersection", "clean_ramp"])
     check("dispatch sets the building phase, first report, total",
           host._matrix == {"phase": "building", "row": "Intersection Detail", "cell": None,
-                           "done": 0, "total": 5})
+                           "done": 0, "total": 6})
 
     # The real worker over a stubbed build: one fails, the rest land; one terminal.
     tmp = Path(tempfile.mkdtemp(prefix="agbw_"))

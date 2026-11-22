@@ -49,12 +49,18 @@ def _export_day(path):
 
 
 class CleanRoadArcgisCompare:
-    """compare(build, export, out, …) + suggest_name for one Clean Road report."""
+    """compare(build, export, out, …) + suggest_name for one Clean Road report.
+
+    A build of the same file from another source (the Master Intersection
+    build) names the export it compares against in `PROFILE_KEY`, and the
+    columns it does not take from its source in `EXTRA_CONTEXT`."""
 
     def __init__(self, build_module):
         self._build = build_module
         self._spec = build_module.SPEC
-        self._profile = crt.profile_for(self._spec.key)
+        self._profile = crt.profile_for(getattr(build_module, "PROFILE_KEY", None)
+                                        or self._spec.key)
+        self._extra_context = tuple(getattr(build_module, "EXTRA_CONTEXT", ()))
         self.REPORT_NAME = f"{self._spec.label} — ArcGIS vs TSMIS"
         # Only what the site has no source for, and the extract date. The
         # vs-TSN extras (TSN's other id space, its own design wording) are one
@@ -62,7 +68,8 @@ class CleanRoadArcgisCompare:
         spec = self._spec
         self.context = tuple(c for c in spec.header
                              if c in spec.unsourced or c in spec.site_only
-                             or c.endswith("_EXTRACT_DATE"))
+                             or c.endswith("_EXTRACT_DATE")
+                             or c in self._extra_context)
         base = crt._schema(
             self._profile, SIDE_A, SIDE_B,
             notes_title=f"{self.REPORT_NAME}: comparison notes", notes=(),
@@ -89,7 +96,8 @@ class CleanRoadArcgisCompare:
                 for vals in acb.read_rows(path, self._spec)]
 
     def _load_pair(self, build_path, export_path):
-        if acb.is_build(export_path, self._spec):
+        if acb.is_build(export_path, self._spec) \
+                or acb.is_build(export_path, self._profile.spec):
             raise ValueError(
                 f"The {SIDE_B} side is an ArcGIS-built file, not the site's "
                 f"export:\n{export_path}\n\nPick the consolidated "
@@ -141,16 +149,23 @@ class CleanRoadArcgisCompare:
             "HTML does.",
             "CONTEXT (the TSMIS file's own value is shown, never counted; ours "
             f"is on the {SIDE_A} sheet): the columns the site has no source "
-            f"for ({', '.join(spec.unsourced)}) and the extract date."
+            f"for ({', '.join(spec.unsourced)})"
+            + (f", the ones this build does not take from its source "
+               f"({', '.join(self._extra_context)}: "
+               f"{self._build.EXTRA_CONTEXT_WHY})"
+               if self._extra_context else "")
+            + " and the extract date."
             + (" The build writes two of them the site leaves blank: "
                "RAM_BEGIN_OFFSET_AMT from the ramp point's odometer and "
                "RAM_CREATE_DATE from SHS Ramp's inventory start date."
                if spec.key == "clean_ramp" else
-               " INX_CONNECTION_ID is the layer's INTERSECTION_ID on both "
-               "sides, so it counts."),
+               " " + (getattr(self._build, "ID_NOTE", "")
+                      or "INX_CONNECTION_ID is the layer's INTERSECTION_ID on "
+                         "both sides, so it counts.")),
         ) + tuple(unplaced) + (
-            "Where each column comes from in the build (# = the number the "
-            "vendor's list gives the layer):",
+            getattr(self._build, "TABLE_NOTE", "")
+            or "Where each column comes from in the build (# = the number the "
+               "vendor's list gives the layer):",
         ) + table
 
     # -------------------------------------------------------------- compare

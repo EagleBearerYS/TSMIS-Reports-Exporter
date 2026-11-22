@@ -504,7 +504,8 @@ def _consolidate(module, events, confirm_overwrite, out_path, asof, lib_root):
                     "project — check the layer library and the as-of date.")
     root = Path(lib_root) if lib_root else crl.root()
     _write_workbook(module, out_path, rows, stats, asof_text, root, drop,
-                    service=clean_road_sources.library_service(index))
+                    service=clean_road_sources.library_service(
+                        index, module.REQUIRED_LAYERS))
     spec = module.SPEC
     result = ConsolidateResult(
         status="ok",

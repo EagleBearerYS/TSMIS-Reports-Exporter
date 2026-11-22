@@ -616,12 +616,22 @@ state; the manifest's Data Source states the clause. The work PC owes the first 
   matrix, the plain `clean_intersection_vs_ArcGIS` name, the lite copy that is sent. The
   IM one stays as the cross-check of what the site's code reads. A difference that only
   the Master Intersection comparison shows lies in that copy, not in the report.
-- **Done:** the layer refresh reads it as library layer 44 from its own service
-  (`arcgis_refresh.LAYER_SERVICES`; the worker reads that service's layer list too, and
-  the manifest's Data Source records it). The builds' service note leaves it out
-  (`clean_road_sources.library_service`).
-- **Next:** the build from it and its comparison row, made and measured on a real
-  export of the layer.
+- **Done (v0.56.0):** the layer refresh reads it as library layer 44 from its own
+  service (`arcgis_refresh.LAYER_SERVICES`; the worker reads that service's layer list
+  too, and the manifest's Data Source records it). The builds' service note leaves it
+  out (`clean_road_sources.library_service`). The work PC's first refresh, 2026-11-22:
+  both layer lists read, the layer matched by name at 204, 24,296 rows (the server's
+  count) in 40 s.
+- **Done: the build and its comparison rows** (`arcgis_report_clean_intersection_mi`,
+  [comparison-engine.md](../comparison-engine.md) §9n has the rules and the measured
+  2026-11-19 numbers). Read first, from that real export: its IDs are the IM tables'
+  INTERSECTION_IDs (18,831 of its 18,839 current rows are live IM intersections); it
+  keeps 5,457 replaced rows with an end date and 2,727 current rows with no attributes;
+  on the 16,028 rows the 2026-11-19 file lists under the major route it agrees with
+  the file on 99% or more of most columns. The leg's lanes column is
+  `Total_Num_Lanes` (99.0% against 2.4% for Pri). On that export the Master
+  Intersection row reads 5,585 differing cells and 87 / 131 one-sided rows, the
+  IM-tables row 3,071 and 94 / 3.
 
 **3. Which data each side came from is stated, not assumed.** A build records the
 feature service its layers were pulled from (the marker sheet's `Layer service`), and a

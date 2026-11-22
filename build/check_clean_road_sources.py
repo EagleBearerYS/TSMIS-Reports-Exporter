@@ -145,9 +145,10 @@ def test_documented_gaps():
                  "InventoryItemStartDate", "InventoryItemEndDate"} <= header
             and "GlobalID" not in header and "Minor_District" not in header)
     text = " ".join(crs.notes_lines("clean_intersection"))
-    c.check("the Intersection notes say which tables the build reads instead",
+    c.check("the Intersection notes say which tables the build reads instead, and "
+            "point to the Master Intersection comparison beside it",
             "Master Intersection" in text and "IM Intersection Detail #151" in text
-            and "with the IM tables only" in text, text)
+            and "the IM tables only" in text and "comparison beside it" in text, text)
     text = " ".join(crs.notes_lines("clean_highway"))
     c.check("the Highway notes give the verdict, the attributes with no column and "
             "where the list and the site's code part",

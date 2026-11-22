@@ -23,10 +23,11 @@ comparison will ask:
   * for Intersection it names one flat "Master Intersection" layer on another
     service (`INTERSECTION_SOURCE`). The site's own code (the 9.1 and the
     11.17 dev captures alike) reads the IM tables of the main service instead,
-    and so does the Intersection build. Since 2026-11-22 the library refreshes
-    the layer itself, from the production copy of that service
-    (`arcgis_refresh.LAYER_SERVICES`), so a build from it can be held to the
-    list the way Highway and Ramp are.
+    and so does the IM-tables Intersection build. Since 2026-11-22 the library
+    refreshes the layer itself, from the production copy of that service
+    (`arcgis_refresh.LAYER_SERVICES`), and a second Intersection build reads it
+    (`arcgis_report_clean_intersection_mi`), held to the list the way Highway
+    and Ramp are (`INTERSECTION`).
 
 The list numbers its layers on a development copy of each service. On the main
 service the numbers are the same in production (the library's own index
@@ -91,8 +92,11 @@ assert len(LAYER_NUMBERS) == len(SERVICE_LAYERS) == 97, "a layer name repeats"
 
 
 def layer_tag(layer):
-    """'SHS Median #124' — a layer with the number the list gives it."""
+    """'SHS Median #124' — a layer with the number the list gives it (Master
+    Intersection with its production number, 204)."""
     number = LAYER_NUMBERS.get(layer)
+    if number is None:
+        number = _OWN_SERVICE_NUMBERS.get(layer)
     return f"{layer} #{number}" if number is not None else layer
 
 
@@ -240,13 +244,62 @@ MASTER_INTERSECTION_HEADER = (
 assert len(MASTER_INTERSECTION_HEADER) == len(set(MASTER_INTERSECTION_HEADER)) == 72
 assert set(INTERSECTION_FIELDS) <= set(MASTER_INTERSECTION_HEADER)
 
-_LISTS = {"clean_highway": HIGHWAY, "clean_ramp": RAMP}
-assert len(HIGHWAY) == 34 and len(RAMP) == 12
+# The production layer's own number on its service (the list's is 0).
+_OWN_SERVICE_NUMBERS = {INTERSECTION_SOURCE: 204}
+
+# The 29 attributes the list found, as the Master Intersection build fills the
+# file: the major leg's block on the row listed under the major route (the
+# minor leg's on the row listed again under a minor state route). Which lanes
+# field is the file's lanes column was measured on the 2026-11-19 export: the
+# leg's Total_Num_Lanes agrees on 99% of rows, Pri and Sec on 2%.
+_MI = INTERSECTION_SOURCE
+_TOTAL = "the file's one lanes column per leg is the leg's total"
+_ONE = ("the file has one {what} column: the minor leg's fills it on the row "
+        "listed under the minor state route")
+_SITE_DATE = ("the site writes the intersection's date of record into this "
+              "column instead (finding TW4)")
+INTERSECTION = (
+    Source("Description", _MI, ("INX_INTERSECTION_NAME",), ""),
+    Source("Intersection_Geometry", _MI, ("INX_DESIGN_CODE",), ""),
+    Source("Intersection_Geometry_Eff_Date", _MI, ("INX_DESIGN_DATE",), ""),
+    Source("Intersection_Control", _MI, ("INX_CONTROL_CODE",), ""),
+    Source("Intersection_Control_Eff_Date", _MI, ("INX_CONTROL_DATE",), ""),
+    Source("Intersection_Lighted_Ind", _MI, ("INX_LIGHTED_IND",), ""),
+    Source("Intersection_Lighted_Eff_Date", _MI, ("INX_LIGHTED_BEGIN_DATE",), ""),
+    Source("Major_Population_Code", _MI, ("INX_POPULATION_GROUP",), ""),
+    Source("Major_Highway_Group", _MI, ("INX_HIGHWAY_GROUP",), ""),
+    Source("Major_Pri_Num_Lanes", _MI, (), _TOTAL),
+    Source("Major_Sec_Num_Lanes", _MI, (), _TOTAL),
+    Source("Major_Total_Num_Lanes", _MI, ("INX_MAIN_LANES_AMT",), ""),
+    Source("Major_Signal_Arm_Ind", _MI, ("INX_MAIN_SIGNAL_MAST_ARM_IND",), ""),
+    Source("Major_Left_Channel", _MI, ("INX_MAIN_LEFT_CHANNEL_CODE",), ""),
+    Source("Major_Right_Channel_Ind", _MI, ("INX_MAIN_RIGHT_CHANNEL_CODE",), ""),
+    Source("Major_N_Distance", _MI, ("INX_MAIN_OVERRIDE_LENGTH_AMT",), ""),
+    Source("Major_FlowCode", _MI, ("INX_MAIN_FLOW_CODE",), ""),
+    Source("Major_Effective_Date", _MI, ("INX_MAIN_BEGIN_DATE",), _SITE_DATE),
+    Source("Minor_Population_Code", _MI, (), _ONE.format(what="population")),
+    Source("Minor_Highway_Group", _MI, (), _ONE.format(what="highway-group")),
+    Source("Minor_Pri_Num_Lanes", _MI, (), _TOTAL),
+    Source("Minor_Sec_Num_Lanes", _MI, (), _TOTAL),
+    Source("Minor_Total_Num_Lanes", _MI, ("INX_CROSS_LANES_AMT",), ""),
+    Source("Minor_Signal_Arm_Ind", _MI, ("INX_CROSS_SIGNAL_MAST_ARM_IND",), ""),
+    Source("Minor_Left_Channel", _MI, ("INX_CROSS_LEFT_CHANNEL_CODE",), ""),
+    Source("Minor_Right_Channel_Ind", _MI, ("INX_CROSS_RIGHT_CHANNEL_CODE",), ""),
+    Source("Minor_N_Distance", _MI, ("INX_CROSS_OVERRIDE_LENGTH_AMT",), ""),
+    Source("Minor_Effective_Date", _MI, ("INX_CROSS_BEGIN_DATE",), _SITE_DATE),
+    Source("Minor_FlowCode", _MI, ("INX_CROSS_FLOW_CODE",), ""),
+)
+assert sorted(src.field for src in INTERSECTION) == sorted(INTERSECTION_FIELDS)
+
+_LISTS = {"clean_highway": HIGHWAY, "clean_ramp": RAMP,
+          "clean_intersection_mi": INTERSECTION}
+assert len(HIGHWAY) == 34 and len(RAMP) == 12 and len(INTERSECTION) == 29
 
 
 def sources(report_key):
-    """The list's attribute rows for a report ('clean_highway' / 'clean_ramp');
-    () for Intersection, whose one source the library does not hold."""
+    """The list's attribute rows for a report ('clean_highway' / 'clean_ramp' /
+    'clean_intersection_mi', the build from Master Intersection); () for the
+    IM-tables Intersection build, which reads another source on purpose."""
     return _LISTS.get(report_key, ())
 
 
@@ -370,6 +423,15 @@ def source_note(service, export_path):
     label = f"{src.upper()} {env}"
     if not service or service == "several services":
         return head + f" The export was taken from the site's {label} source."
+    if service.rstrip("/").lower() == arcgis_refresh.CSMS_SERVICE.lower():
+        return (f"DATA SOURCE: the {INTERSECTION_SOURCE} layer was pulled from "
+                f"{service}, the service the vendor's list names for this file. "
+                f"The export was taken from the site's {label} source, whose "
+                "Clean Road Intersection code reads the IM tables of "
+                f"{arcgis_refresh.SERVICE_DEFAULT} instead of this layer: a "
+                f"difference here can lie in the {INTERSECTION_SOURCE} copy "
+                "rather than in the report, and the comparison against the IM "
+                "tables shows which.")
     is_default = service.rstrip("/").lower() == arcgis_refresh.SERVICE_DEFAULT.lower()
     if src == "ssor" and env == "prod" and is_default:
         return head + (" The export was taken from the site's SSOR prod "
@@ -410,22 +472,37 @@ def notes_lines(report_key, provenance=None):
             f"({layer_tag('IM Intersection Detail')}, "
             f"{layer_tag('IM Intersection Approach Segments')}, "
             f"{layer_tag('IM Intersection Approach Detail')}) and the three "
-            "span layers, and so does this build. The layer library refreshes "
-            f"the {INTERSECTION_SOURCE} layer too, from its own service, but "
-            "this comparison does not read it: it compares the site's file "
-            "with the IM tables only.",
+            "span layers, and so does this build. This comparison holds the "
+            "site's file to what its code reads, the IM tables only; the Clean "
+            f"Road Intersection ({INTERSECTION_SOURCE}) comparison beside it "
+            "holds the same file to the layer the list names.",
         )
     covered = by_column(report_key)
     bad = mismatches(report_key, provenance)
     verdict = (f"all {len(covered)} agree" if not bad else
                f"{len(bad)} DISAGREE — " + "; ".join(bad))
-    lines = [
-        f"SOURCES: {LIST_NAME} gives the layer and field of "
-        f"{len(sources(report_key))} attributes of this file. "
-        f"{len(covered)} file columns are built from them here, each from the "
-        f"layer and field the list names: {verdict}. The table below shows each "
-        "layer with the number the list gives it (#).",
-    ]
+    if report_key == "clean_intersection_mi":
+        lines = [
+            f"SOURCES: this build reads the one layer {LIST_NAME} names for the "
+            f"Intersection file, {layer_tag(INTERSECTION_SOURCE)} of the "
+            "production csms_supporting_prod service (the list links the "
+            f"development copy, where it is layer {INTERSECTION_LIST_NUMBER}). "
+            f"The list gives the field of {len(sources(report_key))} of its 32 "
+            f"attributes; {len(covered)} file columns are built from them here, "
+            f"each from the field the list names: {verdict}. The site's own code "
+            "reads the IM tables of the main service instead, and the Clean Road "
+            "Intersection comparison beside this one holds the same file to "
+            "them: a difference only this comparison shows lies in the "
+            f"{INTERSECTION_SOURCE} copy, not in how the site builds its file.",
+        ]
+    else:
+        lines = [
+            f"SOURCES: {LIST_NAME} gives the layer and field of "
+            f"{len(sources(report_key))} attributes of this file. "
+            f"{len(covered)} file columns are built from them here, each from the "
+            f"layer and field the list names: {verdict}. The table below shows each "
+            "layer with the number the list gives it (#).",
+        ]
     extra = _unplaced_text(report_key)
     if extra:
         lines.append("The list also names attributes the site's file has no "
@@ -463,7 +540,7 @@ def point_table_lines(spec, provenance, report_key, context=None):
     layer field(s) · whether the list covers it · counted or context
     (`context` = the comparison's own context columns)."""
     listed = by_column(report_key)
-    names = sorted(LAYER_NUMBERS, key=len, reverse=True)
+    names = sorted(set(LAYER_NUMBERS) | set(_OWN_SERVICE_NUMBERS), key=len, reverse=True)
     shown_only = set(spec.unsourced if context is None else context)
     out = []
     for col in spec.header:
