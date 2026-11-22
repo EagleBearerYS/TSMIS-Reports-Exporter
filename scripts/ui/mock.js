@@ -941,9 +941,10 @@ function makeMockApi() {
     ["IM Intersection Detail", 38914, _ID], ["IM Intersection Route Table", 160785, []],
     ["Route Direction", 291, []],
     ["Calibration Point", null, []], ["HPMS F System", null, []],
-    ["Posted Speed Limit", null, []],
+    ["Posted Speed Limit", null, []], ["Master Intersection", null, []],
   ];
   const MOCK_AGL_SERVICE = "https://rhapps-prod.dot.ca.gov/server/rest/services/TSMIS/lrs_tsmis/FeatureServer";
+  const MOCK_AGL_CSMS = "https://rhapps-prod.dot.ca.gov/ars/rest/services/TSMIS/csms_supporting_prod/FeatureServer";
   const mockAgl = {
     pro: { python: "C:\\Program Files\\ArcGIS\\Pro\\bin\\Python\\envs\\arcgispro-py3\\python.exe",
            how: "detected", found: true, chosen: "", chosen_missing: false },
@@ -955,8 +956,9 @@ function makeMockApi() {
     last_run: null, last_probe: null,
   };
   // County Code is staged but missing in the preview, so the "missing" row state shows;
-  // so are the three layers added 2026-11-18, as in a library not refreshed since.
-  for (const name of ["County Code", "Calibration Point", "HPMS F System", "Posted Speed Limit"])
+  // so are the layers added 2026-11-18 and 2026-11-22, as in a library not refreshed since.
+  for (const name of ["County Code", "Calibration Point", "HPMS F System", "Posted Speed Limit",
+                      "Master Intersection"])
     Object.assign(mockAgl.layers.find((l) => l.name === name),
                   { present: false, file: null, rows: null, size: null, exported_at: null });
   function mockAglInfo() {
@@ -964,6 +966,7 @@ function makeMockApi() {
     const cur = st.matrix_current;
     return {
       root: "C:\\Tools\\TSMIS Exporter\\data\\arcgis_layers", service: MOCK_AGL_SERVICE,
+      other_services: [{ url: MOCK_AGL_CSMS, layers: ["Master Intersection"] }],
       layers: mockAgl.layers.map((l) => ({ ...l })), present: present.length,
       expected: mockAgl.layers.length,
       missing: mockAgl.layers.filter((l) => !l.present).map((l) => l.name),

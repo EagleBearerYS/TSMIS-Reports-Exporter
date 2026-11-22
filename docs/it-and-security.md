@@ -32,6 +32,7 @@ change. The handout omits the §8 audit P-codes / threat model on purpose.
 | `api.github.com` + GitHub's release-asset CDN (a `*.githubusercontent.com` host, resolved at download time) | The one-click **update check** (launch + when the version chip is clicked) and download | Read the latest release tag; download the update zip + its `.sha256` | None — public repo, read-only |
 | Playwright's Chromium CDN | **Only** the `.bat` first-time setup, or the optional Settings ▸ "Download Built-in Chromium" | Fetch the bundled-browser binary | None |
 | The TSMIS ArcGIS feature service (`rhapps-prod.dot.ca.gov/server/rest/services/TSMIS/lrs_tsmis/FeatureServer`) | **Only** ArcGIS ▸ Layers ▸ Refresh / Check ArcGIS Pro (v0.46.0) | Read the TSMIS layers' attribute tables — made by **ArcGIS Pro's own Python** (a separate process, below), not by the app | The user's ArcGIS Pro sign-in (its own credential store; the app never sees or stores it) |
+| The CSMS supporting feature service on the same host (`rhapps-prod.dot.ca.gov/ars/rest/services/TSMIS/csms_supporting_prod/FeatureServer`, its Master Intersection layer only) | **Only** ArcGIS ▸ Layers ▸ Refresh (2026-11-22) | Read that one layer's attribute table, the same way: ArcGIS Pro's own Python, read-only | The same ArcGIS Pro sign-in (one portal for both services) |
 
 It makes **no other outbound connections** — no analytics, no telemetry, no
 crash-reporting service, no license server. The default `win64` build does not

@@ -699,13 +699,18 @@ Layers first (and the default):
     **Check ArcGIS Pro**: a queued job that starts ArcPy, reads + exports the
     27-row SHS Tolls layer and compares that file with the library's copy (same
     columns? domain labels or codes?). The last check's result stays on the card.
-  - **Layer library card** — the 43 library layers as a table: name with the builds
+  - **Layer library card** — the 44 library layers as a table: name with the builds
     that read it (`arcgis_refresh.layer_users`, from the registry's
     `REQUIRED_LAYERS`), rows, exported (each layer's own time), size, and the last
     refresh's per-layer outcome. Three joined on 2026-11-18, last in the list so the
     first 40 keep their file numbers: Calibration Point, HPMS F System and Posted
-    Speed Limit. No build reads them yet, and a library refreshed before then shows
-    them as missing until its next refresh. Calibration Point is held in part
+    Speed Limit. Master Intersection joined on 2026-11-22 as number 44: the vendor's
+    one source for the Intersection file, read from its own service
+    (`arcgis_refresh.LAYER_SERVICES`: layer 204 of
+    `rhapps-prod.dot.ca.gov/ars/rest/services/TSMIS/csms_supporting_prod/FeatureServer`),
+    and the card's note names that service beside the main one. No build reads these
+    four yet, and a library refreshed before they joined shows them as missing until
+    its next refresh. Calibration Point is held in part
     (`arcgis_refresh.LAYER_FILTERS`): only the postmile network's rows, the ones the
     site's code reads, because the whole layer holds every LRS network in the state.
     Its Data Source in the manifest says so. **Refresh all layers** (confirms first) or tick
@@ -722,7 +727,10 @@ Layers first (and the default):
     credential; the service's layer list, read once with `arcpy.GetSigninToken()`,
     matches layers by NAME, with the 2026-08-19 ids as the fallback; a name the
     service does not list fails that layer, and the message adds what the service
-    calls the layer at that id) and writes it
+    calls the layer at that id). A layer the request gives its own `service` is read
+    from that FeatureServer instead, and that service's layer list is read the first
+    time one of its layers needs it (Master Intersection, on the same host's ARS
+    server, so the one sign-in covers both). The worker writes each layer
     with ArcGIS's **Table To Excel** (field names as headers, coded domains as their
     descriptions — the manual export's dialect). It appends JSON events to a file;
     `arcgis_refresh` checks each finished file (header readable, data rows counted

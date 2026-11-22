@@ -14,7 +14,9 @@ dialect of the manual per-layer exports the clean-road builds were verified on.
 ArcGIS Pro's sign-in supplies the credentials, the same way the vendor's own
 Pro tools reach these services (`arcpy.GetSigninToken`). The service's layer
 list is read once, with that token, so every layer is matched by NAME; the ids
-in the request are only the fallback.
+in the request are only the fallback. A layer the request gives its own
+`service` (Master Intersection, on the CSMS service) is read from that one, and
+that service's layer list is read the first time one of its layers needs it.
 
 Two modes:
   * probe  -- start ArcPy, report the ArcGIS Pro version + sign-in, read one
@@ -141,7 +143,7 @@ def _service_catalog(arcpy, service, emit):
     except Exception:
         token = {}
     if not token.get("token"):
-        emit("catalog", ok=False,
+        emit("catalog", ok=False, service=service,
              error="ArcGIS Pro is not signed in to its active portal")
         return None
     body = urllib.parse.urlencode({"f": "json", "token": token["token"]}).encode()
@@ -154,11 +156,12 @@ def _service_catalog(arcpy, service, emit):
         with urllib.request.urlopen(request, timeout=90) as response:
             data = json.loads(response.read().decode("utf-8"))
     except Exception as e:
-        emit("catalog", ok=False, error=_redact("%s: %s" % (type(e).__name__, e)))
+        emit("catalog", ok=False, service=service,
+             error=_redact("%s: %s" % (type(e).__name__, e)))
         return None
     if not isinstance(data, dict) or data.get("error"):
         err = data.get("error") if isinstance(data, dict) else data
-        emit("catalog", ok=False, error=_redact(err))
+        emit("catalog", ok=False, service=service, error=_redact(err))
         return None
     entries = {}
     for kind in ("layers", "tables"):
@@ -168,7 +171,7 @@ def _service_catalog(arcpy, service, emit):
                                    (int(item["id"]), str(item.get("name"))))
             except (KeyError, TypeError, ValueError):
                 continue
-    emit("catalog", ok=True, count=len(entries))
+    emit("catalog", ok=True, service=service, count=len(entries))
     return entries
 
 
@@ -270,12 +273,16 @@ def _export_one(arcpy, service, layer, index, total, emit):
 
 
 def _export(arcpy, request, catalog, emit):
-    service = request["service"]
+    default = request["service"]
+    catalogs = {default: catalog}
     layers = list(request.get("layers") or [])
     exported = failed = in_a_row = 0
     last_failure = ""
     for i, layer in enumerate(layers, start=1):
-        layer = dict(layer, _catalog=catalog)
+        service = layer.get("service") or default
+        if service not in catalogs:
+            catalogs[service] = _service_catalog(arcpy, service, emit)
+        layer = dict(layer, _catalog=catalogs[service])
         if _export_one(arcpy, service, layer, i, len(layers), emit):
             exported += 1
             in_a_row = 0

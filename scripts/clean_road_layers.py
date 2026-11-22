@@ -39,8 +39,10 @@ INDEX_HEADER = ["Excel File", "ArcGIS Layer or Table", "Rows Exported",
                 "Fields Exported", "ArcGIS Contents Path", "Data Source"]
 
 # The agreed library manifest (docs/planning/cleanroad-highways.md): the 40
-# layers of the first library and the three added 2026-11-18 after the vendor's
-# source list. Tagged by which clean-road file(s) each belongs to: H(ighways),
+# layers of the first library, the three added 2026-11-18 after the vendor's
+# source list, and Master Intersection (2026-11-22), the list's one source for
+# the Intersection file, read from its own service (`arcgis_refresh.
+# LAYER_SERVICES`). Tagged by which clean-road file(s) each belongs to: H(ighways),
 # I(ntersections), R(amps). The GUI status card and the consolidators' missing-
 # layer messages key off this — an .xlsx matching no entry is UNKNOWN (the
 # drop-zone must not accumulate dead weight).
@@ -57,6 +59,7 @@ EXPECTED_LAYERS = {
     "IM Intersection Detail": "I",
     "IM Intersection Point": "I",
     "IM Intersection Route Table": "I",
+    "Master Intersection": "I",
     "Posted Speed Limit": "H",
     "Route Direction": "R",
     "SHS Access Control": "H",

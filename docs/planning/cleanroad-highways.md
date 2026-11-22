@@ -574,8 +574,8 @@ production service the library is refreshed from (`00_INDEX.xlsx` records each o
   service, with a `Major_*` / `Minor_*` field per leg. The site's code reads the IM
   tables of the main service instead (#151, #0, #146, #150 and the three span layers),
   and so does the build, which reproduces the site's file to 3,073 differing cells on
-  16,381 paired rows, 2,548 of them the two begin dates. The library holds no Master
-  Intersection layer, so nothing here reads or checks that source. The list maps the
+  16,381 paired rows, 2,548 of them the two begin dates. Since 2026-11-22 the library
+  refreshes the Master Intersection layer too (below), but no build reads it yet. The list maps the
   two begin dates to the leg's own effective date, which is what the build writes and
   the site does not (TW4).
 
@@ -588,6 +588,40 @@ real export to be wired and measured. Calibration Point is exported in part
 (`LAYER_FILTERS`: `NetworkId = 2`, the postmile network, the rows the site's own query
 asks for), because the layer holds the calibration points of every LRS network in the
 state; the manifest's Data Source states the clause. The work PC owes the first refresh.
+
+**Master Intersection, the list's Intersection source (2026-11-22).**
+
+- **Where it is.** The owner found the production copy on the state network:
+  `https://rhapps-prod.dot.ca.gov/ars/rest/services/TSMIS/csms_supporting_prod/FeatureServer/204`.
+  The list links the development copy, where the same layer is number 0. Its 72 fields
+  are 13 for the intersection, 29 `Major_*` and 27 `Minor_*` (each leg with its own
+  route, postmile, AR route and measure; no `Minor_District`), the two inventory dates
+  and `OBJECTID`. It is a point layer, not versioned, with no editor tracking and no
+  GlobalID. Every field the list found is one of them, and none of the three it could
+  not find is (`clean_road_sources.MASTER_INTERSECTION_HEADER`, held by
+  `check_clean_road_sources`).
+- **How it is made.** The state's own `Update_Reports` toolbox, kept in the corpus with
+  the example ArcGIS projects, has two steps named "Update Master Intersection". Step
+  3.1 recalculates the route concurrencies from the LRS AllRoads network. Step 3.3
+  appends a per-user `MASTER_INTERSECTION` build into the shared `MASTER_INTERSECTION`
+  table; step 3.2 is not in that toolbox. So the layer is a copy that someone refreshes
+  by running tools, and it can lag the IM tables the site's code reads.
+- **The site still reads the IM tables** (the 11.17 capture mentions neither the service
+  nor the layer).
+- **The owner's decision (2026-11-22):** *"Beside it and label it, technically since
+  they are claiming that this is what they use we want to default to this when we bring
+  up problems to them"*. So a second Intersection comparison, built from Master
+  Intersection, sits beside the IM one, each labeled by its source. The Master
+  Intersection one is the default for anything raised with the vendor: first on the
+  matrix, the plain `clean_intersection_vs_ArcGIS` name, the lite copy that is sent. The
+  IM one stays as the cross-check of what the site's code reads. A difference that only
+  the Master Intersection comparison shows lies in that copy, not in the report.
+- **Done:** the layer refresh reads it as library layer 44 from its own service
+  (`arcgis_refresh.LAYER_SERVICES`; the worker reads that service's layer list too, and
+  the manifest's Data Source records it). The builds' service note leaves it out
+  (`clean_road_sources.library_service`).
+- **Next:** the build from it and its comparison row, made and measured on a real
+  export of the layer.
 
 **3. Which data each side came from is stated, not assumed.** A build records the
 feature service its layers were pulled from (the marker sheet's `Layer service`), and a

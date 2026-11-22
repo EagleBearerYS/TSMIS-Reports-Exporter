@@ -239,8 +239,10 @@ function renderArcgisLayerLibrary(info) {
       : (oldest.slice(0, 10) === newest.slice(0, 10) ? `Layers exported ${oldest}.`
         : `Layers exported between ${oldest} and ${newest} — a build reads as of its oldest layer.`);
   }
-  hint += ` Refresh exports from ${info.service} with ArcGIS Pro and swaps each layer in as it `
-    + "finishes; the ArcGIS reports built from the old layers then read out of date — "
+  const others = (info.other_services || [])
+    .map((s) => ` (${(s.layers || []).join(", ")} from ${s.url})`).join("");
+  hint += ` Refresh exports from ${info.service}${others} with ArcGIS Pro and swaps each layer `
+    + "in as it finishes; the ArcGIS reports built from the old layers then read out of date — "
     + "refresh them on ArcGIS reports.";
   $("agLayersHint").textContent = hint;
   const foot = [];
@@ -730,10 +732,10 @@ function bindArcgis() {
         + "through it. If it is installed somewhere unusual, use “Choose python.exe…” above.");
       return;
     }
-    const n = (AGL && AGL.expected) || 43;
+    const n = (AGL && AGL.expected) || 44;
     const ok = await showConfirm({
       title: `Refresh all ${n} layers?`,
-      message: "ArcGIS Pro exports every TSMIS layer from the service and the app swaps each one "
+      message: "ArcGIS Pro exports every TSMIS layer from its service and the app swaps each one "
         + "in as it finishes. The whole library takes about an hour and a half — County Code "
         + "and City alone take over an hour of it. The ArcGIS reports built from the current "
         + "layers read out of date afterwards; refresh them on ArcGIS reports.",
