@@ -12,7 +12,16 @@ touching.
 
 ## Current status and work
 
-**Current release: v0.55.0 (2026-11-20)** — **the comparison matrices write a lite
+**Current release: v0.56.0 (2026-11-22)** — **the layer library refreshes the Master
+Intersection layer**, the one source the vendor's list names for the Clean Road
+Intersection file, as library layer 44 from its own service (layer 204 of
+`csms_supporting_prod`; `arcgis_refresh.LAYER_SERVICES`). No build reads it yet: the
+Intersection comparison built from it comes next, beside the IM-tables one, as the
+default for problems raised with the vendor
+([planning/cleanroad-highways.md](planning/cleanroad-highways.md), "Master
+Intersection, the list's Intersection source").
+
+v0.55.0 (2026-11-20): **the comparison matrices write a lite
 copy of each comparison, the version the owner delivers.** `lite_copy.py` makes
 `<name> (lite).xlsx` from the finished values workbook: no Spot Check, Notes or
 Provenance sheet, and a Summary cut to its title, counts and differences-by-field

@@ -3,6 +3,28 @@
 All notable changes to TSMIS Reports Exporter, newest first. Each GitHub
 release shows only its own section (see `build/gen_release_notes.py`).
 
+## v0.56.0 — 2026-11-22
+
+The ArcGIS layer library can refresh the Master Intersection layer: the one source the
+vendor's source list names for the Clean Road Intersection file.
+
+**After updating**
+
+On ArcGIS ▸ Layers, tick **Master Intersection** and click **Refresh selected**. It is
+the last layer in the list.
+
+**Master Intersection**
+
+- **Where it comes from.** Layer 204 of the `csms_supporting_prod` service, on the same
+  ArcGIS server as the other layers. The vendor's list links the development copy,
+  where the same layer is number 0.
+- **One sign-in.** ArcGIS Pro reads it with the sign-in it already uses for the other
+  layers. The Layers tab names both services.
+- **Layer 44.** It joins the library last, so every other layer keeps its file name. A
+  library refreshed before this version shows it as missing until it is refreshed.
+- **No build reads it yet.** The Clean Road Intersection comparison built from it comes
+  next, beside the current one, which reads the IM tables the site's code reads.
+
 ## v0.55.0 — 2026-11-20
 
 The comparison matrices can write a lite copy of every comparison they build: the
