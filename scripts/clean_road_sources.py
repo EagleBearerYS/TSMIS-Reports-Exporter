@@ -21,15 +21,18 @@ comparison will ask:
   * it names SHS Tolls for a toll type the site's code does not read, and SHS
     Ramp's inventory start date for a create date the site leaves blank;
   * for Intersection it names one flat "Master Intersection" layer on another
-    service. The site's own code (the 9.1 and the 11.17 dev captures alike)
-    reads the IM tables of the main service instead, and so do the builds —
-    the library holds no Master Intersection layer, so that source is neither
-    read nor checked here (`INTERSECTION_SOURCE`).
+    service (`INTERSECTION_SOURCE`). The site's own code (the 9.1 and the
+    11.17 dev captures alike) reads the IM tables of the main service instead,
+    and so does the Intersection build. Since 2026-11-22 the library refreshes
+    the layer itself, from the production copy of that service
+    (`arcgis_refresh.LAYER_SERVICES`), so a build from it can be held to the
+    list the way Highway and Ramp are.
 
-The list numbers its layers on a development copy of the service; the numbers
-are the same on the production service the library is refreshed from (the
-library's own index records each layer's number, and the check holds the two
-together). Import-light: no openpyxl, no build modules at import time.
+The list numbers its layers on a development copy of each service. On the main
+service the numbers are the same in production (the library's own index
+records each layer's number, and the check holds the two together); on the
+Master Intersection's service they are not: the list's layer 0 is layer 204 in
+production. Import-light: no openpyxl, no build modules at import time.
 """
 import re
 from collections import namedtuple
@@ -187,6 +190,9 @@ RAMP = (
 # another service, with a Major_* / Minor_* field per leg. Field names as the
 # list gives them; the last three are the ones it could not find.
 INTERSECTION_SOURCE = "Master Intersection"
+# The layer's number on the list's development copy of the service; the
+# production copy the library reads numbers it 204 (`arcgis_refresh`).
+INTERSECTION_LIST_NUMBER = 0
 INTERSECTION_FIELDS = (
     "Description", "Intersection_Geometry", "Intersection_Geometry_Eff_Date",
     "Intersection_Control", "Intersection_Control_Eff_Date",
@@ -203,6 +209,36 @@ INTERSECTION_FIELDS = (
 INTERSECTION_NOT_FOUND = ("Major_Left_Channel_Ind", "Minor_Left_Channel_Ind",
                           "Record Create Date")
 assert len(INTERSECTION_FIELDS) + len(INTERSECTION_NOT_FOUND) == 32
+
+# The production layer's fields in the service's own order, from the owner's
+# prints of its REST pages on 2026-11-22 (the corpus keeps them under
+# reference/): 13 for the intersection, 29 for the major leg and 27 for the
+# minor one (no Minor_District; one Minor_AADT where the major leg has a max
+# and an average), the two inventory dates and OBJECTID. A point layer with no
+# editor tracking and no GlobalID. Every field the list found is here.
+_LEG_TAIL = ("Signal_Arm_Ind", "Left_Channel", "Right_Channel_Ind", "N_Distance",
+             "PMRouteID", "RouteNum", "RouteSuffix", "Alignment", "PMPrefix",
+             "PMSuffix", "PMMeasure")
+MASTER_INTERSECTION_HEADER = (
+    "Master_Intersection_ID", "Date_Of_Record", "Intersection_Geometry",
+    "Intersection_Geometry_Eff_Date", "Intersection_Control",
+    "Intersection_Control_Eff_Date", "Intersection_Lighted_Ind",
+    "Intersection_Lighted_Eff_Date", "Description", "Number_Approaches",
+    "Number_Legs", "Ramp_Terminal_Ind", "FacilityTypeID",
+    *(f"Major_{f}" for f in (
+        "Effective_Date", "ARRouteID", "ARMeasure", "StreetName", "District",
+        "County", "City", "FlowCode", "Pri_Num_Lanes", "Sec_Num_Lanes",
+        "Total_Num_Lanes", "Ownership", "Functional_Class", "Population_Code",
+        "Max_AADT", "Avg_AADT", "AADT_YEAR", "Highway_Group") + _LEG_TAIL),
+    *(f"Minor_{f}" for f in (
+        "Effective_Date", "ARRouteID", "ARMeasure", "StreetName", "County",
+        "City", "FlowCode", "Pri_Num_Lanes", "Sec_Num_Lanes", "Total_Num_Lanes",
+        "Ownership", "Functional_Class", "Population_Code", "AADT", "AADT_YEAR",
+        "Highway_Group") + _LEG_TAIL),
+    "InventoryItemStartDate", "InventoryItemEndDate", "OBJECTID",
+)
+assert len(MASTER_INTERSECTION_HEADER) == len(set(MASTER_INTERSECTION_HEADER)) == 72
+assert set(INTERSECTION_FIELDS) <= set(MASTER_INTERSECTION_HEADER)
 
 _LISTS = {"clean_highway": HIGHWAY, "clean_ramp": RAMP}
 assert len(HIGHWAY) == 34 and len(RAMP) == 12
@@ -280,10 +316,20 @@ def service_of(source):
     return m.group(1) if m else ""
 
 
-def library_service(index):
+def library_service(index, layers=None):
     """The one service a library's layers were pulled from, "" for an empty or
-    unrecorded index, and 'several services' when its layers disagree."""
-    found = {service_of(row.get("source")) for row in (index or {}).values()}
+    unrecorded index, and 'several services' when its layers disagree.
+    `layers` narrows it to the layers a build reads; by default the layers
+    the refresh reads from a service of their own (Master Intersection) are
+    left out, since each build reads the layers of one service."""
+    if layers is None:
+        import arcgis_refresh
+        rows = [row for name, row in (index or {}).items()
+                if name not in arcgis_refresh.LAYER_SERVICES]
+    else:
+        wanted = set(layers)
+        rows = [row for name, row in (index or {}).items() if name in wanted]
+    found = {service_of(row.get("source")) for row in rows}
     found.discard("")
     if not found:
         return ""
@@ -364,9 +410,10 @@ def notes_lines(report_key, provenance=None):
             f"({layer_tag('IM Intersection Detail')}, "
             f"{layer_tag('IM Intersection Approach Segments')}, "
             f"{layer_tag('IM Intersection Approach Detail')}) and the three "
-            "span layers, and so does this build. The layer library holds no "
-            f"{INTERSECTION_SOURCE} layer, so this comparison says nothing "
-            "about it.",
+            "span layers, and so does this build. The layer library refreshes "
+            f"the {INTERSECTION_SOURCE} layer too, from its own service, but "
+            "this comparison does not read it: it compares the site's file "
+            "with the IM tables only.",
         )
     covered = by_column(report_key)
     bad = mismatches(report_key, provenance)

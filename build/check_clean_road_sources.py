@@ -9,8 +9,9 @@ another layer or field without the suite saying so:
     field the list names — and a build that declares another source is caught;
   * every layer the library refreshes carries the number the list gives it, and
     every layer a Clean Road build requires is on the list;
-  * the one list layer the library does not hold, the attributes the file has no
-    column for, and the Intersection source the site's code does not read are
+  * the attributes the file has no column for, and the Intersection source the
+    site's code does not read (the library refreshes it from its own service
+    since 2026-11-22, and every field the list found is one of its fields) are
     exactly the ones the module documents — a change in any of them is a
     decision, not a drift;
   * the data-source line a comparison prints: the layers' feature service beside
@@ -81,9 +82,17 @@ def test_layers():
     print("the layers:")
     off = [(name, number, crs.LAYER_NUMBERS.get(name))
            for name, number in arcgis_refresh.LIBRARY_LAYERS
-           if crs.LAYER_NUMBERS.get(name) != number]
-    c.check("every layer the library refreshes carries the number the list gives it",
-            off == [], off)
+           if name not in arcgis_refresh.LAYER_SERVICES
+           and crs.LAYER_NUMBERS.get(name) != number]
+    c.check("every layer the library refreshes from the main service carries the number "
+            "the list gives it", off == [], off)
+    c.check("Master Intersection is refreshed from its own service, where production "
+            "numbers it 204 (the list's development copy numbers it 0)",
+            arcgis_refresh.LAYER_SERVICES.get(crs.INTERSECTION_SOURCE)
+            == arcgis_refresh.CSMS_SERVICE
+            and arcgis_refresh.LAYER_IDS[crs.INTERSECTION_SOURCE] == 204
+            and crs.INTERSECTION_LIST_NUMBER == 0
+            and crs.INTERSECTION_SOURCE not in crs.LAYER_NUMBERS)
     required = (set(cch.REQUIRED_LAYERS) | set(acri.REQUIRED_LAYERS)
                 | set(acrr.REQUIRED_LAYERS))
     c.check("every layer a Clean Road build requires is on the list",
@@ -117,16 +126,28 @@ def test_documented_gaps():
     c.check("Ramp: four attributes with no column",
             [s.field for s in crs.unplaced("clean_ramp")]
             == ["Ramp_Name", "Side_of_Hwy", "Ramp_Length", "Ramp_Num_Lanes"])
-    c.check("Intersection: one source the library does not hold, 29 fields found and "
-            "3 the list could not find",
-            crs.INTERSECTION_SOURCE not in crl.EXPECTED_LAYERS
-            and crs.INTERSECTION_SOURCE not in crs.LAYER_NUMBERS
+    c.check("Intersection: one source, now a library layer, 29 fields found and 3 the "
+            "list could not find",
+            crs.INTERSECTION_SOURCE in crl.EXPECTED_LAYERS
+            and crl.EXPECTED_LAYERS[crs.INTERSECTION_SOURCE] == "I"
             and len(crs.INTERSECTION_FIELDS) == 29
             and len(crs.INTERSECTION_NOT_FOUND) == 3)
+    header = set(crs.MASTER_INTERSECTION_HEADER)
+    c.check("every field the list found is a field of the production layer, and none "
+            "of the three it could not find is",
+            set(crs.INTERSECTION_FIELDS) <= header
+            and not header & set(crs.INTERSECTION_NOT_FOUND),
+            (set(crs.INTERSECTION_FIELDS) - header, header & set(crs.INTERSECTION_NOT_FOUND)))
+    c.check("the production layer: 72 fields, both legs with their own route and "
+            "postmile, the inventory dates, no GlobalID",
+            len(crs.MASTER_INTERSECTION_HEADER) == 72
+            and {"Major_PMMeasure", "Minor_PMMeasure", "Major_ARRouteID",
+                 "InventoryItemStartDate", "InventoryItemEndDate"} <= header
+            and "GlobalID" not in header and "Minor_District" not in header)
     text = " ".join(crs.notes_lines("clean_intersection"))
     c.check("the Intersection notes say which tables the build reads instead",
             "Master Intersection" in text and "IM Intersection Detail #151" in text
-            and "says nothing about it" in text, text)
+            and "with the IM tables only" in text, text)
     text = " ".join(crs.notes_lines("clean_highway"))
     c.check("the Highway notes give the verdict, the attributes with no column and "
             "where the list and the site's code part",
@@ -175,6 +196,15 @@ def test_service():
             and crs.library_service({}) == ""
             and crs.library_service(dict(index, X={"source":
                                                    "https://other/FeatureServer/1"}))
+            == "several services")
+    csms = arcgis_refresh.CSMS_SERVICE
+    with_mi = dict(index, **{"Master Intersection": {"source": f"{csms}/204"}})
+    c.check("Master Intersection's own service never makes the library read as mixed; "
+            "asked for it alone, its service is its own",
+            crs.library_service(with_mi) == default
+            and crs.library_service(with_mi, ["Master Intersection"]) == csms
+            and crs.library_service(with_mi, ["SHS Tolls", "City"]) == default
+            and crs.library_service(with_mi, ["SHS Tolls", "Master Intersection"])
             == "several services")
     name = "clean_road_highway_consolidated 2026-11-06 ssor-prod dev-site.xlsx"
     c.check("an export's file name says the data source it was taken from",

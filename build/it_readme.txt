@@ -64,7 +64,9 @@ NETWORK CONNECTIONS IT MAKES
   5. (Only on request, and only on a PC with ArcGIS Pro) The Caltrans ArcGIS
      server (rhapps-prod.dot.ca.gov) -- when someone uses the ArcGIS tab's
      layer refresh. The app starts ArcGIS Pro's own Python, which reads the
-     TSMIS map layers from that server with ArcGIS Pro's own sign-in. See
+     TSMIS map layers from that server with ArcGIS Pro's own sign-in: the
+     lrs_tsmis service, and the Master Intersection layer of the
+     csms_supporting_prod service on the same host. Read only. See
      OTHER PROGRAMS IT STARTS.
 
   There are no other destinations. The tool honors the system proxy and works

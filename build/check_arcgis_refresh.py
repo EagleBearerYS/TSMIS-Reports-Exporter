@@ -79,18 +79,28 @@ def _refresh(spec, layers, **kw):
 
 # --------------------------------------------------------------------------- #
 def test_contract():
-    print("the library contract — 43 layers, the worker script, its Python floor:")
+    print("the library contract — 44 layers, the worker script, its Python floor:")
     names = [n for n, _id in ar.LIBRARY_LAYERS]
     check("LIBRARY_LAYERS is exactly clean_road_layers.EXPECTED_LAYERS",
-          sorted(names) == sorted(crl.EXPECTED_LAYERS) and len(names) == 43)
-    check("the layers added 2026-11-18 come last, so the first 40 keep their file numbers",
-          names[40:] == ["Calibration Point", "HPMS F System", "Posted Speed Limit"]
+          sorted(names) == sorted(crl.EXPECTED_LAYERS) and len(names) == 44)
+    check("the layers added 2026-11-18 come after the first 40, so those keep their "
+          "file numbers",
+          names[40:43] == ["Calibration Point", "HPMS F System", "Posted Speed Limit"]
           and ar.LAYER_ORDER["Route Direction"] == 40
-          and [ar.LAYER_IDS[n] for n in names[40:]] == [1, 91, 107])
+          and [ar.LAYER_IDS[n] for n in names[40:43]] == [1, 91, 107])
+    check("Master Intersection (2026-11-22) comes last, layer 204 of its own service",
+          names[43] == "Master Intersection" and ar.LAYER_ORDER["Master Intersection"] == 44
+          and ar.LAYER_IDS["Master Intersection"] == 204
+          and ar.LAYER_SERVICES == {"Master Intersection": ar.CSMS_SERVICE})
+    check("the second service is on the same host as the first (one ArcGIS Pro sign-in)",
+          ar.CSMS_SERVICE.split("/")[2] == ar.SERVICE_DEFAULT.split("/")[2]
+          and ar.CSMS_SERVICE.endswith("/csms_supporting_prod/FeatureServer"))
     check("every partly exported layer is a library layer",
           set(ar.LAYER_FILTERS) <= set(names) and all(ar.LAYER_FILTERS.values()))
-    ids = [i for _n, i in ar.LIBRARY_LAYERS]
-    check("every fallback layer id is unique", len(set(ids)) == len(ids))
+    check("every layer read from another service is a library layer",
+          set(ar.LAYER_SERVICES) <= set(names))
+    ids = [(ar.LAYER_SERVICES.get(n, ar.SERVICE_DEFAULT), i) for n, i in ar.LIBRARY_LAYERS]
+    check("every fallback layer id is unique on its service", len(set(ids)) == len(ids))
     check("the probe layer is a library layer", ar.PROBE_LAYER in ar.LAYER_IDS)
     script = arcgis_pro.worker_script()
     check("the worker script ships beside the modules", script.is_file(), str(script))
@@ -213,6 +223,68 @@ def test_catalog_by_name():
         check("no log line carries the token", not any("fake-token" in m for m in logs))
         check("the manifest records the URL the layer was read from",
               crl.read_index(lib)["SHS Tolls"]["source"].endswith("/FeatureServer/999"))
+
+
+def test_other_service():
+    print("a layer of another service is read from that service, matched by its own list:")
+
+    class _Resp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    main_json = {"layers": [{"id": 138, "name": "SHS Tolls"}], "tables": []}
+    # As the list's development copy numbers it: the name finds it anyway.
+    csms_json = {"layers": [{"id": 0, "name": "Master Intersection"},
+                            {"id": 7, "name": "Something Else"}], "tables": []}
+    seen = []
+
+    def fake_urlopen(req, timeout=None):
+        seen.append((req.full_url, req.data.decode()))
+        body = csms_json if "csms_supporting_prod" in req.full_url else main_json
+        return _Resp(json.dumps(body).encode())
+
+    with _library() as lib, _patch(urllib.request, "urlopen", fake_urlopen):
+        spec = ast_.sample_spec(signed_in=True)
+        spec["layers"]["0"] = spec["layers"].pop("204")       # moved, as on dev
+        res, by, logs = _refresh(spec, ["SHS Tolls", "Master Intersection"])
+        mi = by["Master Intersection"]
+        check("both layers export", res.status == "ok" and mi["status"] == "exported"
+              and mi.get("rows") == 12, f"{res.status}: {mi}")
+        urls = [u for u, _b in seen]
+        check("each service's own layer list is read, once",
+              urls.count(ar.SERVICE_DEFAULT) == 1 and urls.count(ar.CSMS_SERVICE) == 1, urls)
+        check("the token goes in the POST body for both, never a URL",
+              all("token=" not in u and "token=" in b for u, b in seen))
+        check("the manifest records the service and number the layer was read from",
+              crl.read_index(lib)["Master Intersection"]["source"]
+              == f"{ar.CSMS_SERVICE}/0", crl.read_index(lib)["Master Intersection"]["source"])
+        check("the log names the second service",
+              any(f"and Master Intersection from {ar.CSMS_SERVICE}" in m for m in logs)
+              and any(f"Read {ar.CSMS_SERVICE}'s layer list" in m for m in logs), logs[:6])
+        import clean_road_sources as crs
+        index = crl.read_index(lib)
+        check("the builds still read one service; Master Intersection has its own",
+              crs.library_service(index) == ar.SERVICE_DEFAULT
+              and crs.library_service(index, ["Master Intersection"]) == ar.CSMS_SERVICE,
+              (crs.library_service(index), crs.library_service(index, ["Master Intersection"])))
+    with _library():
+        spec = ast_.sample_spec()
+        spec["layers"]["204"]["service"] = ar.SERVICE_DEFAULT  # not where the app looks
+        _res, by, _logs = _refresh(spec, ["Master Intersection"])
+        check("a layer asked of the wrong service is not found there",
+              by["Master Intersection"]["status"] == "failed"
+              and "000732" in (by["Master Intersection"].get("message") or ""),
+              str(by["Master Intersection"]))
+    status = None
+    with _library():
+        status = ar.library_status()
+    check("the Layers tab is told which layers come from which other service",
+          status and status["other_services"] == [{"url": ar.CSMS_SERVICE,
+                                                   "layers": ["Master Intersection"]}]
+          and status["expected"] == 44, str(status and status.get("other_services")))
 
 
 def test_partial_layer():
@@ -539,6 +611,7 @@ def main():
     test_truncated_export_is_refused()
     test_cancel()
     test_catalog_by_name()
+    test_other_service()
     test_partial_layer()
     test_index_write_failure_rolls_back()
     test_not_signed_in_hint()

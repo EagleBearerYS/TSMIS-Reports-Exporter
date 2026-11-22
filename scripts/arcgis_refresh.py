@@ -49,11 +49,20 @@ log = logging.getLogger("tsmis.arcgis_refresh")
 SERVICE_DEFAULT = ("https://rhapps-prod.dot.ca.gov/server/rest/services/"
                    "TSMIS/lrs_tsmis/FeatureServer")
 
+# The production copy of the service the vendor's source list names for the
+# Intersection file (it links the development copy, `csms_supporting_dev`,
+# where the layer is number 0). Found on the state network by the owner on
+# 2026-11-22: the Master Intersection layer is number 204 here, on the ARS
+# server of the same host, so ArcGIS Pro's one sign-in reads both services.
+CSMS_SERVICE = ("https://rhapps-prod.dot.ca.gov/ars/rest/services/"
+                "TSMIS/csms_supporting_prod/FeatureServer")
+
 # The layer library in its file order (the NN_ prefix of a fresh library),
-# with each layer's id on the default service: the first 40 as the 2026-08-19
-# manual export recorded them, the last three as the vendor's source list of
-# 2026-11-16 numbers them (`clean_road_sources`). The worker matches layers by
-# NAME from the service's own layer list when it can; these ids are the
+# with each layer's id on its service: the first 40 as the 2026-08-19 manual
+# export recorded them, the next three as the vendor's source list of
+# 2026-11-16 numbers them (`clean_road_sources`), and Master Intersection as
+# its own service numbers it (`LAYER_SERVICES`). The worker matches layers by
+# NAME from each service's own layer list when it can; these ids are the
 # fallback. Same names as clean_road_layers.EXPECTED_LAYERS (asserted by
 # check_arcgis_refresh).
 LIBRARY_LAYERS = (
@@ -84,9 +93,17 @@ LIBRARY_LAYERS = (
     # 40 files of an existing library keep their numbers.
     ("Calibration Point", 1), ("HPMS F System", 91),
     ("Posted Speed Limit", 107),
+    # Added 2026-11-22: the one source the vendor's list names for the
+    # Intersection file, on another service (`LAYER_SERVICES`). Last, so every
+    # earlier file keeps its number.
+    ("Master Intersection", 204),
 )
 LAYER_IDS = dict(LIBRARY_LAYERS)
 LAYER_ORDER = {name: i for i, (name, _id) in enumerate(LIBRARY_LAYERS, start=1)}
+
+# A layer read from a service other than the one a refresh runs against:
+# {layer: its FeatureServer}. Every other layer comes from the run's service.
+LAYER_SERVICES = {"Master Intersection": CSMS_SERVICE}
 
 # A layer the library holds IN PART: {layer: the where clause it is exported
 # with}. Calibration Point carries the calibration points of every LRS network
@@ -269,12 +286,15 @@ class _Refresher:
             self.facts.update({k: v for k, v in ev.items() if k not in ("type", "t")})
             self.events.on_log(_runtime_line(self.facts))
         elif kind == "catalog":
-            self.facts["catalog"] = bool(ev.get("ok"))
+            other = ev.get("service") and ev.get("service") != self.service
+            if not other:
+                self.facts["catalog"] = bool(ev.get("ok"))
+            whose = f"{ev.get('service')}'s" if other else "the service's"
             if ev.get("ok"):
-                self.events.on_log(f"  Read the service's layer list ({ev.get('count')} "
+                self.events.on_log(f"  Read {whose} layer list ({ev.get('count')} "
                                    "layers and tables) — layers are matched by name.")
             else:
-                self.events.on_log("  Couldn't read the service's layer list "
+                self.events.on_log(f"  Couldn't read {whose} layer list "
                                    f"({ev.get('error')}) — using the known layer ids.")
         elif kind == "layer_start":
             self.current = ev.get("name")
@@ -458,12 +478,26 @@ def resolve_layers(layers):
 
 def _layer_request(name, inventory):
     """One layer of the worker's request: its name, fallback id and staging
-    file, and the where clause of a layer the library holds in part."""
+    file, the where clause of a layer the library holds in part, and the
+    service of a layer read from another one."""
     req = {"name": name, "id": LAYER_IDS[name],
            "out": str(staging_dir() / _target_name(name, inventory))}
     if name in LAYER_FILTERS:
         req["where"] = LAYER_FILTERS[name]
+    if name in LAYER_SERVICES:
+        req["service"] = LAYER_SERVICES[name]
     return req
+
+
+def _other_services_line(names, service):
+    """' and Master Intersection from <its service>' for the layers of a run
+    that come from another service, "" when none do."""
+    other = {}
+    for name in names:
+        url = LAYER_SERVICES.get(name)
+        if url and url != service:
+            other.setdefault(url, []).append(name)
+    return "".join(f" and {', '.join(layers)} from {url}" for url, layers in other.items())
 
 
 def no_python_message():
@@ -514,7 +548,8 @@ def refresh(layers=None, events=None, cancel_event=None, on_progress=None,
     run = _Refresher(names, events, on_progress, service)
     run.record()
     events.on_log("=" * 60)
-    events.on_log(f"Refreshing {len(names)} ArcGIS layer(s) from {service}")
+    events.on_log(f"Refreshing {len(names)} ArcGIS layer(s) from {service}"
+                  + _other_services_line(names, service))
     events.on_log(f"ArcGIS Pro's Python: {python}")
     events.on_log("=" * 60)
     run.progress("Starting ArcGIS Pro…")
@@ -754,7 +789,12 @@ def library_status():
             "source": entry.get("source") or None,
             "used_by": users.get(name, []),
             "last": outcomes.get(name)})
+    other = {}
+    for name, url in LAYER_SERVICES.items():
+        other.setdefault(url, []).append(name)
     return {"root": str(lib), "service": SERVICE_DEFAULT, "layers": rows,
+            "other_services": [{"url": url, "layers": names}
+                               for url, names in other.items()],
             "present": len(inv["present"]), "expected": len(LIBRARY_LAYERS),
             "missing": inv["missing"], "unknown": inv["unknown"],
             "index_present": inv["index"] is not None, "size": total_size,

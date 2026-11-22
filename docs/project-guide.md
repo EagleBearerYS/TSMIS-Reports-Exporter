@@ -161,7 +161,7 @@ layer and field the build reads; the counts live in the workbook's sidecar.
 
 **Clean Road (v0.29.0) builds the HIGHWAY clean-road file**: our
 own CA HIGHWAYS table from the owner's per-layer ArcGIS exports in
-`arcgis_layers/` (the 43-layer library; county+PM overlay as-of the TSN extract's own
+`arcgis_layers/` (the 44-layer library; county+PM overlay as-of the TSN extract's own
 date; per-column Provenance colour-coded by tier), compared vs the TSN extract in both
 flavors with every column indexed to its source layer and the 25 context columns
 tinted grey in the values sheet (v0.32.0). **`chc.HEADER` is the TSN extract's own

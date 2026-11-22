@@ -1572,7 +1572,8 @@ comparisons can never key a record differently; only format reconciliations appl
   source list of 2026-11-16 as data. Each comparison's Notes say how the build's columns
   sit against it (Highway 29 of 29 columns from the listed layer and field, Ramp 9 of 9;
   Intersection reads the IM tables the site's code reads, not the `Master Intersection`
-  layer the list names, which the library does not hold), show each layer with the
+  layer the list names; since 2026-11-22 the library refreshes that layer from its own
+  service, but this comparison does not read it), show each layer with the
   list's number, and print the feature service the layers were pulled from beside the
   data source the export's file name records. An ARS prod export is described as the
   same data up to a day behind the layers (ARS takes up to 24 hours to catch up with
