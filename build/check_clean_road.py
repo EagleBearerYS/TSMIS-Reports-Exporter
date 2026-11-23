@@ -25,7 +25,7 @@ import json
 import sys
 import tempfile
 import textwrap
-from datetime import datetime
+from datetime import date, datetime, time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -358,6 +358,11 @@ def test_dialects_and_algebra():
     check("serial of iso text", crl.to_serial("2025-09-08") == 45908.0)
     check("serial of number", crl.to_serial(45908) == 45908.0)
     check("serial of dot", crl.to_serial(".") is None)
+    check("serial of Excel's day 0, which openpyxl reads as a bare time",
+          crl.to_serial(time(0, 0)) == 0.0
+          and crl.serial_to_date(crl.to_serial(time(0, 0))) == date(1899, 12, 30))
+    check("as-of: an LRS start on day 0 is live (it was read as no date)",
+          crl.is_asof(crl.to_serial(time(0, 0)), None, 45908.0))
     check("as-of open current", crl.is_asof(45000.0, None, 45908.0))
     check("as-of from-boundary live", crl.is_asof(45908.0, None, 45908.0))
     check("as-of to-boundary dead", not crl.is_asof(45000.0, 45908.0, 45908.0))

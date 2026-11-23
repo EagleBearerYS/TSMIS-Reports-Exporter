@@ -1602,15 +1602,36 @@ comparisons can never key a record differently; only format reconciliations appl
   build's marker records its own report key, so it never stands as an IM-tables build,
   and the layer's own service, so the data-source line names it. **Measured on the
   2026-11-19 ars-prod dev-site export** (both builds as of 2026-11-19, the 11-19 IM
-  layers and the 11-22 Master Intersection export): 16,253 paired, 87 / 131 one-sided,
-  5,585 differing cells; the IM-tables row on the same export 16,381 paired, 94 / 3,
-  3,071 cells. Of the 5,585: the two begin dates 1,991 + 700 (the site's TW4, as on the
-  IM row), highway group 854 and population 588 (571 and 492 of them blank in the
-  layer, 276 and 90 different codes), about a hundred per leg column (mostly a blank on
-  one side), 33 crossing routes the layer leaves blank, 6 dates of record. The layer
-  lacks 98 of the file's intersections (95 not in it at all) and holds 85 current ones
-  the file does not list (`check_master_intersection` holds the rules on synthetic
-  rows).
+  layers and the 11-22 Master Intersection export; v0.57.1): 16,256 paired, 87 / 128
+  one-sided, 5,585 differing cells; the IM-tables row on the same export 16,384 paired,
+  94 / 0, 3,071 cells. Of the 5,585: the two begin dates 1,991 + 700 (the site's TW4,
+  as on the IM row), highway group 854 and population 588 (571 and 492 of them blank in
+  the layer, 276 and 90 different codes), about a hundred per leg column (mostly a blank
+  on one side), 33 crossing routes the layer leaves blank, 6 dates of record. Every
+  one-sided row is explained from the raw files (the 2026-11-22 audit): of the 87 the
+  build lists, 85 intersections are in no route file of the site, 1 sits at another
+  postmile there and 1 on another route; of the 128 the site lists, 104 belong to
+  intersections the layer does not hold at all, 20 are a second listing under a
+  crossing state route the layer leaves blank, 3 are intersections the layer ended in
+  2026 and 1 sits at another postmile (`check_master_intersection` holds the rules on
+  synthetic rows).
+- **Excel's day 0 (the 2026-11-22 audit, v0.57.1).** Three current intersections
+  (24421, 9554, 16851) carry Excel's day 0, 12/30/1899, in every date field, in the IM
+  tables and in Master Intersection alike; the site lists them and prints that date
+  '99-12-30'. openpyxl reads such a cell as a bare `time(0, 0)`, which
+  `clean_road_layers.to_serial` read as no date, so both Intersection builds left the
+  three out ("geometry not in effect") and each comparison listed them as missing: they
+  are the IM-tables row's 3 TSMIS-only rows on the 11-19 export (the earlier exports
+  below show 3 too).
+  `to_serial` reads a bare time as day 0 now, the builds write it 12/30/1899, the
+  Intersection Detail build prints it 99-12-30 (it printed 00-01-01), and on a TSMIS
+  file the Intersection profile reads '99-12-30' as day 0 rather than 1999
+  (`compare_clean_road_tsn._ZERO_DAY`; written back, 1999-12-30 stays whole, so the
+  written form stays one to one; TSN keeps the 30-year window). The three pair with
+  every cell equal on both rows. A library scan found day 0 nowhere else but in the
+  LRSFromDate of 9 Highway span rows, which now read as live and change no build row.
+  TSN gives the same three 1970-01-01, its own epoch, so the vs-TSN cells there are
+  unchanged.
 - **Bound result** (the 2026-10-22 dev-site export vs the 2026-10-05 layers, after the
   2026-11-03 build audit; v0.51.0's numbers in brackets): Intersection 16,382 paired,
   93 / 3 one-sided, 3,075 differing cells [4,079], 2,548 of them the two begin dates;

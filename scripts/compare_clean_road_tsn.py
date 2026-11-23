@@ -112,6 +112,18 @@ def _date(v):
     return ctc.iso_date(v)
 
 
+# Excel's day 0, 12/30/1899. The layers write it in every date field of a few
+# rows (three current intersections on 2026-11-19), and the site's
+# Intersection file prints it with its two-digit year: '99-12-30'. By the
+# 30-year window that would read as 1999, so on a TSMIS file it is read as day
+# 0 (the build writes it 12/30/1899). TSN's dates are its own and keep the
+# window. Written back, 1899-12-30 is '99-12-30' and 1999-12-30 stays whole,
+# so the written form stays one to one.
+_ZERO_DAY = "1899-12-30"
+_ZERO_DAY_SHORT = "99-12-30"
+_ZERO_DAY_TWIN = "1999-12-30"
+
+
 def _county(v):
     return _s(v).upper().rstrip(".")
 
@@ -229,8 +241,9 @@ _INTERSECTION = _profile(
         "The site passes the intersection layer's own YY-MM-DD dates through "
         "('73-10-19' is 1973-10-19; a 2-digit year below 30 is 20xx), so they "
         "are shown that way and TSN's dates are written the same way (a date "
-        "outside 1930–2029 in full). INX_EXTRACT_DATE is MM/DD/YYYY, as the "
-        "file writes it.",
+        "outside 1930–2029 in full). '99-12-30' is Excel's day 0, 12/30/1899, "
+        "which the layers write in every date of a few rows. INX_EXTRACT_DATE "
+        "is MM/DD/YYYY, as the file writes it.",
         "CONTEXT (the TSMIS file's own value is shown, never counted; TSN's is "
         "on the TSN sheet): the 10 columns the site has no source "
         "for (placement ids, create/update, end date, both ADTs, the LSC date), "
@@ -276,6 +289,9 @@ def _value(profile, name, raw, side, collapse):
     """One cell as compared. `side` is "site" or "tsn"; `collapse` folds
     whitespace runs (the print flavors)."""
     if name in profile.dates:
+        if (side == "site" and name in profile.short_dates
+                and _s(raw) == _ZERO_DAY_SHORT):
+            return _ZERO_DAY
         return _date(raw)
     if name.endswith("_COUNTY_CODE"):
         return _county(raw)
@@ -323,7 +339,8 @@ def _written_date(text, short):
     """An ISO date the way the site's file writes it: MM/DD/YYYY, or YY-MM-DD
     for the Intersection layer's dates. `iso_date` reads a 2-digit year below
     30 as 20xx, so only 1930–2029 goes back to two digits; any other date, and
-    anything that is not a real ISO date, stays as it is."""
+    anything that is not a real ISO date, stays as it is. Excel's day 0 is
+    '99-12-30', as the site prints it, so 1999-12-30 stays whole."""
     m = _ISO_DAY.fullmatch(text)
     if not m:
         return text
@@ -333,6 +350,10 @@ def _written_date(text, short):
     except ValueError:  # silent-ok: an impossible date is kept verbatim on purpose (CMP-AUD-038), so it shows as written
         return text
     if short:
+        if text == _ZERO_DAY:
+            return _ZERO_DAY_SHORT
+        if text == _ZERO_DAY_TWIN:
+            return text
         return f"{yyyy[2:]}-{mm}-{dd}" if 1930 <= int(yyyy) <= 2029 else text
     return f"{mm}/{dd}/{yyyy}"
 
@@ -388,6 +409,8 @@ def as_compared(profile, name, text):
             return "0"
         return text
     if name in profile.dates:
+        if name in profile.short_dates and text == _ZERO_DAY_SHORT:
+            return _ZERO_DAY
         m = (_SHORT_DAY if name in profile.short_dates else _US_DAY).fullmatch(text)
         if not m:
             return text

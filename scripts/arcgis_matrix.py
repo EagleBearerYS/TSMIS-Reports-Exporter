@@ -655,9 +655,9 @@ def build_report(row_key, events, asof=None, confirm_overwrite=None):
             "The ArcGIS layer library is missing the layer(s) this report is "
             "built from:\n\n  " + "\n  ".join(missing)
             + "\n\nRefresh them on the ArcGIS ▸ Layers tab and build again.")
-    drop = arcgis_layers.drop_info()
-    asof = (asof or "").strip() or arcgis_layers.consistent_asof(
-        s.build.REQUIRED_LAYERS, drop)
+    drop = arcgis_layers.for_layers(arcgis_layers.drop_info(),
+                                    s.build.REQUIRED_LAYERS)
+    asof = (asof or "").strip() or drop.get("exported")
     if not asof:
         raise ValueError("The layer library's export date is unknown — enter an "
                          "as-of date (YYYY-MM-DD) to build.")

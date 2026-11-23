@@ -631,8 +631,10 @@ state; the manifest's Data Source states the clause. The work PC owes the first 
   on the 16,028 rows the 2026-11-19 file lists under the major route it agrees with
   the file on 99% or more of most columns. The leg's lanes column is
   `Total_Num_Lanes` (99.0% against 2.4% for Pri). On that export the Master
-  Intersection row reads 5,585 differing cells and 87 / 131 one-sided rows, the
-  IM-tables row 3,071 and 94 / 3.
+  Intersection row reads 5,585 differing cells and 87 / 128 one-sided rows, the
+  IM-tables row 3,071 and 94 / 0 (v0.57.1: three intersections whose every date is
+  Excel's day 0 were left out of both builds before, 87 / 131 and 94 / 3;
+  [comparison-engine.md](../comparison-engine.md) §9n, "Excel's day 0").
 
 **3. Which data each side came from is stated, not assumed.** A build records the
 feature service its layers were pulled from (the marker sheet's `Layer service`), and a

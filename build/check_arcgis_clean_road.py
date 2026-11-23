@@ -159,6 +159,17 @@ def _site_export(folder, spec, key, rows):
 
 
 # --------------------------------------------------------------------------- #
+# Excel's day 0 (12/30/1899), as openpyxl reads it: three current IM
+# intersections carry it in every date field (2026-11-19), and the site lists
+# them, printing it '99-12-30'.
+_DAY0 = datetime.time(0, 0)
+_INX_DATES = ("Int_Geometry_Begin_Date", "Int_Control_Begin_Date",
+              "Int_Lighted_Ind_Begin_Date", "Int_Date_Of_Record", "Main_Begin_Date",
+              "Cross_Begin_Date")
+_INX_DATE_COLS = ("INX_DESIGN_DATE", "INX_CONTROL_DATE", "INX_LIGHTED_BEGIN_DATE",
+                  "INX_RECORD_DATE", "INX_MAIN_BEGIN_DATE", "INX_CROSS_BEGIN_DATE")
+
+
 def _inx_row(iid, pm, **over):
     r = {"INTERSECTION_ID": iid, "LRS_DATE_RETIRE": None,
          "InventoryItemStartDate": D(2023, 1, 1),
@@ -205,7 +216,8 @@ def test_intersection(tmp):
            _inx_row(3, None),                                       # no postmile
            _inx_row(4, 4.0, LRS_DATE_RETIRE=D(2024, 1, 1)),         # retired
            _inx_row(5, 4.5, Int_Geometry_Begin_Date=D(2027, 1, 1)),  # not yet built
-           _inx_row(6, None, Main_RouteNum=None)]                   # an IM shell
+           _inx_row(6, None, Main_RouteNum=None),                   # an IM shell
+           _inx_row(7, 5.0, **{f: _DAY0 for f in _INX_DATES})]      # every date day 0
     net = [_span(0, 2, "SegOrderId", 150, county="San Bernardino"),
            _span(2, 9, "SegOrderId", 151, county="San Bernardino"),
            _span(0, 9, "SegOrderId", 9001, county="San Bernardino", route="133")]
@@ -235,11 +247,15 @@ def test_intersection(tmp):
     c.check("the build runs from the layers", res.status == "ok", res.message)
     rows = _read_build(out, crc.INTERSECTION)
     c.check("the site's universe: no-postmile, retired, not-yet-built and shell rows are "
-            "left out; the state x state intersection is listed under BOTH routes",
+            "left out; a row dated Excel's day 0 is in, as the site lists it; the state "
+            "x state intersection is listed under BOTH routes",
             [(r["Route"], r["INX_CONNECTION_ID"]) for r in rows]
-            == [("001", "1"), ("001", "2"), ("133", "1")],
+            == [("001", "1"), ("001", "2"), ("001", "7"), ("133", "1")],
             [(r["Route"], r["INX_CONNECTION_ID"]) for r in rows])
-    a, b, x = rows
+    a, b, z, x = rows
+    c.check("... and its dates are written 12/30/1899, never blank or a time",
+            all(z[col] == "12/30/1899" for col in _INX_DATE_COLS),
+            [z[col] for col in _INX_DATE_COLS])
     c.check("the site's forms: codes, Y/N, MM/DD/YYYY, natural postmile, begin = end, and "
             "the layer's 'San Bernadino' is SBD",
             (a["INX_DESIGN_CODE"], a["INX_CONTROL_CODE"], a["INX_LIGHTED_IND"],
@@ -263,7 +279,7 @@ def test_intersection(tmp):
             == ("133", "2.5", "001", "0.204", "4", "2", "05/01/1974", "10/19/1973"), x)
     c.check("seg order on the file's route, and on the crossing route at its own postmile",
             [(r["INX_SEG_ORDER_ID"] or "", r["INX_X_SEG_ORDER_ID"] or "") for r in rows]
-            == [("150", "9001"), ("151", ""), ("9001", "150")],
+            == [("150", "9001"), ("151", ""), ("151", ""), ("9001", "150")],
             [(r["INX_SEG_ORDER_ID"], r["INX_X_SEG_ORDER_ID"]) for r in rows])
     c.check("overlays at the intersection's AR; City ends at its span; a span that "
             "crosses into another county covers its start county up to its own AR end",
@@ -280,18 +296,20 @@ def test_intersection(tmp):
     for r in site_rows:
         r["INX_COUNTY_CODE"] = "SBD"
         r["INX_EXTRACT_DATE"] = "10/22/2026"
+    for col in _INX_DATE_COLS:                 # the site prints day 0 with its 2-digit year
+        site_rows[2][col] = "99-12-30"
     site = _site_export(tmp / "inx_site_same", crc.INTERSECTION, "001", site_rows)
     got = _counts(cmp_inx.compare(str(out), str(site), str(tmp / "ix1.xlsx"), **_q()))
     c.check("the build against the site's file of the same records: a clean match "
-            "(the extract date is context)",
-            got == {"paired_rows": 3, "side_a_only_rows": 0, "side_b_only_rows": 0,
+            "(the extract date is context; the site's '99-12-30' is the same day 0)",
+            got == {"paired_rows": 4, "side_a_only_rows": 0, "side_b_only_rows": 0,
                     "differing_cells": 0}, got)
     site_rows[1]["INX_CONTROL_CODE"] = "S"
     site_rows[1]["INX_CONNECTION_ID"] = "99"
     site2 = _site_export(tmp / "inx_site_diff", crc.INTERSECTION, "001", site_rows)
     got = _counts(cmp_inx.compare(str(out), str(site2), str(tmp / "ix2.xlsx"), **_q()))
     c.check("a changed control code counts, and so does the connection id (one id space)",
-            got["differing_cells"] == 2 and got["paired_rows"] == 3, got)
+            got["differing_cells"] == 2 and got["paired_rows"] == 4, got)
     res = cmp_inx.compare(str(site), str(out), str(tmp / "ix3.xlsx"), **_q())
     c.check("swapped sides are refused", res.status == "error", res.status)
     written = cmp_inx.compare(str(out), str(site), str(tmp / "ix4.xlsx"),

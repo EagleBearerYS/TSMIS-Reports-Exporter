@@ -49,6 +49,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from datetime import time
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -68,7 +69,7 @@ REPORT_NAME = "Intersection Detail (ArcGIS)"
 SHEET_NAME = "Intersection Detail"      # matches the consolidated export's sheet
 MARKER_SHEET = "ArcGIS Report Build"
 PROVENANCE_SHEET = "Provenance"
-BUILD_VERSION = 1
+BUILD_VERSION = 2
 FILENAME = "intersection_detail_from_layers.xlsx"
 OUT_DIR = paths.OUTPUT_ROOT / "arcgis_reports"
 OUT_PATH = OUT_DIR / FILENAME
@@ -234,11 +235,16 @@ def _pm3(v):
 
 
 def _date(v):
-    """A layer date to the report's 'YY-MM-DD' print form."""
+    """A layer date to the report's 'YY-MM-DD' print form. Excel's day 0
+    (12/30/1899), which openpyxl reads as a bare time of day, prints as the
+    site prints it: 99-12-30."""
     if v is None:
         return ""
+    if isinstance(v, time):
+        v = crl.serial_to_date(crl.to_serial(v))
     if hasattr(v, "strftime"):
-        return v.strftime("%y-%m-%d")
+        # Not strftime("%y"): Windows refuses it for a year before 1900.
+        return f"{v.year % 100:02d}-{v.month:02d}-{v.day:02d}"
     return _s(v)
 
 
@@ -687,7 +693,8 @@ def _consolidate(events, confirm_overwrite, out_path, asof, lib_root):
     # The drop's identity is taken BEFORE the layers are read (the order a
     # comparison's input fingerprint uses), so the record names the bytes the
     # build actually consumed.
-    drop = arcgis_layers.drop_info(lib_root)
+    drop = arcgis_layers.for_layers(arcgis_layers.drop_info(lib_root),
+                                    REQUIRED_LAYERS)
     events.on_log("=" * 60)
     events.on_log(f"{REPORT_NAME} — built from the ArcGIS layers "
                   f"(as of {asof_text})"

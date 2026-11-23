@@ -177,6 +177,10 @@ def main():
           ari.HEADER == ["Route"] + list(idc.HEADER))
     check("no context columns — every printed column has a source",
           ari.CONTEXT_COLUMNS == () and cmp_arc.CONTEXT_FIELDS == ())
+    check("Excel's day 0 (openpyxl's bare time) prints as the site prints it, "
+          "99-12-30, not 00-01-01",
+          ari._date(datetime.time(0, 0)) == "99-12-30"
+          and ari._date(D(1973, 10, 19)) == "73-10-19")
     check("Int St Eff-Date is sourced from the intersection row's "
           "InventoryItemStartDate (it was nearly written off as sourceless)",
           "InventoryItemStartDate" in ari.PROJECTION["Int St Eff-Date"][0])

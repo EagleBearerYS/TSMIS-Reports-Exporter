@@ -35,6 +35,7 @@ scripts_path()
 from openpyxl import Workbook, load_workbook  # noqa: E402
 
 import arcgis_clean_road_build as acb  # noqa: E402
+import arcgis_layers  # noqa: E402
 import arcgis_refresh  # noqa: E402
 import arcgis_report_clean_intersection as acri  # noqa: E402
 import arcgis_report_clean_intersection_mi as mi  # noqa: E402
@@ -292,6 +293,73 @@ def test_compare(tmp, build, got):
             and "INX_CITY_CODE" in notes and "Master_Intersection_ID" in notes, notes[:300])
 
 
+_DAY0 = datetime.time(0, 0)   # Excel's day 0, 12/30/1899, as openpyxl reads it
+_DAY0_FIELDS = ("Date_Of_Record", "Intersection_Geometry_Eff_Date",
+                "Intersection_Control_Eff_Date", "Intersection_Lighted_Eff_Date",
+                "Major_Effective_Date", "Minor_Effective_Date")
+_DAY0_COLS = ("INX_RECORD_DATE", "INX_DESIGN_DATE", "INX_CONTROL_DATE",
+              "INX_LIGHTED_BEGIN_DATE", "INX_MAIN_BEGIN_DATE", "INX_CROSS_BEGIN_DATE")
+
+
+def test_day0_and_export_date(tmp):
+    print("Excel's day 0 and the build's own export date (2026-11-22 audit):")
+    c.check("a bare time is Excel's day 0, written 12/30/1899",
+            crl.to_serial(_DAY0) == 0.0 and acb.mdy(_DAY0) == "12/30/1899")
+    lib = tmp / "day0_layers"
+    lib.mkdir(parents=True, exist_ok=True)
+    rows = [_mi(20, 0.5), _mi(21, 1.0, **{f: _DAY0 for f in _DAY0_FIELDS})]
+    name, other = f"44_{mi.MI_LAYER}.xlsx", "16_SHS Ramp.xlsx"
+    _sheet(lib / name, "204", crs.MASTER_INTERSECTION_HEADER, rows)
+    _sheet(lib / other, "SHS Ramp", ["OBJECTID"], [{"OBJECTID": 1}])
+    # A library refreshed in parts: Master Intersection on 11-22, the rest on 11-19.
+    arcgis_layers.write_index(lib, {
+        mi.MI_LAYER: {"file": name, "rows": len(rows),
+                      "fields": len(crs.MASTER_INTERSECTION_HEADER), "path": mi.MI_LAYER,
+                      "source": f"{arcgis_refresh.CSMS_SERVICE}/204",
+                      "exported_at": "2026-11-22T13:58:10"},
+        "SHS Ramp": {"file": other, "rows": 1, "fields": 1, "path": "SHS Ramp",
+                     "source": "synthetic", "exported_at": "2026-11-19T09:00:00"}})
+    out = tmp / f"day0_{mi.FILENAME}"
+    res = mi.consolidate(events=_Quiet(), confirm_overwrite=lambda p: True,
+                         out_path=out, asof=ASOF, lib_root=lib)
+    c.check("the build runs", res.status == "ok", res.message)
+    got = _read_build(out)
+    c.check("a row whose every date is day 0 is current, as the site lists it (it was "
+            "read as having no geometry date and left out)",
+            [r["INX_CONNECTION_ID"] for r in got] == ["20", "21"],
+            [r["INX_CONNECTION_ID"] for r in got])
+    c.check("... and its dates are written 12/30/1899",
+            len(got) == 2 and all(got[1][col] == "12/30/1899" for col in _DAY0_COLS),
+            [got[1].get(col) for col in _DAY0_COLS] if len(got) == 2 else got)
+
+    drop = arcgis_layers.drop_info(lib)
+    own = arcgis_layers.for_layers(drop, mi.REQUIRED_LAYERS)
+    c.check("the library dates itself by its oldest layer and says it is mixed",
+            drop["exported"] == "2026-11-19" and drop["mixed"], drop)
+    c.check("a build's date is its own layers' oldest, and mixed only over them; the "
+            "fingerprint stays the library's",
+            own["exported"] == "2026-11-22" and not own["mixed"]
+            and own["fingerprint"] == drop["fingerprint"]
+            and arcgis_layers.consistent_asof(mi.REQUIRED_LAYERS, drop) == "2026-11-22",
+            own)
+    c.check("a layer the manifest does not date leaves the library's date",
+            arcgis_layers.for_layers(drop, ("No Such Layer",)) is drop)
+    c.check("the build's marker states the date of the layer it read, not 11-19",
+            acb.report_facts(out).get("drop_exported") == "2026-11-22",
+            acb.report_facts(out))
+
+    site_rows = [dict(r) for r in got]
+    for r in site_rows:
+        r["INX_EXTRACT_DATE"] = "10/22/2026"
+    for col in _DAY0_COLS:              # the site prints day 0 with its 2-digit year
+        site_rows[1][col] = "99-12-30"
+    site = _site_export(tmp / "site_day0", site_rows)
+    counts = _counts(cmp_mi.compare(str(out), str(site), str(tmp / "cz.xlsx"), **_q()))
+    c.check("the site's '99-12-30' is the same day 0: a clean match",
+            counts == {"paired_rows": 2, "side_a_only_rows": 0, "side_b_only_rows": 0,
+                       "differing_cells": 0}, counts)
+
+
 def test_sources():
     print("the vendor's list against the build:")
     found = crs.sources("clean_intersection_mi")
@@ -326,6 +394,7 @@ def main():
     with temp_dir("mi_check_") as tmp:
         build, got = test_build(Path(tmp))
         test_compare(Path(tmp), build, got)
+        test_day0_and_export_date(Path(tmp))
     test_sources()
     return c.summary()
 

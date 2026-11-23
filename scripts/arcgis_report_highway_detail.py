@@ -202,7 +202,9 @@ def _date(v):
     if v is None:
         return ""
     if hasattr(v, "strftime"):
-        return v.strftime("%y-%m-%d")
+        # Not strftime("%y"): Windows refuses it for a year before 1900 (Excel's
+        # day 0, 12/30/1899, is a real layer date).
+        return f"{v.year % 100:02d}-{v.month:02d}-{v.day:02d}"
     return _s(v)
 
 

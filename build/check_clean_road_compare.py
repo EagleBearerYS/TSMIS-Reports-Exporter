@@ -449,6 +449,14 @@ def test_written_form(tmp):
              w(inx, "INX_END_DATE", "1925-06-30"), "1925-06-30"),
             ("the Intersection extract date is MM/DD/YYYY",
              w(inx, "INX_EXTRACT_DATE", "2026-11-19"), "11/19/2026"),
+            ("Excel's day 0 is '99-12-30', as the site prints it",
+             w(inx, "INX_DESIGN_DATE", "1899-12-30"), "99-12-30"),
+            ("... so 1999-12-30 stays whole", w(inx, "INX_DESIGN_DATE", "1999-12-30"),
+             "1999-12-30"),
+            ("the site's '99-12-30' reads as day 0",
+             crt._value(inx, "INX_DESIGN_DATE", "99-12-30", "site", False), "1899-12-30"),
+            ("... TSN's keeps the 30-year window",
+             crt._value(inx, "INX_DESIGN_DATE", "99-12-30", "tsn", False), "1999-12-30"),
             ("an impossible date stays as it is", w(hwy, "THY_RECORD_DATE", "2019-02-30"),
              "2019-02-30"),
             ("a Highway postmile has three decimals", w(hwy, "THY_END_PM_AMT", "0.78"),
@@ -473,7 +481,8 @@ def test_written_form(tmp):
              "(unavailable: source span skipped)")):
         c.check(label, got == want, (got, want))
     samples = ("", "0", "1", "3", "03", "12", "108", "0.78", "0.780", "0.7805", "-0.5",
-               "1973-10-19", "2019-02-30", "10/19/1973", "LA", "LA.", "ORA", "OTH", "Z",
+               "1973-10-19", "2019-02-30", "10/19/1973", "1899-12-30", "1999-12-30",
+               "99-12-30", "LA", "LA.", "ORA", "OTH", "Z",
                "x", "(unavailable: source span skipped)")
     clashes, unread = [], []
     for prof in (hwy, inx, ram):

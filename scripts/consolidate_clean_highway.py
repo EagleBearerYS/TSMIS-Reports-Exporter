@@ -2727,7 +2727,8 @@ def _consolidate(events, confirm_overwrite, *, asof, lib_root, out_path, routes,
     # The drop's identity is taken BEFORE the layers are read (the same order
     # as a comparison's input fingerprint), so the build records the bytes it
     # actually consumed rather than whatever the folder holds afterwards.
-    drop = arcgis_layers.drop_info(lib_root)
+    drop = arcgis_layers.for_layers(arcgis_layers.drop_info(lib_root),
+                                    REQUIRED_LAYERS)
     events.on_log("=" * 60)
     events.on_log(f"Clean Road Highway build — ArcGIS layers as of "
                   f"{asof_date.isoformat()}"
