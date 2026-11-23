@@ -484,7 +484,8 @@ def _consolidate(module, events, confirm_overwrite, out_path, asof, lib_root):
     index = crl.read_index(lib_root)
     asof_date = cch._resolve_asof(asof)
     asof_text = asof_date.isoformat()
-    drop = arcgis_layers.drop_info(lib_root)
+    drop = arcgis_layers.for_layers(arcgis_layers.drop_info(lib_root),
+                                    module.REQUIRED_LAYERS)
     events.on_log("=" * 60)
     events.on_log(f"{module.REPORT_NAME} — built from the ArcGIS layers "
                   f"(as of {asof_text})"

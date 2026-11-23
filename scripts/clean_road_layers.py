@@ -28,7 +28,7 @@ from __future__ import annotations
 import re
 from bisect import bisect_left
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date, datetime, time
 from pathlib import Path
 from statistics import median
 
@@ -275,7 +275,12 @@ _ISO_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
 def to_serial(v):
     """A date-ish cell (Excel serial number, datetime/date, ISO or M/D/YYYY
     text) to the Excel serial DAY number, or None for blank/'.'/unparseable.
-    LRS algebra runs on serials — the exports themselves are serial-based."""
+    LRS algebra runs on serials — the exports themselves are serial-based.
+
+    A bare time of day is Excel's day 0, 12/30/1899: openpyxl reads a date
+    cell holding a serial under 1 that way. The layers write that zero date
+    on some rows (three current intersections have it in every date field),
+    and the site reads it as the date it is, so it is day 0, never blank."""
     if v is None:
         return None
     if isinstance(v, bool):
@@ -285,6 +290,8 @@ def to_serial(v):
     if isinstance(v, datetime):
         return float((v - _EXCEL_EPOCH).days) + (
             v.hour * 3600 + v.minute * 60 + v.second) / 86400.0
+    if isinstance(v, time):
+        return (v.hour * 3600 + v.minute * 60 + v.second) / 86400.0
     if isinstance(v, date):
         return float((datetime(v.year, v.month, v.day) - _EXCEL_EPOCH).days)
     s = str(v).strip()

@@ -58,7 +58,7 @@ log = logging.getLogger(__name__)
 
 REPORT_NAME = "Clean Road Intersection (ArcGIS)"
 SPEC = crc.INTERSECTION
-BUILD_VERSION = 2
+BUILD_VERSION = 3
 FILENAME = "clean_intersection_from_layers.xlsx"
 OUT_DIR = paths.OUTPUT_ROOT / "arcgis_reports"
 OUT_PATH = OUT_DIR / FILENAME

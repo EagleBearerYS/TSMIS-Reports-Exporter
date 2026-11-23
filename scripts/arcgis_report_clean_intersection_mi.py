@@ -55,7 +55,7 @@ SPEC = replace(crc.INTERSECTION, key="clean_intersection_mi",
                label="Clean Road Intersection (Master Intersection)")
 # The export it is compared against, read through that report's profile.
 PROFILE_KEY = crc.INTERSECTION.key
-BUILD_VERSION = 1
+BUILD_VERSION = 2
 FILENAME = "clean_intersection_mi_from_layers.xlsx"
 OUT_DIR = paths.OUTPUT_ROOT / "arcgis_reports"
 OUT_PATH = OUT_DIR / FILENAME

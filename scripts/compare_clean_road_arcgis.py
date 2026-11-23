@@ -146,7 +146,11 @@ class CleanRoadArcgisCompare:
             "written, an amount the same number ('02' = '2'), and a two-letter "
             "county the same with or without its period ('SD.' = 'SD'). A "
             "print-edition export folds runs of spaces on both sides, as its "
-            "HTML does.",
+            "HTML does."
+            + (" The file's '99-12-30' is Excel's day 0, 12/30/1899, which the "
+               "layers write in every date of a few rows; the build writes it "
+               "12/30/1899."
+               if self._profile.short_dates else ""),
             "CONTEXT (the TSMIS file's own value is shown, never counted; ours "
             f"is on the {SIDE_A} sheet): the columns the site has no source "
             f"for ({', '.join(spec.unsourced)})"

@@ -454,6 +454,31 @@ self-test now reports which files did not load.
 → [gui.md](gui.md) ("Where the time went when the app felt slow", item 4);
 `check_page_server_backlog`.
 
+## 19. A one-sided row is a claim too; explain each one from the raw source
+
+The 2026-11-22 audit of the six Clean Road deliverables recounted every number from
+the raw files and traced drawn cells to them, and everything held. That included
+the spot check's one-sided rows, which it confirms by looking for the row on the
+other side. In a vs-ArcGIS comparison the other side is our build, so a row the
+build wrongly dropped reads "confirmed".
+
+Classifying every site-only row of the new Master Intersection comparison against
+the raw layer found three that were in the layer all along. They are current
+intersections whose every date is Excel's day 0, 12/30/1899. openpyxl reads such a
+cell as a bare `time(0, 0)`, `to_serial` read any type it did not know as no date,
+and both Intersection builds left the rows out as "geometry not in effect". The
+IM-tables comparison listed those same three as missing on the 11-19 export, and
+its earlier exports show three too. Every recount agreed with it, because every
+recount started from the build.
+
+**The rule:** a check that takes the build as given cannot catch what the build
+leaves out. Say from the raw layer and the raw export why each one-sided row is
+one-sided. A value a reader does not recognize (a bare time, a serial under 1) is
+a value to read, never a blank.
+
+→ [comparison-engine.md](comparison-engine.md) §9n ("Excel's day 0");
+`check_master_intersection`, `check_arcgis_clean_road`.
+
 ### Quick index of the lessons
 
 | # | Lesson | Owns the detail |
@@ -476,3 +501,4 @@ self-test now reports which files did not load.
 | 16 | A comment that says "this is cheap" is a claim, and claims need measuring | comparison-engine §2b + planning/vs-tsn-comparison-speed |
 | 17 | A rule fitted on one probe case is a hypothesis; score it on the population | planning/cleanroad-highways + roadmap DA1/DA5/DA6 |
 | 18 | A gate that passes on the re-run has a race in it; ask the part that failed | gui ("Where the time went", 4) + check_page_server_backlog |
+| 19 | A one-sided row is a claim too; explain each one from the raw source | comparison-engine §9n ("Excel's day 0") |

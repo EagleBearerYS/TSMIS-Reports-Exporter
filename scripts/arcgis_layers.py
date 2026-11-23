@@ -419,13 +419,26 @@ def drop_info(lib_root=None):
             "files": len(staged), "index_present": index_present}
 
 
+def for_layers(drop, layers):
+    """`drop` as a build reading `layers` states it: its export date and time
+    the OLDEST of those layers' own (and `mixed` over them alone) when the
+    manifest records every one of them, otherwise `drop` unchanged. A library
+    refreshed in parts holds layers of several days, and a build reports the
+    day of the layers it read, not of the library's oldest layer (2026-11-22:
+    the Master Intersection build said 11-19 for a layer exported 11-22). The
+    fingerprint stays the whole library's."""
+    stamps = drop.get("layers") or {}
+    times = [stamps.get(name) for name in layers]
+    if not times or not all(times):
+        return drop
+    oldest, newest = min(times), max(times)
+    return {**drop, "exported": oldest[:10], "exported_at": oldest,
+            "newest_at": newest, "mixed": newest[:10] != oldest[:10]}
+
+
 def consistent_asof(required, drop=None):
     """The latest date a build reading `required` layers can honestly be
     reconstructed at: the OLDEST of those layers' own export dates, when the
     manifest records every one of them; otherwise the drop's export date."""
     drop = drop if drop is not None else drop_info()
-    stamps = drop.get("layers") or {}
-    dates = [stamps.get(name) for name in required]
-    if dates and all(dates):
-        return min(dates)[:10]
-    return drop.get("exported")
+    return for_layers(drop, required).get("exported")
