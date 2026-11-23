@@ -4,14 +4,18 @@ The single forward list — bugs to fix, features to add, and standing concerns.
 (what already shipped, per release) is `CHANGELOG.md`; the narrative is
 [history.md](history.md). This file is what's *left*.
 
-> ### ▶ WHERE THINGS STAND (v0.57.0, reconciled 2026-11-22)
+> ### ▶ WHERE THINGS STAND (v0.57.1, reconciled 2026-11-22)
 >
-> **Current release: v0.57.0 (2026-11-22). A second Clean Road Intersection comparison,
-> built from the Master Intersection layer**, sits beside the IM-tables one, each labeled
-> by its source; it is the default for problems raised with the vendor (the owner's
-> call). On the 2026-11-19 export it reads 5,585 differing cells against the IM-tables
-> row's 3,071. The 2026-11-19 Intersection deliverable is the Master Intersection one
-> now. The work PC builds it (B0g).
+> **Current release: v0.57.1 (2026-11-22). Three intersections are back in both Clean
+> Road Intersection comparisons**: every date of theirs is Excel's day 0, which the
+> builds read as no date, so each comparison listed them as missing (found by the
+> 2026-11-22 audit of the six deliverables). The Master Intersection row now reads
+> 16,256 paired, 87 / 128 one-sided, 5,585 cells; the IM-tables row 94 / 0. The
+> 2026-11-19 Intersection deliverable was re-sent. The work PC rebuilds both builds (B0g).
+>
+> v0.57.0 (2026-11-22): **a second Clean Road Intersection comparison, built from the
+> Master Intersection layer**, sits beside the IM-tables one, each labeled by its source;
+> it is the default for problems raised with the vendor (the owner's call).
 >
 > v0.56.0 (2026-11-22): **the layer library refreshes the Master Intersection layer** as
 > layer 44 from its own service (layer 204 of `csms_supporting_prod`). The work PC's
@@ -179,7 +183,7 @@ counts as migration drift, not defect — see C4 + D5.
 | # | Item | Notes |
 |---|---|---|
 | B0 | **Refresh the three Clean Road builds on the work PC with v0.51.2 and rebuild the Reports vs ArcGIS and Three-way matrices before any Clean Road comparison is used or delivered again.** | The v0.51.0 builds are wrong in place (the build version was informational until 2026-11-18, so nothing marked them stale): ArcGIS ▸ ArcGIS reports ▸ Refresh all reports, then Reports vs ArcGIS and Three-way ▸ rebuild. The Highway comparisons delivered from v0.51.0 carry more than half false differences by the raw-layer check (`tools/clean_road_layer_check.py`: 54% of the cells it judged, before the independent rows' other roadbed was counted); v0.51.1 took the build to 458 cells off its own layers, v0.51.2 to 2. Re-deliver from v0.51.2 and run the check on the delivered workbook first. The `CRH-SW` vs-TSN canary needs its re-bless (B1). |
-| B0g | **Build Clean Road Intersection from Master Intersection on the work PC (v0.57.0).** | ArcGIS ▸ ArcGIS reports: **Clean Road: Intersection (Master Intersection)** ▸ **Build**, as of the export day, then Reports vs ArcGIS ▸ its rows (Excel and PDF editions). The files are `clean_intersection_mi_vs_ArcGIS …`; the Notes should name the Master Intersection service as the build's data source. On the dev box the 2026-11-19 export read 16,253 paired, 87 / 131 one-sided, 5,585 cells ([comparison-engine.md](comparison-engine.md) §9n). |
+| B0g | **Build both Clean Road Intersection builds on the work PC (v0.57.1).** | ArcGIS ▸ ArcGIS reports: **Clean Road: Intersection (Master Intersection)** and **(IM tables)** ▸ **Build** / **Refresh**, as of the export day (v0.57.0 builds read *built by an older version of the app*), then Reports vs ArcGIS ▸ their rows (Excel and PDF editions). The Master Intersection files are `clean_intersection_mi_vs_ArcGIS …`; its Notes should name the Master Intersection service as the build's data source and say "layers exported" with the layer's own date. On the dev box the 2026-11-19 export read 16,256 paired, 87 / 128 one-sided, 5,585 cells, and the IM-tables row 16,384, 94 / 0, 3,071 ([comparison-engine.md](comparison-engine.md) §9n). Intersection Detail builds read stale too (they printed Excel's day 0 as 00-01-01); refresh before comparing them again. |
 | B0f | **Refresh Master Intersection on the work PC (v0.56.0) and send it.** | **Done 2026-11-22:** both layer lists read, the layer matched by name at 204, 24,296 rows in 40 s; the export is in the corpus and the comparison built from it shipped in v0.57.0 (B0g). |
 | B0e | **Refresh the layers and rebuild Clean Road Highway on the work PC (v0.54.0).** | (1) ArcGIS ▸ Layers ▸ **Refresh all layers**: the library is 43 layers now; Calibration Point, HPMS F System and Posted Speed Limit are new and come last. Calibration Point is exported with the clause `NetworkId = 2`, a first on a real ArcGIS Pro: if that layer alone fails, send its message from the Layers tab (the other 42 are not affected). Its size is not known from here. (2) ArcGIS ▸ ArcGIS reports: Clean Road Highway and Clean Road Ramp read *built by an older version of the app — refresh it*; refresh them as of the export day. (3) Rebuild the Reports vs ArcGIS and Three-way rows for Clean Road Highway and read the Notes sheet's POINT ROWS and SEGMENTS paragraphs against the counts in [comparison-engine.md](comparison-engine.md) §9n. **2026-11-19: step (1) ran on the work PC with v0.54.0 — 43 of 43 layers, Calibration Point 66,685 rows of `NetworkId = 2`, HPMS F System 883,352, Posted Speed Limit 2,586 (ArcGIS Pro 3.3.5, matched by id, not signed in).** Steps (2) and (3) were run on the dev box with that library and the 2026-11-19 ARS export (§9n "Same-day layers, an ARS export"); the work PC's own rebuild of them is still open. |
 | B0b | **Build the three-day comparison on the work PC (v0.52.0; the live-formulas copy since v0.52.1).** | Compare ▸ Three Days Matrix ▸ pick the three days ▸ *Add these three days* ▸ *Compare all*. Tick *Also write a live-formulas copy* first when the auditable copy is wanted, and run `tools/three_day_formulas_check.py` on a copy before it is delivered. The dev box built 10-30 → 11-03 → 11-06 for the three Excel editions ([comparison-engine.md](comparison-engine.md) §9p); the work PC also has the prints. Before delivering a workbook run `tools/three_day_check.py` on it ([verification-and-testing.md](verification-and-testing.md)). |

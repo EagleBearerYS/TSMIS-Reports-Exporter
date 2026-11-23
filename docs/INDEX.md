@@ -12,7 +12,15 @@ touching.
 
 ## Current status and work
 
-**Current release: v0.57.0 (2026-11-22)** — **a second Clean Road Intersection
+**Current release: v0.57.1 (2026-11-22)** — **three intersections are back in both
+Clean Road Intersection comparisons.** Their every date is Excel's day 0, 12/30/1899;
+`clean_road_layers.to_serial` read openpyxl's bare `time(0, 0)` for it as no date, so
+both builds left them out and each comparison listed them as missing. The site's
+'99-12-30' reads as that day on a TSMIS file, and a build names the export date of
+its own layers ([comparison-engine.md](comparison-engine.md) §9n, "Excel's day 0";
+[lessons.md](lessons.md) §19).
+
+v0.57.0 (2026-11-22): **a second Clean Road Intersection
 comparison, built from the Master Intersection layer** the vendor's list names
 (`arcgis_report_clean_intersection_mi`), beside the IM-tables one and the default for
 problems raised with the vendor. It is a report row of its own, compared with the same

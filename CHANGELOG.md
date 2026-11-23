@@ -3,6 +3,42 @@
 All notable changes to TSMIS Reports Exporter, newest first. Each GitHub
 release shows only its own section (see `build/gen_release_notes.py`).
 
+## v0.57.1 — 2026-11-22
+
+Three intersections are back in both Clean Road Intersection comparisons. Each
+comparison wrongly listed them as missing from ArcGIS.
+
+**After updating**
+
+On ArcGIS ▸ ArcGIS reports, both Clean Road Intersection builds read *built by an older
+version of the app*. Refresh them as of the export day, then their rows on Reports vs
+ArcGIS. Intersection Detail reads the same way; refresh it before comparing it again.
+
+**Fixed**
+
+- **Three intersections were left out of both Intersection builds.** Every date of
+  three current intersections is Excel's blank date, 12/30/1899, in the IM tables and
+  in Master Intersection alike. The site lists them. The builds read that date as no
+  date and left the rows out, so each comparison listed them as only in TSMIS. They
+  are paired now, and every cell of the three agrees.
+- **The site's '99-12-30' is that date.** The Intersection file writes dates with a
+  two-digit year, so 12/30/1899 reads '99-12-30', which the comparison took for 1999.
+  On a TSMIS file it is now read as 12/30/1899. TSN's dates are read as before.
+- **Intersection Detail builds print that date as 99-12-30**, as the site does. They
+  printed 00-01-01.
+- **A build names the export date of the layers it read.** In a library refreshed in
+  parts, a build named the library's oldest layer: the Master Intersection build said
+  2026-11-19 for a layer exported 2026-11-22. No count depended on it.
+
+**On the 2026-11-19 export**
+
+| Comparison | Paired | Only in ArcGIS | Only in TSMIS | Differing cells |
+|---|---:|---:|---:|---:|
+| Clean Road Intersection (Master Intersection) | 16,256 | 87 | 128 | 5,585 |
+| Clean Road Intersection (IM tables) | 16,384 | 94 | 0 | 3,071 |
+
+The Highway and Ramp builds are unchanged, and every vs TSN comparison keeps its counts.
+
 ## v0.57.0 — 2026-11-22
 
 A second Clean Road Intersection comparison, built from the Master Intersection layer:
